@@ -1,0 +1,293 @@
+ - [ ] Animate Wall
+ - [x] Armageddon
+ - [ ] Balance
+ - [ ] Benalish Hero
+ - [ ] Black Ward
+ - [ ] Blaze of Glory
+ - [x] Blessing
+ - [ ] Blue Ward
+ - [ ] Castle
+ - [ ] Circle of Protection: Black
+ - [ ] Circle of Protection: Blue
+ - [ ] Circle of Protection: Green
+ - [ ] Circle of Protection: Red
+ - [ ] Circle of Protection: White
+ - [ ] Consecrate Land
+ - [ ] Conversion
+ - [x] Crusade
+ - [ ] Death Ward
+ - [x] Disenchant
+ - [ ] Farmstead
+ - [ ] Green Ward
+ - [ ] Guardian Angel
+ - [ ] Healing Salve
+ - [x] Holy Armor
+ - [x] Holy Strength
+ - [ ] Island Sanctuary
+ - [ ] Karma
+ - [x] Lance
+ - [ ] Mesa Pegasus
+ - [ ] Northern Paladin
+ - [x] Pearled Unicorn
+ - [ ] Personal Incarnation
+ - [ ] Purelace
+ - [ ] Red Ward
+ - [x] Resurrection
+ - [ ] Reverse Damage
+ - [x] Righteousness
+ - [ ] Samite Healer
+ - [x] Savannah Lions
+ - [ ] Serra Angel
+ - [ ] Swords to Plowshares
+ - [ ] Veteran Bodyguard
+ - [x] Wall of Swords
+ - [ ] White Knight
+ - [ ] White Ward
+ - [ ] Wrath of God
+ - [x] Air Elemental
+ - [ ] Ancestral Recall
+ - [ ] Animate Artifact
+ - [ ] Blue Elemental Blast
+ - [ ] Braingeyser
+ - [ ] Clone
+ - [ ] Control Magic
+ - [ ] Copy Artifact
+ - [ ] Counterspell
+ - [ ] Creature Bond
+ - [ ] Drain Power
+ - [x] Feedback
+ - [x] Flight
+ - [ ] Invisibility
+ - [ ] Jump
+ - [ ] Lifetap
+ - [x] Lord of Atlantis
+ - [ ] Magical Hack
+ - [x] Mahamoti Djinn
+ - [ ] Mana Short
+ - [x] Merfolk of the Pearl Trident
+ - [x] Phantasmal Forces
+ - [ ] Phantasmal Terrain
+ - [x] Phantom Monster
+ - [ ] Pirate Ship
+ - [ ] Power Leak
+ - [ ] Power Sink
+ - [ ] Prodigal Sorcerer
+ - [x] Psionic Blast
+ - [ ] Psychic Venom
+ - [ ] Sea Serpent
+ - [ ] Siren's Call
+ - [ ] Sleight of Mind
+ - [ ] Spell Blast
+ - [ ] Stasis
+ - [ ] Steal Artifact
+ - [ ] Thoughtlace
+ - [ ] Time Walk
+ - [ ] Timetwister
+ - [ ] Twiddle
+ - [ ] Unsummon
+ - [ ] Vesuvan Doppelganger
+ - [ ] Volcanic Eruption
+ - [x] Wall of Air
+ - [ ] Wall of Water
+ - [x] Water Elemental
+ - [ ] Animate Dead
+ - [x] Bad Moon
+ - [ ] Black Knight
+ - [x] Bog Wraith
+ - [ ] Contract from Below
+ - [x] Cursed Land
+ - [ ] Dark Ritual
+ - [ ] Darkpact
+ - [ ] Deathgrip
+ - [ ] Deathlace
+ - [ ] Demonic Attorney
+ - [ ] Demonic Hordes
+ - [ ] Demonic Tutor
+ - [ ] Drain Life
+ - [ ] Drudge Skeletons
+ - [ ] Evil Presence
+ - [ ] Fear
+ - [x] Frozen Shade
+ - [ ] Gloom
+ - [ ] Howl from Beyond
+ - [ ] Hypnotic Specter
+ - [ ] Lich
+ - [ ] Lord of the Pit
+ - [ ] Mind Twist
+ - [ ] Nether Shadow
+ - [ ] Nettling Imp
+ - [x] Nightmare
+ - [ ] Paralyze
+ - [ ] Pestilence
+ - [x] Plague Rats
+ - [x] Raise Dead
+ - [ ] Royal Assassin
+ - [ ] Sacrifice
+ - [x] Scathe Zombies
+ - [ ] Scavenging Ghoul
+ - [ ] Sengir Vampire
+ - [ ] Simulacrum
+ - [x] Sinkhole
+ - [ ] Terror
+ - [x] Unholy Strength
+ - [ ] Wall of Bone
+ - [x] Warp Artifact
+ - [x] Weakness
+ - [ ] Will-o'-the-Wisp
+ - [ ] Word of Command
+ - [ ] Zombie Master
+ - [x] Burrowing
+ - [ ] Chaoslace
+ - [ ] Disintegrate
+ - [x] Dragon Whelp
+ - [ ] Dwarven Demolition Team
+ - [ ] Dwarven Warriors
+ - [x] Earth Elemental
+ - [ ] Earthbind
+ - [ ] Earthquake
+ - [ ] False Orders
+ - [x] Fire Elemental
+ - [ ] Fireball
+ - [x] Firebreathing
+ - [x] Flashfires
+ - [ ] Fork
+ - [ ] Goblin Balloon Brigade
+ - [x] Goblin King
+ - [x] Granite Gargoyle
+ - [x] Gray Ogre
+ - [x] Hill Giant
+ - [x] Hurloon Minotaur
+ - [ ] Ironclaw Orcs
+ - [x] Keldon Warlord
+ - [x] Lightning Bolt
+ - [ ] Mana Flare
+ - [ ] Manabarbs
+ - [x] Mons's Goblin Raiders
+ - [ ] Orcish Artillery
+ - [x] Orcish Oriflamme
+ - [ ] Power Surge
+ - [ ] Raging River
+ - [ ] Red Elemental Blast
+ - [x] Roc of Kher Ridges
+ - [ ] Rock Hydra
+ - [ ] Sedge Troll
+ - [x] Shatter
+ - [x] Shivan Dragon
+ - [ ] Smoke
+ - [ ] Stone Giant
+ - [x] Stone Rain
+ - [ ] Tunnel
+ - [ ] Two-Headed Giant of Foriys
+ - [ ] Uthden Troll
+ - [ ] Wall of Fire
+ - [x] Wall of Stone
+ - [ ] Wheel of Fortune
+ - [ ] Aspect of Wolf
+ - [ ] Berserk
+ - [x] Birds of Paradise
+ - [ ] Camouflage
+ - [ ] Channel
+ - [ ] Cockatrice
+ - [x] Craw Wurm
+ - [x] Elvish Archers
+ - [ ] Fastbond
+ - [ ] Fog
+ - [x] Force of Nature
+ - [ ] Fungusaur
+ - [ ] Gaea's Liege
+ - [x] Giant Growth
+ - [ ] Giant Spider
+ - [x] Grizzly Bears
+ - [ ] Hurricane
+ - [x] Ice Storm
+ - [ ] Instill Energy
+ - [x] Ironroot Treefolk
+ - [ ] Kudzu
+ - [ ] Ley Druid
+ - [ ] Lifeforce
+ - [ ] Lifelace
+ - [ ] Living Artifact
+ - [ ] Living Lands
+ - [x] Llanowar Elves
+ - [ ] Lure
+ - [ ] Natural Selection
+ - [ ] Regeneration
+ - [x] Regrowth
+ - [x] Scryb Sprites
+ - [x] Shanodin Dryads
+ - [ ] Stream of Life
+ - [ ] Thicket Basilisk
+ - [ ] Timber Wolves
+ - [x] Tranquility
+ - [x] Tsunami
+ - [ ] Verduran Enchantress
+ - [ ] Wall of Brambles
+ - [x] Wall of Ice
+ - [x] Wall of Wood
+ - [x] Wanderlust
+ - [x] War Mammoth
+ - [ ] Web
+ - [ ] Wild Growth
+ - [ ] Ankh of Mishra
+ - [ ] Basalt Monolith
+ - [x] Black Lotus
+ - [ ] Black Vise
+ - [ ] Celestial Prism
+ - [ ] Chaos Orb
+ - [ ] Clockwork Beast
+ - [ ] Conservator
+ - [x] Copper Tablet
+ - [ ] Crystal Rod
+ - [ ] Cyclopean Tomb
+ - [ ] Dingus Egg
+ - [ ] Disrupting Scepter
+ - [ ] Forcefield
+ - [ ] Gauntlet of Might
+ - [ ] Glasses of Urza
+ - [ ] Helm of Chatzuk
+ - [ ] Howling Mine
+ - [ ] Icy Manipulator
+ - [ ] Illusionary Mask
+ - [ ] Iron Star
+ - [ ] Ivory Cup
+ - [ ] Jade Monolith
+ - [ ] Jade Statue
+ - [ ] Jayemdae Tome
+ - [ ] Juggernaut
+ - [ ] Kormus Bell
+ - [ ] Library of Leng
+ - [ ] Living Wall
+ - [ ] Mana Vault
+ - [ ] Meekstone
+ - [x] Mox Emerald
+ - [x] Mox Jet
+ - [x] Mox Pearl
+ - [x] Mox Ruby
+ - [x] Mox Sapphire
+ - [ ] Nevinyrral's Disk
+ - [x] Obsianus Golem
+ - [ ] Rod of Ruin
+ - [x] Sol Ring
+ - [ ] Soul Net
+ - [ ] Sunglasses of Urza
+ - [ ] The Hive
+ - [ ] Throne of Bone
+ - [ ] Time Vault
+ - [ ] Winter Orb
+ - [ ] Wooden Sphere
+ - [x] Badlands
+ - [x] Bayou
+ - [x] Plateau
+ - [x] Savannah
+ - [x] Scrubland
+ - [x] Taiga
+ - [x] Tropical Island
+ - [x] Tundra
+ - [x] Underground Sea
+ - [x] Volcanic Island
+ - [x] Plains
+ - [x] Island
+ - [x] Swamp
+ - [x] Mountain
+ - [x] Forest
+
