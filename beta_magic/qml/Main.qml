@@ -130,6 +130,7 @@ ApplicationWindow {
                             Button {
                                 visible: gameState.stack.length > 0
                                          || gameState.timedEvent
+                                         || gameState.damageWindow
                                 enabled: gameState.hasPriority
                                 text: "Pass priority"
                                 onClicked: gameBridge.passPriority()
@@ -137,6 +138,7 @@ ApplicationWindow {
                             Label {
                                 visible: gameState.stack.length > 0
                                          || gameState.timedEvent
+                                         || gameState.damageWindow
                                 text: "Priority: " + gameState.priorityPlayer
                                 color: "#cbd2da"
                                 font.bold: true
@@ -153,6 +155,15 @@ ApplicationWindow {
                             visible: gameState.timedEvent
                             text: "Pending timed event: " + gameState.timedEvent
                             color: "#f2c66d"
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                        Label {
+                            visible: gameState.damageWindow
+                            text: gameState.damageWindow + " window — "
+                                  + gameState.damagePackets.join("  +  ")
+                            color: "#ef9f76"
                             font.bold: true
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true

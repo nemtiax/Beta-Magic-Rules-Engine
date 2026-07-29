@@ -174,6 +174,7 @@ class ActivatedPumpAbility:
     mana_cost: ManaCost
     power: int = 0
     toughness: int = 0
+    granted_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
     affects_attached_creature: bool = False
     safe_activations_per_turn: int | None = None
 
@@ -184,13 +185,74 @@ class ActivatedPumpAbility:
             if self.affects_attached_creature
             else ""
         )
-        return (
-            f"Pay {self.mana_cost.compact}: {subject}"
-            f"{self.power:+d}/{self.toughness:+d} until end of turn"
+        effect = (
+            "/".join(ability.value for ability in self.granted_abilities)
+            if self.granted_abilities
+            else f"{self.power:+d}/{self.toughness:+d}"
         )
+        return f"Pay {self.mana_cost.compact}: {subject}{effect} until end of turn"
 
 
-ActivatedAbility = ActivatedManaAbility | ActivatedPumpAbility
+@dataclass(frozen=True, slots=True)
+class ActivatedDamageAbility:
+    """A targeted fast effect whose activation cost taps its source."""
+
+    damage: int
+    target_requirement: TargetRequirement
+    controller_damage: int = 0
+    tap_cost: bool = True
+
+    def __post_init__(self) -> None:
+        if self.damage < 1:
+            raise ValueError("an activated damage ability must deal damage")
+
+    @property
+    def label(self) -> str:
+        suffix = (
+            f" and {self.controller_damage} damage to you"
+            if self.controller_damage
+            else ""
+        )
+        return f"Tap: Deal {self.damage} damage to any target{suffix}"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedDestroyAbility:
+    """A targeted fast effect that destroys a permanent."""
+
+    target_requirement: TargetRequirement
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+    tap_cost: bool = True
+
+    @property
+    def label(self) -> str:
+        cost = (
+            f"Pay {self.mana_cost.compact} and tap"
+            if self.mana_cost.mana_value
+            else "Tap"
+        )
+        return f"{cost}: Destroy target permanent"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedRegenerationAbility:
+    """A paid regeneration used when the source would be destroyed."""
+
+    mana_cost: ManaCost
+
+    @property
+    def label(self) -> str:
+        return f"Pay {self.mana_cost.compact}: Regenerate"
+
+
+TargetedActivatedAbility = ActivatedDamageAbility | ActivatedDestroyAbility
+ActivatedAbility = (
+    ActivatedManaAbility
+    | ActivatedPumpAbility
+    | ActivatedDamageAbility
+    | ActivatedDestroyAbility
+    | ActivatedRegenerationAbility
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +283,9 @@ class TargetRequirement:
     any_card_types: frozenset[CardType] = field(default_factory=frozenset)
     players: bool = False
     blocking_only: bool = False
+    tapped_only: bool = False
+    color: Color | None = None
+    subtypes: frozenset[str] = field(default_factory=frozenset)
     owner_only: bool = False
     count: int = 1
 
@@ -233,11 +298,17 @@ class TargetRequirement:
         if self.blocking_only and self.zone is not Zone.BATTLEFIELD:
             raise ValueError("a blocking target must be on the battlefield")
 
-    def accepts_card(self, card: Card) -> bool:
+    def accepts_card(self, card: Card, *, check_tapped: bool = True) -> bool:
         return (
             self.zone is not None
             and card.zone is self.zone
             and self.card_types.issubset(card.definition.card_types)
+            and (not check_tapped or not self.tapped_only or card.tapped)
+            and (self.color is None or self.color in card.definition.colors)
+            and (
+                not self.subtypes
+                or bool(self.subtypes & set(card.definition.subtypes))
+            )
             and (
                 not self.any_card_types
                 or bool(self.any_card_types & card.definition.card_types)

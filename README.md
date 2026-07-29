@@ -178,6 +178,50 @@ stats update as permanents enter and leave play, before ordinary continuous and
 temporary bonuses are applied; a creature that consequently reaches zero
 toughness is put into its owner's graveyard immediately.
 
+Prodigal Sorcerer and Orcish Artillery add targeted tap abilities. Activating
+one enters target-selection mode without tapping the creature; choosing a
+creature or player pays the tap cost and declares the ability into the current
+fast-effect batch. The opponent may respond before it resolves. Prodigal
+Sorcerer deals one damage to its target, while Orcish Artillery deals two to
+its target and three to its controller. Both creatures obey summoning
+sickness, and a declared ability remains in the batch if its source leaves
+play.
+
+All damage now passes through structured `DamageIncident` and `DamagePacket`
+objects before it is applied. A packet records its source, controller, colors,
+recipient, combat status, Trample status, and First Strike status. Spell and
+activated-ability batches accumulate all of their damage in one incident;
+each combat-damage wave and timed upkeep effect creates its own incident.
+Resolved incidents are retained on the game for inspection and future rules
+processing. Prevention, redirection, and regeneration are distinct priority
+windows requiring consecutive passes from both players. Damage is applied
+after the redirection window, while lethal creatures remain in play until the
+regeneration window closes. The UI pauses at all three windows and shows the
+pending packets. Engine clients may auto-skip them while no implemented card
+can act there. First Strike combat resumes with regular combat damage only
+after its complete incident has finished. Mana burn remains separate because
+the era rules classify it as loss of life.
+
+Drudge Skeletons, Uthden Troll, Will-o'-the-Wisp, Wall of Bone, and Wall
+of Brambles add paid regeneration. Their abilities become usable only while
+the creature faces lethal damage or an ordinary destroy effect in the
+Regeneration window. Mana abilities remain available during damage resolution,
+allowing the controller to generate the payment after damage is known.
+Regenerating pays the printed cost, taps the creature as an effect, removes all
+marked damage, preserves attachments, and prevents its pending destruction.
+A creature regenerated during combat remains part of combat but deals and
+receives no further combat damage that attack.
+
+Dwarven Demolition Team, Royal Assassin, and Northern Paladin extend targeted
+tap abilities to destruction. Their legal-target highlighting filters for
+Walls, tapped creatures, and black permanents respectively; Northern Paladin
+also charges `{W}{W}` when its target is committed. Royal Assassin follows its
+era ruling that tapped status matters when the target is chosen, so untapping
+that creature during responses does not save it. Goblin Balloon Brigade uses
+the temporary-effect system to gain Flying for `{R}` until end of turn, and
+may activate repeatedly even though additional instances of Flying have no
+further effect.
+
 The UI uses PySide6 and Qt Quick. Install its dependency with:
 
 ```console

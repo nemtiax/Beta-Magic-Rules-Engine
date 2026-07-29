@@ -23,6 +23,9 @@ from beta_magic import (
     TIMED_ENCHANTMENTS,
     UPKEEP_CREATURES,
     VARIABLE_CREATURES,
+    DAMAGE_ABILITY_CREATURES,
+    UTILITY_ABILITY_CREATURES,
+    REGENERATION_CREATURES,
     VANILLA_CREATURES,
     VANILLA_WALLS,
     GameStatus,
@@ -62,6 +65,17 @@ from beta_magic import (
     COPPER_TABLET,
     PHANTASMAL_FORCES,
     FORCE_OF_NATURE,
+    PRODIGAL_SORCERER,
+    ORCISH_ARTILLERY,
+    DWARVEN_DEMOLITION_TEAM,
+    GOBLIN_BALLOON_BRIGADE,
+    NORTHERN_PALADIN,
+    ROYAL_ASSASSIN,
+    DRUDGE_SKELETONS,
+    UTHDEN_TROLL,
+    WILL_O_THE_WISP,
+    WALL_OF_BONE,
+    WALL_OF_BRAMBLES,
     KELDON_WARLORD,
     NIGHTMARE,
     PLAGUE_RATS,
@@ -93,6 +107,14 @@ from beta_magic.vanilla_creatures import HILL_GIANT
 
 
 class DemoGameTests(unittest.TestCase):
+    @staticmethod
+    def resolve_damage_windows(view_model: GameViewModel) -> None:
+        while view_model.game.pending_damage is not None:
+            view_model.perspective_index = (
+                view_model.game.priority_player_index
+            )
+            view_model.passPriority()
+
     def test_demo_game_has_two_started_supported_card_decks(self) -> None:
         game = make_demo_game()
         self.assertEqual(len(game.players), 2)
@@ -123,7 +145,10 @@ class DemoGameTests(unittest.TestCase):
             + len(TIMED_ARTIFACTS)
             + len(TIMED_ENCHANTMENTS)
             + len(UPKEEP_CREATURES)
-            + len(VARIABLE_CREATURES),
+            + len(VARIABLE_CREATURES)
+            + len(DAMAGE_ABILITY_CREATURES)
+            + len(UTILITY_ABILITY_CREATURES)
+            + len(REGENERATION_CREATURES),
         )
 
     def test_mana_display_only_lists_nonzero_colors(self) -> None:
@@ -206,6 +231,9 @@ class DemoGameTests(unittest.TestCase):
         self.assertIn(BURROWING, STONEFIRE_DECK)
         self.assertIn(KELDON_WARLORD, STONEFIRE_DECK)
         self.assertIn(BIRDS_OF_PARADISE, VERDANT_TIDES_DECK)
+        self.assertIn(PRODIGAL_SORCERER, VERDANT_TIDES_DECK)
+        self.assertIn(WALL_OF_BRAMBLES, VERDANT_TIDES_DECK)
+        self.assertIn(ORCISH_ARTILLERY, STONEFIRE_DECK)
         self.assertIn(
             LLANOWAR_ELVES,
             [card.definition for card in first.players[0].hand],
@@ -405,9 +433,10 @@ class DemoGameTests(unittest.TestCase):
         view_model.passPriority()
         view_model.switchPerspective()
         view_model.passPriority()
+        self.resolve_damage_windows(view_model)
         self.assertEqual(game.players[0].life, 19)
         self.assertEqual(view_model.state["timedEvent"], "")
-        self.assertIn("Resolved timed event", view_model.state["message"])
+        self.assertIn("damage from Copper Tablet", view_model.state["message"])
 
     def test_enchantment_test_decks_are_small_and_repeatable(self) -> None:
         first = make_enchantment_test_game()
@@ -442,6 +471,14 @@ class DemoGameTests(unittest.TestCase):
             [card.definition for card in first.players[0].hand],
         )
         self.assertIn(ORCISH_ORIFLAMME, MOONLIT_HORDE_DECK)
+        self.assertIn(NORTHERN_PALADIN, RADIANT_CHARGE_DECK)
+        self.assertIn(DWARVEN_DEMOLITION_TEAM, RADIANT_CHARGE_DECK)
+        self.assertIn(GOBLIN_BALLOON_BRIGADE, RADIANT_CHARGE_DECK)
+        self.assertIn(ROYAL_ASSASSIN, MOONLIT_HORDE_DECK)
+        self.assertIn(DRUDGE_SKELETONS, MOONLIT_HORDE_DECK)
+        self.assertIn(UTHDEN_TROLL, MOONLIT_HORDE_DECK)
+        self.assertIn(WILL_O_THE_WISP, MOONLIT_HORDE_DECK)
+        self.assertIn(WALL_OF_BONE, MOONLIT_HORDE_DECK)
         self.assertIn(
             HOLY_STRENGTH, [card.definition for card in first.players[0].hand]
         )
@@ -545,6 +582,7 @@ class DemoGameTests(unittest.TestCase):
         view_model.passPriority()
         view_model.switchPerspective()
         view_model.passPriority()
+        self.resolve_damage_windows(view_model)
         self.assertEqual(game.players[1].life, 16)
         self.assertEqual(caster.life, 18)
         self.assertIn(blast, caster.graveyard)
@@ -587,6 +625,7 @@ class DemoGameTests(unittest.TestCase):
         view_model = GameViewModel(game)
 
         view_model.advance()
+        self.resolve_damage_windows(view_model)
 
         self.assertIn("took 3 combat damage", view_model.state["message"])
         self.assertNotIn("mana burn", view_model.state["message"])
@@ -607,6 +646,7 @@ class DemoGameTests(unittest.TestCase):
         view_model = GameViewModel(game)
 
         view_model.advance()
+        self.resolve_damage_windows(view_model)
 
         message = view_model.state["message"]
         self.assertIn("took 3 combat damage", message)

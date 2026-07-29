@@ -1,6 +1,9 @@
 """Core data model for the Beta Magic rules engine."""
 
 from .cards import (
+    ActivatedDamageAbility,
+    ActivatedDestroyAbility,
+    ActivatedRegenerationAbility,
     ActivatedManaAbility,
     ActivatedPumpAbility,
     Card,
@@ -50,6 +53,18 @@ from .destruction_spells import (
     TSUNAMI,
 )
 from .damage_spells import LIGHTNING_BOLT, PSIONIC_BLAST, TARGETED_DAMAGE_SPELLS
+from .damage import (
+    DamageIncident,
+    DamageIncidentKind,
+    DamagePacket,
+    DamageRecipientKind,
+    DamageResolutionStep,
+)
+from .damage_ability_creatures import (
+    DAMAGE_ABILITY_CREATURES,
+    ORCISH_ARTILLERY,
+    PRODIGAL_SORCERER,
+)
 from .basic_lands import BASIC_LANDS, FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
 from .enchant_creatures import (
     ABILITY_ENCHANT_CREATURES,
@@ -116,6 +131,14 @@ from .pump_creatures import (
     PUMP_CREATURES,
     SHIVAN_DRAGON,
 )
+from .regeneration_creatures import (
+    DRUDGE_SKELETONS,
+    REGENERATION_CREATURES,
+    UTHDEN_TROLL,
+    WALL_OF_BONE,
+    WALL_OF_BRAMBLES,
+    WILL_O_THE_WISP,
+)
 from .types import (
     CardType,
     Color,
@@ -143,10 +166,20 @@ from .variable_creatures import (
     PLAGUE_RATS,
     VARIABLE_CREATURES,
 )
+from .utility_ability_creatures import (
+    DWARVEN_DEMOLITION_TEAM,
+    GOBLIN_BALLOON_BRIGADE,
+    NORTHERN_PALADIN,
+    ROYAL_ASSASSIN,
+    UTILITY_ABILITY_CREATURES,
+)
 
 __all__ = [
     "Card",
     "ActivatedManaAbility",
+    "ActivatedDamageAbility",
+    "ActivatedDestroyAbility",
+    "ActivatedRegenerationAbility",
     "ActivatedPumpAbility",
     "CardDefinition",
     "CreatureBuff",
@@ -154,6 +187,11 @@ __all__ = [
     "EffectScope",
     "EffectRecipient",
     "DamageEffect",
+    "DamageIncident",
+    "DamageIncidentKind",
+    "DamagePacket",
+    "DamageRecipientKind",
+    "DamageResolutionStep",
     "DestroyTargetsEffect",
     "DestroyAllEffect",
     "TargetRequirement",
@@ -194,6 +232,12 @@ __all__ = [
     "FROZEN_SHADE",
     "GRANITE_GARGOYLE",
     "DRAGON_WHELP",
+    "REGENERATION_CREATURES",
+    "DRUDGE_SKELETONS",
+    "UTHDEN_TROLL",
+    "WILL_O_THE_WISP",
+    "WALL_OF_BONE",
+    "WALL_OF_BRAMBLES",
     "PlayerState",
     "PendingCast",
     "PendingTimedEvent",
@@ -254,6 +298,9 @@ __all__ = [
     "TARGETED_DAMAGE_SPELLS",
     "LIGHTNING_BOLT",
     "PSIONIC_BLAST",
+    "DAMAGE_ABILITY_CREATURES",
+    "PRODIGAL_SORCERER",
+    "ORCISH_ARTILLERY",
     "PERMANENT_DESTRUCTION_SPELLS",
     "LAND_DESTRUCTION_SPELLS",
     "DISENCHANT",
@@ -279,6 +326,11 @@ __all__ = [
     "PHANTASMAL_FORCES",
     "FORCE_OF_NATURE",
     "VARIABLE_CREATURES",
+    "UTILITY_ABILITY_CREATURES",
+    "DWARVEN_DEMOLITION_TEAM",
+    "GOBLIN_BALLOON_BRIGADE",
+    "ROYAL_ASSASSIN",
+    "NORTHERN_PALADIN",
     "KELDON_WARLORD",
     "NIGHTMARE",
     "PLAGUE_RATS",

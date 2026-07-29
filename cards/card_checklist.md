@@ -27,7 +27,7 @@
  - [ ] Karma
  - [x] Lance
  - [ ] Mesa Pegasus
- - [ ] Northern Paladin
+ - [x] Northern Paladin
  - [x] Pearled Unicorn
  - [ ] Personal Incarnation
  - [ ] Purelace
@@ -71,7 +71,7 @@
  - [ ] Pirate Ship
  - [ ] Power Leak
  - [ ] Power Sink
- - [ ] Prodigal Sorcerer
+ - [x] Prodigal Sorcerer
  - [x] Psionic Blast
  - [ ] Psychic Venom
  - [ ] Sea Serpent
@@ -104,7 +104,7 @@
  - [ ] Demonic Hordes
  - [ ] Demonic Tutor
  - [ ] Drain Life
- - [ ] Drudge Skeletons
+ - [x] Drudge Skeletons
  - [ ] Evil Presence
  - [ ] Fear
  - [x] Frozen Shade
@@ -121,7 +121,7 @@
  - [ ] Pestilence
  - [x] Plague Rats
  - [x] Raise Dead
- - [ ] Royal Assassin
+ - [x] Royal Assassin
  - [ ] Sacrifice
  - [x] Scathe Zombies
  - [ ] Scavenging Ghoul
@@ -130,17 +130,17 @@
  - [x] Sinkhole
  - [ ] Terror
  - [x] Unholy Strength
- - [ ] Wall of Bone
+ - [x] Wall of Bone
  - [x] Warp Artifact
  - [x] Weakness
- - [ ] Will-o'-the-Wisp
+ - [x] Will-o'-the-Wisp
  - [ ] Word of Command
  - [ ] Zombie Master
  - [x] Burrowing
  - [ ] Chaoslace
  - [ ] Disintegrate
  - [x] Dragon Whelp
- - [ ] Dwarven Demolition Team
+ - [x] Dwarven Demolition Team
  - [ ] Dwarven Warriors
  - [x] Earth Elemental
  - [ ] Earthbind
@@ -151,7 +151,7 @@
  - [x] Firebreathing
  - [x] Flashfires
  - [ ] Fork
- - [ ] Goblin Balloon Brigade
+ - [x] Goblin Balloon Brigade
  - [x] Goblin King
  - [x] Granite Gargoyle
  - [x] Gray Ogre
@@ -163,7 +163,7 @@
  - [ ] Mana Flare
  - [ ] Manabarbs
  - [x] Mons's Goblin Raiders
- - [ ] Orcish Artillery
+ - [x] Orcish Artillery
  - [x] Orcish Oriflamme
  - [ ] Power Surge
  - [ ] Raging River
@@ -178,7 +178,7 @@
  - [x] Stone Rain
  - [ ] Tunnel
  - [ ] Two-Headed Giant of Foriys
- - [ ] Uthden Troll
+ - [x] Uthden Troll
  - [ ] Wall of Fire
  - [x] Wall of Stone
  - [ ] Wheel of Fortune
@@ -221,7 +221,7 @@
  - [x] Tranquility
  - [x] Tsunami
  - [ ] Verduran Enchantress
- - [ ] Wall of Brambles
+ - [x] Wall of Brambles
  - [x] Wall of Ice
  - [x] Wall of Wood
  - [x] Wanderlust

@@ -20,6 +20,11 @@ from .basic_lands import BASIC_LANDS, FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
 from .cards import Card, UpkeepCostEffect
 from .combat_tricks import GIANT_GROWTH, RIGHTEOUSNESS, TARGETED_PUMP_SPELLS
 from .damage_spells import LIGHTNING_BOLT, PSIONIC_BLAST, TARGETED_DAMAGE_SPELLS
+from .damage_ability_creatures import (
+    DAMAGE_ABILITY_CREATURES,
+    ORCISH_ARTILLERY,
+    PRODIGAL_SORCERER,
+)
 from .destruction_spells import (
     DISENCHANT,
     PERMANENT_DESTRUCTION_SPELLS,
@@ -75,6 +80,14 @@ from .pump_creatures import (
     PUMP_CREATURES,
     SHIVAN_DRAGON,
 )
+from .regeneration_creatures import (
+    DRUDGE_SKELETONS,
+    REGENERATION_CREATURES,
+    UTHDEN_TROLL,
+    WALL_OF_BONE,
+    WALL_OF_BRAMBLES,
+    WILL_O_THE_WISP,
+)
 from .flying_creatures import (
     FLYING_CREATURES,
     PHANTOM_MONSTER,
@@ -95,6 +108,13 @@ from .timed_enchantments import (
     WARP_ARTIFACT,
 )
 from .upkeep_creatures import FORCE_OF_NATURE, PHANTASMAL_FORCES, UPKEEP_CREATURES
+from .utility_ability_creatures import (
+    DWARVEN_DEMOLITION_TEAM,
+    GOBLIN_BALLOON_BRIGADE,
+    NORTHERN_PALADIN,
+    ROYAL_ASSASSIN,
+    UTILITY_ABILITY_CREATURES,
+)
 from .variable_creatures import (
     KELDON_WARLORD,
     NIGHTMARE,
@@ -145,6 +165,9 @@ def make_demo_game() -> GameState:
         + TIMED_ENCHANTMENTS
         + UPKEEP_CREATURES
         + VARIABLE_CREATURES
+        + DAMAGE_ABILITY_CREATURES
+        + UTILITY_ABILITY_CREATURES
+        + REGENERATION_CREATURES
     )
     game = GameState(
         [
@@ -161,14 +184,14 @@ def make_demo_game() -> GameState:
 VERDANT_TIDES_DECK = (
     WAR_MAMMOTH,
     MOX_SAPPHIRE,
-    MOX_EMERALD,
+    WALL_OF_BRAMBLES,
     SHANODIN_DRYADS,
     SOL_RING,
     FOREST,
     BIRDS_OF_PARADISE,
     ISLAND,
     LORD_OF_ATLANTIS,
-    WALL_OF_AIR,
+    PRODIGAL_SORCERER,
     ISLAND,
     FOREST,
     ISLAND,
@@ -191,7 +214,7 @@ STONEFIRE_DECK = (
     SHIVAN_DRAGON,
     MOUNTAIN,
     GOBLIN_KING,
-    WALL_OF_STONE,
+    ORCISH_ARTILLERY,
     MOUNTAIN,
     BURROWING,
     MOUNTAIN,
@@ -208,7 +231,7 @@ STONEFIRE_DECK = (
 # the final seven cards form each player's opening hand.
 RADIANT_CHARGE_DECK = (
     PLAINS,
-    MOX_PEARL,
+    NORTHERN_PALADIN,
     BLESSING,
     PLAINS,
     MOUNTAIN,
@@ -219,24 +242,24 @@ RADIANT_CHARGE_DECK = (
     MOUNTAIN,
     SAVANNAH_LIONS,
     PLAINS,
-    MONSS_GOBLIN_RAIDERS,
+    DWARVEN_DEMOLITION_TEAM,
     ORCISH_ORIFLAMME,
     DISENCHANT,
     HOLY_STRENGTH,
     PLATEAU,
     CRUSADE,
-    SAVANNAH_LIONS,
+    GOBLIN_BALLOON_BRIGADE,
     LANCE,
 )
 
 MOONLIT_HORDE_DECK = (
-    MOX_JET,
-    MOUNTAIN,
+    DRUDGE_SKELETONS,
+    UTHDEN_TROLL,
     BOG_WRAITH,
-    SWAMP,
+    WILL_O_THE_WISP,
     FIREBREATHING,
-    ROC_OF_KHER_RIDGES,
-    SWAMP,
+    ROYAL_ASSASSIN,
+    WALL_OF_BONE,
     PLAGUE_RATS,
     SWAMP,
     MOUNTAIN,
@@ -370,6 +393,7 @@ class GameViewModel(QObject):
         super().__init__()
         self._game_factory = game_factory or make_demo_game
         self.game = game or self._game_factory()
+        self.game.pause_for_damage_windows = True
         self.perspective_index = 0
         self.selected_card_ids: set[UUID] = set()
         self._message = "Double-click a card to play, cast, or tap it."
@@ -388,6 +412,7 @@ class GameViewModel(QObject):
             and upkeep_event.payment_decision is None
             and self.game.upkeep_payment_required
         )
+        damage_incident = self.game.pending_damage
         return {
             "turn": self.game.turn_number,
             "phase": (
@@ -400,12 +425,43 @@ class GameViewModel(QObject):
             ),
             "activePlayer": self.game.active_player.name,
             "message": self._message,
-            "targeting": self.game.pending_cast is not None,
-            "stack": [card.name for card in self.game.stack],
+            "targeting": (
+                self.game.pending_cast is not None
+                or self.game.pending_activation is not None
+            ),
+            "stack": [
+                *[card.name for card in self.game.stack],
+                *[
+                    f"{ability.source_name} ability"
+                    for ability in self.game.batch_abilities
+                ],
+            ],
             "timedEvent": (
                 self.game.timed_events[0].label
                 if self.game.timed_events
                 else ""
+            ),
+            "damageWindow": (
+                damage_incident.step.value.replace("_", " ").title()
+                if damage_incident is not None
+                else ""
+            ),
+            "damageTotal": (
+                damage_incident.total_remaining
+                if damage_incident is not None
+                else 0
+            ),
+            "damagePackets": (
+                [
+                    (
+                        f"{packet.source_name}: {packet.remaining} to "
+                        f"{packet.recipient_name}"
+                    )
+                    for packet in damage_incident.packets
+                    if packet.remaining
+                ]
+                if damage_incident is not None
+                else []
             ),
             "upkeepPaymentRequired": upkeep_payment_required,
             "upkeepPaymentPlayer": (
@@ -711,11 +767,22 @@ class GameViewModel(QObject):
 
     @Slot(str)
     def toggleCard(self, card_id: str) -> None:
-        if self.game.pending_cast is not None:
+        if (
+            self.game.pending_cast is not None
+            or self.game.pending_activation is not None
+        ):
             target = self._card_by_id(UUID(card_id))
             if target is None:
                 self._message = "Choose a legal card as the target."
                 self.stateChanged.emit()
+                return
+            if self.game.pending_activation is not None:
+                source = self.game.pending_activation.source
+                if self._run(
+                    lambda: self.game.complete_pending_activation((target,)),
+                    f"Activated {source.name} targeting {target.name}.",
+                ):
+                    self.stateChanged.emit()
                 return
             spell = self.game.pending_cast.spell
             verb = (
@@ -743,10 +810,11 @@ class GameViewModel(QObject):
 
     @Slot(str)
     def activateCard(self, card_id: str) -> None:
-        if self.game.pending_cast is not None:
-            self._message = (
-                f"Choose a target for {self.game.pending_cast.spell.name} first."
-            )
+        if (
+            self.game.pending_cast is not None
+            or self.game.pending_activation is not None
+        ):
+            self._message = "Choose the pending target first."
             self.stateChanged.emit()
             return
         player = self.game.players[self.perspective_index]
@@ -790,10 +858,11 @@ class GameViewModel(QObject):
 
     @Slot(str, int)
     def activateAbility(self, card_id: str, ability_index: int) -> None:
-        if self.game.pending_cast is not None:
-            self._message = (
-                f"Choose a target for {self.game.pending_cast.spell.name} first."
-            )
+        if (
+            self.game.pending_cast is not None
+            or self.game.pending_activation is not None
+        ):
+            self._message = "Choose the pending target first."
             self.stateChanged.emit()
             return
         player = self.game.players[self.perspective_index]
@@ -806,10 +875,15 @@ class GameViewModel(QObject):
             self._message = f"{card.name} has no such activated ability."
             self.stateChanged.emit()
             return
-        self._run(
-            lambda: self.game.activate_ability(player.id, card, ability_index),
+        pending: list[object] = []
+        if self._run(
+            lambda: pending.append(
+                self.game.activate_ability(player.id, card, ability_index)
+            ),
             f"{card.name}: {ability.label}.",
-        )
+        ) and pending[0] is not None:
+            self._message = f"Choose a target for {card.name}'s ability."
+            self.stateChanged.emit()
 
     @Slot()
     def advance(self) -> None:
@@ -827,19 +901,35 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelTarget(self) -> None:
-        if self.game.pending_cast is None:
+        if (
+            self.game.pending_cast is None
+            and self.game.pending_activation is None
+        ):
             self._message = "There is no pending target selection."
             self.stateChanged.emit()
             return
-        spell_name = self.game.pending_cast.spell.name
-        self.game.cancel_pending_cast()
-        self._message = f"Cancelled casting {spell_name}."
+        if self.game.pending_activation is not None:
+            source_name = self.game.pending_activation.source.name
+            self.game.cancel_pending_activation()
+            self._message = f"Cancelled {source_name}'s ability."
+        else:
+            spell_name = self.game.pending_cast.spell.name
+            self.game.cancel_pending_cast()
+            self._message = f"Cancelled casting {spell_name}."
         self.stateChanged.emit()
 
     @Slot()
     def passPriority(self) -> None:
         player = self.game.players[self.perspective_index]
         resolved: list[tuple[Card, ...] | None] = []
+        damage_incident = self.game.pending_damage
+        batch_names = [
+            *[card.name for card in self.game.stack],
+            *[
+                f"{ability.source_name} ability"
+                for ability in self.game.batch_abilities
+            ],
+        ]
         timed_event = (
             self.game.timed_events[0].label
             if self.game.timed_events and not self.game.stack
@@ -852,7 +942,27 @@ class GameViewModel(QObject):
             success,
         ):
             return
-        if resolved and resolved[0] == () and timed_event:
+        if damage_incident is not None and self.game.pending_damage is None:
+            summaries = []
+            for packet in damage_incident.packets:
+                if packet.remaining <= 0:
+                    continue
+                if packet.recipient_kind.value == "player":
+                    suffix = (
+                        "combat damage"
+                        if packet.combat
+                        else f"damage from {packet.source_name}"
+                    )
+                    summaries.append(
+                        f"{packet.recipient_name} took "
+                        f"{packet.remaining} {suffix}"
+                    )
+            existing = self._message if "mana burn" in self._message else ""
+            self._message = "; ".join((*summaries, existing) if existing else summaries)
+            if not self._message:
+                self._message = "Completed damage resolution."
+            self.stateChanged.emit()
+        elif resolved and resolved[0] == () and timed_event:
             self._message = f"Resolved timed event: {timed_event}."
             self.stateChanged.emit()
         elif (
@@ -860,7 +970,7 @@ class GameViewModel(QObject):
             and resolved[0] is not None
             and self._message == success
         ):
-            names = ", ".join(card.name for card in resolved[0])
+            names = ", ".join(batch_names)
             self._message = f"Resolved batch: {names}."
             self.stateChanged.emit()
 
@@ -875,8 +985,11 @@ class GameViewModel(QObject):
 
     @Slot(str)
     def targetPlayer(self, player_id: str) -> None:
-        if self.game.pending_cast is None:
-            self._message = "There is no spell waiting for a target."
+        if (
+            self.game.pending_cast is None
+            and self.game.pending_activation is None
+        ):
+            self._message = "There is no spell or ability waiting for a target."
             self.stateChanged.emit()
             return
         try:
@@ -884,6 +997,13 @@ class GameViewModel(QObject):
         except KeyError:
             self._message = "That player is not in this game."
             self.stateChanged.emit()
+            return
+        if self.game.pending_activation is not None:
+            source = self.game.pending_activation.source
+            self._run(
+                lambda: self.game.complete_pending_activation((target,)),
+                f"Activated {source.name} targeting {target.name}.",
+            )
             return
         spell = self.game.pending_cast.spell
         self._run(
@@ -972,6 +1092,7 @@ class GameViewModel(QObject):
     @Slot()
     def newGame(self) -> None:
         self.game = self._game_factory()
+        self.game.pause_for_damage_windows = True
         self.perspective_index = 0
         self.selected_card_ids.clear()
         self._message = "Started a new game."

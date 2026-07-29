@@ -6,6 +6,9 @@
 - [x] Mana creatures and summoning sickness for tap abilities
 - [x] Vanilla Creatures, casting
 - [x] Attacking, blocking, damage, lethal damage
+- [x] Structured damage packets and simultaneous damage incidents
+- [x] Pass-driven prevention, redirection, and regeneration windows
+- [ ] Interactive damage prevention, redirection, and regeneration sequence
 
 # Creature Mechanics
 - [x] Walls (vanilla)
@@ -13,7 +16,7 @@
 - [x] First Strike
 - [x] Trample
 - [ ] Landwalk
-- [ ] Regeneration
+- [x] Basic paid regeneration during damage and ordinary destruction
 - [ ] Protection
 - [ ] Banding (!!)
 
@@ -23,7 +26,9 @@
 - [x] Birds of Paradise and Llanowar Elves
 - [x] Pump abilities (Shivan Dragon, Frozen Shade, Granite Gargyole, Dragon Whelp)
 - [x] Variable power/toughness (Keldon Warlord, Nightmare, Plague Rats)
-- [ ] Prodigal Sorcerer, Orcish Artillery
+- [x] Prodigal Sorcerer, Orcish Artillery
+- [x] Utility abilities (Dwarven Demolition Team, Goblin Balloon Brigade,
+  Royal Assassin, Northern Paladin)
 - [ ] Remaining lord: Zombie Master (Lord of Atlantis and Goblin King implemented)
 - [ ] Upkeep costs
 
