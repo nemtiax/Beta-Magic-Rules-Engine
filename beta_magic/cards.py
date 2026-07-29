@@ -71,6 +71,11 @@ class TemporaryPumpEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class RegenerateTargetsEffect:
+    """Regenerate the spell's creature targets in the current incident."""
+
+
+@dataclass(frozen=True, slots=True)
 class UpkeepDamageEffect:
     """Deal damage to the active player during each player's upkeep."""
 
@@ -104,6 +109,8 @@ UpkeepEffect = UpkeepDamageEffect | UpkeepCostEffect
 class DestroyTargetsEffect:
     """Move the spell's permanent targets to their owners' graveyards."""
 
+    regeneration_allowed: bool = True
+
 
 @dataclass(frozen=True, slots=True)
 class MoveTargetsEffect:
@@ -125,6 +132,7 @@ class DestroyAllEffect:
 
     card_types: frozenset[CardType]
     subtypes: frozenset[str] = field(default_factory=frozenset)
+    regeneration_allowed: bool = True
 
     def __post_init__(self) -> None:
         if not self.card_types:
@@ -143,6 +151,7 @@ class DestroyAllEffect:
 SpellEffect = (
     DamageEffect
     | TemporaryPumpEffect
+    | RegenerateTargetsEffect
     | DestroyTargetsEffect
     | DestroyAllEffect
     | MoveTargetsEffect
@@ -223,6 +232,7 @@ class ActivatedDestroyAbility:
     target_requirement: TargetRequirement
     mana_cost: ManaCost = field(default_factory=ManaCost)
     tap_cost: bool = True
+    regeneration_allowed: bool = True
 
     @property
     def label(self) -> str:
@@ -239,6 +249,7 @@ class ActivatedRegenerationAbility:
     """A paid regeneration used when the source would be destroyed."""
 
     mana_cost: ManaCost
+    affects_attached_creature: bool = False
 
     @property
     def label(self) -> str:
@@ -246,6 +257,7 @@ class ActivatedRegenerationAbility:
 
 
 TargetedActivatedAbility = ActivatedDamageAbility | ActivatedDestroyAbility
+BatchActivatedAbility = TargetedActivatedAbility | ActivatedPumpAbility
 ActivatedAbility = (
     ActivatedManaAbility
     | ActivatedPumpAbility
@@ -263,11 +275,14 @@ class ContinuousEffect:
     power: int = 0
     toughness: int = 0
     granted_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
+    granted_regeneration_cost: ManaCost | None = None
     color: Color | None = None
     subtype: str | None = None
     exclude_source: bool = False
+    source_only: bool = False
     controller_only: bool = False
     attacking_only: bool = False
+    controller_has_land_subtype: str | None = None
 
 
 # Compatibility name for extensions built against the earlier stat-only model.

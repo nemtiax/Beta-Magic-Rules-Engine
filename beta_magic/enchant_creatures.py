@@ -2,6 +2,7 @@
 
 from .cards import (
     ActivatedPumpAbility,
+    ActivatedRegenerationAbility,
     CardDefinition,
     ContinuousEffect,
     EffectScope,
@@ -180,9 +181,26 @@ FIREBREATHING = CardDefinition(
     ),
 )
 
+REGENERATION = CardDefinition(
+    name="Regeneration",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{G}"),
+    rules_text="{G}: Enchanted creature regenerates.",
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Creature",),
+    activated_abilities=(
+        ActivatedRegenerationAbility(
+            ManaCost.parse("{G}"), affects_attached_creature=True
+        ),
+    ),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD, card_types=frozenset({CardType.CREATURE})
+    ),
+)
+
 
 SIMPLE_ENCHANT_CREATURES = (HOLY_STRENGTH, UNHOLY_STRENGTH, WEAKNESS)
-ABILITY_ENCHANT_CREATURES = (LANCE, FLIGHT, BURROWING)
+ABILITY_ENCHANT_CREATURES = (LANCE, FLIGHT, BURROWING, REGENERATION)
 PUMP_ENCHANT_CREATURES = (BLESSING, HOLY_ARMOR, FIREBREATHING)
 ENCHANT_CREATURES = (
     SIMPLE_ENCHANT_CREATURES

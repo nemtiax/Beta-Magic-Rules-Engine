@@ -68,7 +68,6 @@ class DamageIncident:
     packets: list[DamagePacket] = field(default_factory=list)
     step: DamageResolutionStep = DamageResolutionStep.ACCUMULATION
     regenerated_card_ids: set[UUID] = field(default_factory=set)
-    destroyed_card_ids: set[UUID] = field(default_factory=set)
     id: UUID = field(default_factory=uuid4)
 
     @property

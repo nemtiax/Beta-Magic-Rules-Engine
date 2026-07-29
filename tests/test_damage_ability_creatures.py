@@ -48,6 +48,8 @@ class DamageAbilityCreatureTests(unittest.TestCase):
         self.assertEqual(self.game.legal_player_targets_for(), self.game.players)
         self.game.complete_pending_activation((target,))
         self.assertTrue(sorcerer.tapped)
+        self.assertEqual(self.game.priority_player_index, 1)
+        self.assertEqual(target.damage, 0)
 
         self.resolve_batch()
         self.assertEqual(target.damage, 1)

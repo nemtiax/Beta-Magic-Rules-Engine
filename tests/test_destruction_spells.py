@@ -8,8 +8,12 @@ from beta_magic import (
     PERMANENT_DESTRUCTION_SPELLS,
     SHATTER,
     TRANQUILITY,
+    TUNNEL,
     WEAKNESS,
     CardType,
+    DestructionIncident,
+    DestructionResolutionStep,
+    DestructionTarget,
     GameState,
     PlayerState,
     TurnPhase,
@@ -20,6 +24,7 @@ from beta_magic.vanilla_creatures import (
     OBSIANUS_GOLEM,
     SAVANNAH_LIONS,
 )
+from beta_magic.regeneration_creatures import WALL_OF_BONE, WALL_OF_BRAMBLES
 
 
 class PermanentDestructionSpellTests(unittest.TestCase):
@@ -69,12 +74,72 @@ class PermanentDestructionSpellTests(unittest.TestCase):
     def test_card_definitions(self) -> None:
         self.assertEqual(
             PERMANENT_DESTRUCTION_SPELLS,
-            (DISENCHANT, SHATTER, TRANQUILITY) + LAND_DESTRUCTION_SPELLS,
+            (DISENCHANT, SHATTER, TUNNEL, TRANQUILITY)
+            + LAND_DESTRUCTION_SPELLS,
         )
         self.assertEqual(DISENCHANT.mana_cost.compact, "1W")
         self.assertEqual(SHATTER.mana_cost.compact, "1R")
         self.assertEqual(TRANQUILITY.mana_cost.compact, "2G")
         self.assertIn(CardType.SORCERY, TRANQUILITY.card_types)
+        self.assertEqual(TUNNEL.mana_cost.compact, "R")
+
+    def test_tunnel_targets_only_walls(self) -> None:
+        wall = self.put_in_play(self.bob, WALL_OF_BONE)
+        creature = self.put_in_play(self.bob)
+        spell = self.put_in_hand(self.alice, TUNNEL)
+
+        self.assertEqual(self.game.legal_targets_for(spell), [wall])
+        self.assertNotIn(creature, self.game.legal_targets_for(spell))
+
+    def test_tunnel_destroys_a_wall_without_a_regeneration_window(self) -> None:
+        self.game.pause_for_damage_windows = True
+        wall = self.put_in_play(self.bob, WALL_OF_BRAMBLES)
+        spell = self.put_in_hand(self.alice, TUNNEL)
+        self.alice.mana_pool.red = 1
+        self.bob.mana_pool.green = 1
+
+        self.game.begin_cast(spell)
+        self.game.complete_pending_cast((wall,))
+        self.resolve_stack()
+
+        self.assertIsNone(self.game.pending_damage)
+        self.assertIsNone(self.game.pending_destruction)
+        self.assertIn(wall, self.bob.graveyard)
+        self.assertIn(spell, self.alice.graveyard)
+        self.assertFalse(
+            self.game.resolved_destruction_incidents[-1]
+            .targets[0]
+            .regeneration_allowed
+        )
+
+    def test_mixed_destruction_incident_only_allows_eligible_target_to_regenerate(
+        self,
+    ) -> None:
+        eligible_wall = self.put_in_play(self.bob, WALL_OF_BONE)
+        forbidden_wall = self.put_in_play(self.bob, WALL_OF_BRAMBLES)
+        self.game.pending_destruction = DestructionIncident(
+            [
+                DestructionTarget(
+                    eligible_wall.id, eligible_wall.name, True
+                ),
+                DestructionTarget(
+                    forbidden_wall.id, forbidden_wall.name, False
+                ),
+            ],
+            step=DestructionResolutionStep.REGENERATION,
+        )
+        self.game.priority_player_index = 1
+        self.bob.mana_pool.black = 1
+        self.bob.mana_pool.green = 1
+
+        self.assertTrue(
+            self.game.can_activate_ability(self.bob.id, eligible_wall, 0)
+        )
+        self.assertFalse(
+            self.game.can_activate_ability(self.bob.id, forbidden_wall, 0)
+        )
+        with self.assertRaisesRegex(RuntimeError, "cannot regenerate"):
+            self.game.activate_ability(self.bob.id, forbidden_wall, 0)
 
     def test_disenchant_accepts_artifacts_and_enchantments_only(self) -> None:
         enchantment = self.put_in_play(self.bob, CRUSADE)
@@ -112,6 +177,28 @@ class PermanentDestructionSpellTests(unittest.TestCase):
             (2, 2),
         )
         self.assertIn(spell, self.alice.graveyard)
+
+    def test_destroy_effect_opens_only_a_regeneration_window(self) -> None:
+        self.game.pause_for_damage_windows = True
+        enchantment = self.put_in_play(self.bob, CRUSADE)
+        spell = self.put_in_hand(self.alice, DISENCHANT)
+        self.alice.mana_pool.white = 1
+        self.alice.mana_pool.colorless = 1
+        self.game.begin_cast(spell)
+        self.game.complete_pending_cast((enchantment,))
+        self.resolve_stack()
+
+        self.assertIsNone(self.game.pending_damage)
+        self.assertEqual(
+            self.game.pending_destruction.step,
+            DestructionResolutionStep.REGENERATION,
+        )
+        self.assertIn(enchantment, self.bob.battlefield)
+
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+        self.assertIsNone(self.game.pending_destruction)
+        self.assertIn(enchantment, self.bob.graveyard)
 
     def test_shatter_destroys_an_artifact_creature(self) -> None:
         golem = self.put_in_play(self.bob, OBSIANUS_GOLEM)

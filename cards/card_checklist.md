@@ -15,7 +15,7 @@
  - [ ] Consecrate Land
  - [ ] Conversion
  - [x] Crusade
- - [ ] Death Ward
+ - [x] Death Ward
  - [x] Disenchant
  - [ ] Farmstead
  - [ ] Green Ward
@@ -135,7 +135,7 @@
  - [x] Weakness
  - [x] Will-o'-the-Wisp
  - [ ] Word of Command
- - [ ] Zombie Master
+ - [x] Zombie Master
  - [x] Burrowing
  - [ ] Chaoslace
  - [ ] Disintegrate
@@ -170,13 +170,13 @@
  - [ ] Red Elemental Blast
  - [x] Roc of Kher Ridges
  - [ ] Rock Hydra
- - [ ] Sedge Troll
+ - [x] Sedge Troll
  - [x] Shatter
  - [x] Shivan Dragon
  - [ ] Smoke
  - [ ] Stone Giant
  - [x] Stone Rain
- - [ ] Tunnel
+ - [x] Tunnel
  - [ ] Two-Headed Giant of Foriys
  - [x] Uthden Troll
  - [ ] Wall of Fire
@@ -211,7 +211,7 @@
  - [x] Llanowar Elves
  - [ ] Lure
  - [ ] Natural Selection
- - [ ] Regeneration
+ - [x] Regeneration
  - [x] Regrowth
  - [x] Scryb Sprites
  - [x] Shanodin Dryads
@@ -256,7 +256,7 @@
  - [ ] Juggernaut
  - [ ] Kormus Bell
  - [ ] Library of Leng
- - [ ] Living Wall
+ - [x] Living Wall
  - [ ] Mana Vault
  - [ ] Meekstone
  - [x] Mox Emerald

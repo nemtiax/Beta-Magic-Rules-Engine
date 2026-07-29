@@ -1,6 +1,10 @@
 """Straightforward Beta creatures with paid regeneration abilities."""
 
-from .cards import ActivatedRegenerationAbility, CardDefinition
+from .cards import (
+    ActivatedRegenerationAbility,
+    CardDefinition,
+    ContinuousEffect,
+)
 from .mana import ManaCost
 from .types import CardType, Color, KeywordAbility
 
@@ -70,10 +74,70 @@ WALL_OF_BRAMBLES = CardDefinition(
     activated_abilities=_regeneration("{G}"),
 )
 
+LIVING_WALL = CardDefinition(
+    name="Living Wall",
+    card_types=frozenset({CardType.ARTIFACT, CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text="Counts as a Wall. {1}: Regenerates.",
+    subtypes=("Wall",),
+    power=0,
+    toughness=6,
+    activated_abilities=_regeneration("{1}"),
+)
+
+SEDGE_TROLL = CardDefinition(
+    name="Sedge Troll",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{2}{R}"),
+    rules_text=(
+        "{B}: Regenerates. Sedge Troll gains +1/+1 if its controller "
+        "has any Swamps in play."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Troll",),
+    power=2,
+    toughness=2,
+    activated_abilities=_regeneration("{B}"),
+    continuous_effects=(
+        ContinuousEffect(
+            power=1,
+            toughness=1,
+            source_only=True,
+            controller_has_land_subtype="Swamp",
+        ),
+    ),
+)
+
+ZOMBIE_MASTER = CardDefinition(
+    name="Zombie Master",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{B}{B}"),
+    rules_text=(
+        "All Zombies in play gain swampwalk and "
+        '"{B}: Regenerates" while Zombie Master remains in play.'
+    ),
+    colors=frozenset({Color.BLACK}),
+    # The era ruling says Summon Lord is not itself a Zombie.
+    subtypes=("Lord",),
+    power=2,
+    toughness=3,
+    continuous_effects=(
+        ContinuousEffect(
+            subtype="Zombies",
+            exclude_source=True,
+            granted_abilities=frozenset({KeywordAbility.SWAMPWALK}),
+            granted_regeneration_cost=ManaCost.parse("{B}"),
+        ),
+    ),
+)
+
 REGENERATION_CREATURES = (
     DRUDGE_SKELETONS,
     UTHDEN_TROLL,
     WILL_O_THE_WISP,
     WALL_OF_BONE,
     WALL_OF_BRAMBLES,
+    LIVING_WALL,
+    SEDGE_TROLL,
+    ZOMBIE_MASTER,
 )

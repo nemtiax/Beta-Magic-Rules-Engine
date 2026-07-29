@@ -14,6 +14,7 @@ from .cards import (
     ActivatedManaAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
+    BatchActivatedAbility,
     TargetedActivatedAbility,
     Card,
     CardDefinition,
@@ -25,6 +26,7 @@ from .cards import (
     EffectScope,
     TargetRequirement,
     TemporaryPumpEffect,
+    RegenerateTargetsEffect,
     MoveTargetsEffect,
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
@@ -46,6 +48,11 @@ from .damage import (
     DamagePacket,
     DamageRecipientKind,
     DamageResolutionStep,
+)
+from .destruction import (
+    DestructionIncident,
+    DestructionResolutionStep,
+    DestructionTarget,
 )
 from .mana import ManaPool
 from .types import (
@@ -186,7 +193,7 @@ class AbilityOnStack:
     source: Card
     source_name: str
     controller_id: str
-    ability: TargetedActivatedAbility
+    ability: BatchActivatedAbility
     targets: tuple[Card | PlayerState, ...]
 
 
@@ -255,6 +262,10 @@ class GameState:
     timed_events: list[PendingTimedEvent] = field(default_factory=list)
     pending_damage: DamageIncident | None = None
     resolved_damage_incidents: list[DamageIncident] = field(default_factory=list)
+    pending_destruction: DestructionIncident | None = None
+    resolved_destruction_incidents: list[DestructionIncident] = field(
+        default_factory=list
+    )
     pause_for_damage_windows: bool = False
 
     def __post_init__(self) -> None:
@@ -294,6 +305,10 @@ class GameState:
             )
         if self.pending_damage is not None and not allow_damage:
             raise RuntimeError("finish resolving the pending damage incident first")
+        if self.pending_destruction is not None and not allow_damage:
+            raise RuntimeError(
+                "finish resolving the pending destruction incident first"
+            )
         if (self.stack or self.batch_abilities) and not allow_stack:
             raise RuntimeError("both players must pass priority to resolve the batch")
         if self.timed_events and not allow_stack:
@@ -424,7 +439,7 @@ class GameState:
     def tap_land_for_mana(self, player_id: str, card: Card) -> None:
         """Compatibility shortcut for lands with exactly one mana ability."""
 
-        abilities = card.definition.activated_abilities
+        abilities = self.activated_abilities(card)
         if len(abilities) != 1:
             raise ValueError(f"{card.name} requires a mana ability choice")
         self.activate_ability(player_id, card, 0)
@@ -435,20 +450,23 @@ class GameState:
         """Pay a permanent ability's costs and apply its effect."""
 
         try:
-            selected_ability = card.definition.activated_abilities[ability_index]
+            selected_ability = self.activated_abilities(card)[ability_index]
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
         if isinstance(selected_ability, ActivatedRegenerationAbility):
-            player, ability = self._validate_regeneration_activation(
+            player, ability, affected_card = self._validate_regeneration_activation(
                 player_id, card, ability_index
             )
             player.mana_pool.pay(ability.mana_cost)
-            card.tapped = True
-            card.damage = 0
-            assert self.pending_damage is not None
-            self.pending_damage.regenerated_card_ids.add(card.id)
+            affected_card.tapped = True
+            affected_card.damage = 0
+            if self.pending_damage is not None:
+                self.pending_damage.regenerated_card_ids.add(affected_card.id)
+            else:
+                assert self.pending_destruction is not None
+                self.pending_destruction.regenerated_card_ids.add(affected_card.id)
             if self.combat is not None:
-                self.combat.regenerated_card_ids.add(card.id)
+                self.combat.regenerated_card_ids.add(affected_card.id)
             self.priority_player_index = (
                 self.players.index(player) + 1
             ) % len(self.players)
@@ -472,7 +490,10 @@ class GameState:
             if ability.tap_cost:
                 card.tapped = True
             player.mana_pool.add(ability.color, ability.amount)
-            if self.pending_damage is not None:
+            if (
+                self.pending_damage is not None
+                or self.pending_destruction is not None
+            ):
                 self.consecutive_passes = 0
             if ability.sacrifice_source:
                 # Black Lotus destroys itself as part of its own ability. The
@@ -487,11 +508,13 @@ class GameState:
             if ability.affects_attached_creature
             else card
         )
-        self.temporary_creature_effects.setdefault(affected_card.id, []).append(
-            ContinuousEffect(
-                power=ability.power,
-                toughness=ability.toughness,
-                granted_abilities=ability.granted_abilities,
+        self.batch_abilities.append(
+            AbilityOnStack(
+                card,
+                card.name,
+                player.id,
+                ability,
+                (affected_card,),
             )
         )
         activations = self.ability_activations_this_turn.get(card.id, 0) + 1
@@ -501,7 +524,10 @@ class GameState:
             and activations > ability.safe_activations_per_turn
         ):
             self.destroy_at_end_of_turn.add(card.id)
-        self.check_state_based_actions()
+        self.priority_player_index = (
+            self.players.index(player) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
         return None
 
     def _validate_ability_activation(
@@ -529,7 +555,7 @@ class GameState:
         if ability_index < 0:
             raise ValueError(f"{card.name} has no such activated ability")
         try:
-            ability = card.definition.activated_abilities[ability_index]
+            ability = self.activated_abilities(card)[ability_index]
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
         if not isinstance(
@@ -543,7 +569,10 @@ class GameState:
         ):
             raise ValueError("unsupported activated ability")
         if (
-            self.pending_damage is not None
+            (
+                self.pending_damage is not None
+                or self.pending_destruction is not None
+            )
             and not isinstance(ability, ActivatedManaAbility)
         ):
             raise RuntimeError(
@@ -583,13 +612,19 @@ class GameState:
 
     def _validate_regeneration_activation(
         self, player_id: str, card: Card, ability_index: int
-    ) -> tuple[PlayerState, ActivatedRegenerationAbility]:
+    ) -> tuple[PlayerState, ActivatedRegenerationAbility, Card]:
         """Validate regeneration at the point lethal damage would kill a creature."""
 
-        if (
-            self.pending_damage is None
-            or self.pending_damage.step is not DamageResolutionStep.REGENERATION
-        ):
+        in_damage_window = (
+            self.pending_damage is not None
+            and self.pending_damage.step is DamageResolutionStep.REGENERATION
+        )
+        in_destruction_window = (
+            self.pending_destruction is not None
+            and self.pending_destruction.step
+            is DestructionResolutionStep.REGENERATION
+        )
+        if not (in_damage_window or in_destruction_window):
             raise RuntimeError(
                 "regeneration can only be used during the regeneration window"
             )
@@ -605,23 +640,43 @@ class GameState:
             )
             raise RuntimeError(f"{priority_name} has priority")
         if card not in player.battlefield or card.controller_id != player_id:
-            raise ValueError("a player can only regenerate a creature they control")
+            raise ValueError("a player can only activate a permanent they control")
         try:
-            ability = card.definition.activated_abilities[ability_index]
+            ability = self.activated_abilities(card)[ability_index]
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
         if not isinstance(ability, ActivatedRegenerationAbility):
             raise ValueError("that ability does not regenerate its source")
-        if self.creature_toughness(card) <= 0:
+        affected_card = (
+            self._attached_creature(card)
+            if ability.affects_attached_creature
+            else card
+        )
+        if in_damage_window and self.creature_toughness(affected_card) <= 0:
             raise RuntimeError("regeneration cannot save a creature with zero toughness")
         if (
-            card.damage < self.creature_toughness(card)
-            and card.id not in self.pending_damage.destroyed_card_ids
+            in_damage_window
+            and affected_card.damage < self.creature_toughness(affected_card)
         ):
-            raise RuntimeError(f"{card.name} is not facing death or destruction")
+            raise RuntimeError(f"{affected_card.name} is not facing lethal damage")
+        if in_destruction_window:
+            destruction_target = next(
+                (
+                    target
+                    for target in self.pending_destruction.targets
+                    if target.card_id == affected_card.id
+                ),
+                None,
+            )
+            if destruction_target is None:
+                raise RuntimeError(f"{affected_card.name} is not facing destruction")
+            if not destruction_target.regeneration_allowed:
+                raise RuntimeError(
+                    f"{affected_card.name} cannot regenerate from this destruction"
+                )
         if not player.mana_pool.can_pay(ability.mana_cost):
             raise RuntimeError(f"not enough mana to regenerate {card.name}")
-        return player, ability
+        return player, ability, affected_card
 
     def _attached_creature(self, aura: Card) -> Card:
         """Return the in-play creature currently enchanted by an Aura."""
@@ -643,7 +698,7 @@ class GameState:
         """Whether an ability can currently be activated without changing state."""
 
         try:
-            ability = card.definition.activated_abilities[ability_index]
+            ability = self.activated_abilities(card)[ability_index]
             if isinstance(ability, ActivatedRegenerationAbility):
                 self._validate_regeneration_activation(
                     player_id, card, ability_index
@@ -831,15 +886,12 @@ class GameState:
             return []
         return list(self.players)
 
-    @staticmethod
     def _pending_ability_requirement(
-        pending: PendingActivation | None,
+        self, pending: PendingActivation | None
     ) -> TargetRequirement | None:
         if pending is None:
             return None
-        ability = pending.source.definition.activated_abilities[
-            pending.ability_index
-        ]
+        ability = self.activated_abilities(pending.source)[pending.ability_index]
         return (
             ability.target_requirement
             if isinstance(ability, (ActivatedDamageAbility, ActivatedDestroyAbility))
@@ -854,9 +906,7 @@ class GameState:
         if self.pending_activation is None:
             raise RuntimeError("there is no activated ability waiting for targets")
         pending = self.pending_activation
-        ability = pending.source.definition.activated_abilities[
-            pending.ability_index
-        ]
+        ability = self.activated_abilities(pending.source)[pending.ability_index]
         assert isinstance(ability, (ActivatedDamageAbility, ActivatedDestroyAbility))
         chosen = tuple(targets)
         requirement = ability.target_requirement
@@ -1008,6 +1058,9 @@ class GameState:
         if self.pending_damage is not None:
             self._pass_damage_priority(player_id)
             return None
+        if self.pending_destruction is not None:
+            self._pass_destruction_priority(player_id)
+            return None
         self._require_no_pending_action(allow_stack=True)
         if (
             not self.stack
@@ -1037,7 +1090,10 @@ class GameState:
 
         if self.stack or self.batch_abilities:
             resolved = self._resolve_batch()
-            if self.pending_damage is None:
+            if (
+                self.pending_damage is None
+                and self.pending_destruction is None
+            ):
                 self.consecutive_passes = 0
                 self.priority_player_index = (
                     self.active_player_index if self.timed_events else None
@@ -1045,7 +1101,10 @@ class GameState:
             return resolved
 
         self._resolve_timed_event()
-        if self.pending_damage is None:
+        if (
+            self.pending_damage is None
+            and self.pending_destruction is None
+        ):
             self.consecutive_passes = 0
             self.priority_player_index = (
                 self.active_player_index if self.timed_events else None
@@ -1069,6 +1128,29 @@ class GameState:
             ) % len(self.players)
             return
         self._advance_damage_resolution()
+
+    def _pass_destruction_priority(self, player_id: str) -> None:
+        """Pass in a destroy effect's dedicated regeneration window."""
+
+        incident = self.pending_destruction
+        if (
+            incident is None
+            or incident.step is not DestructionResolutionStep.REGENERATION
+            or self.priority_player_index is None
+        ):
+            raise RuntimeError("there is no destruction window awaiting priority")
+        player = self.player(player_id)
+        if player is not self.players[self.priority_player_index]:
+            raise RuntimeError(
+                f"{self.players[self.priority_player_index].name} has priority"
+            )
+        self.consecutive_passes += 1
+        if self.consecutive_passes < len(self.players):
+            self.priority_player_index = (
+                self.priority_player_index + 1
+            ) % len(self.players)
+            return
+        self._finish_destruction_incident()
 
     def can_pay_upkeep_cost(self, player_id: str) -> bool:
         """Whether the current event offers an affordable upkeep payment."""
@@ -1230,19 +1312,27 @@ class GameState:
                 for target in spell.targets
             )
         legal_abilities = [
-            all(
-                (
-                    self._requirement_accepts_card(
-                        ability.ability.target_requirement,
-                        target,
-                        ability.controller_id,
-                        check_tapped=False,
-                    )
-                    if isinstance(target, Card)
-                    else ability.ability.target_requirement.players
-                    and target in self.players
+            (
+                all(
+                    isinstance(target, Card)
+                    and target.zone is Zone.BATTLEFIELD
+                    for target in ability.targets
                 )
-                for target in ability.targets
+                if isinstance(ability.ability, ActivatedPumpAbility)
+                else all(
+                    (
+                        self._requirement_accepts_card(
+                            ability.ability.target_requirement,
+                            target,
+                            ability.controller_id,
+                            check_tapped=False,
+                        )
+                        if isinstance(target, Card)
+                        else ability.ability.target_requirement.players
+                        and target in self.players
+                    )
+                    for target in ability.targets
+                )
             )
             for ability in abilities
         ]
@@ -1260,7 +1350,8 @@ class GameState:
                     else None
                 )
 
-        pending_destruction: list[Card] = []
+        pending_destruction: list[tuple[Card, bool]] = []
+        pending_regeneration: list[Card] = []
         for spell in spells:
             card = spell.card
             if not legal[card.id] or card.definition.is_permanent:
@@ -1292,15 +1383,21 @@ class GameState:
                                     toughness=effect.toughness,
                                 )
                             )
+                elif isinstance(effect, RegenerateTargetsEffect):
+                    pending_regeneration.extend(
+                        target
+                        for target in spell.targets
+                        if isinstance(target, Card)
+                    )
                 elif isinstance(effect, DestroyTargetsEffect):
                     pending_destruction.extend(
-                        target
+                        (target, effect.regeneration_allowed)
                         for target in spell.targets
                         if isinstance(target, Card)
                     )
                 elif isinstance(effect, DestroyAllEffect):
                     pending_destruction.extend(
-                        permanent
+                        (permanent, effect.regeneration_allowed)
                         for player in self.players
                         for permanent in tuple(player.battlefield)
                         if effect.matches(permanent)
@@ -1335,20 +1432,75 @@ class GameState:
                         source_card=declared.source,
                         source_controller_id=declared.controller_id,
                     )
-            else:
+            elif isinstance(declared.ability, ActivatedDestroyAbility):
                 pending_destruction.extend(
-                    target
+                    (target, declared.ability.regeneration_allowed)
                     for target in declared.targets
                     if isinstance(target, Card)
                 )
+            else:
+                for target in declared.targets:
+                    if isinstance(target, Card):
+                        self.temporary_creature_effects.setdefault(
+                            target.id, []
+                        ).append(
+                            ContinuousEffect(
+                                power=declared.ability.power,
+                                toughness=declared.ability.toughness,
+                                granted_abilities=(
+                                    declared.ability.granted_abilities
+                                ),
+                            )
+                        )
 
-        assert self.pending_damage is not None
-        self.pending_damage.destroyed_card_ids.update(
-            card.id
-            for card in pending_destruction
+        destruction_by_card: dict[Card, bool] = {}
+        for card, regeneration_allowed in pending_destruction:
+            destruction_by_card[card] = (
+                destruction_by_card.get(card, True) and regeneration_allowed
+            )
+        destruction_targets = [
+            DestructionTarget(card.id, card.name, regeneration_allowed)
+            for card, regeneration_allowed in destruction_by_card.items()
             if card.zone is Zone.BATTLEFIELD
-        )
+        ]
+        if destruction_targets:
+            self.pending_destruction = DestructionIncident(destruction_targets)
+        for target in pending_regeneration:
+            incoming_damage = sum(
+                packet.remaining
+                for packet in (
+                    self.pending_damage.packets
+                    if self.pending_damage is not None
+                    else ()
+                )
+                if packet.recipient_kind is DamageRecipientKind.CREATURE
+                and packet.recipient_id == target.id
+            )
+            if (
+                self.pending_damage is not None
+                and self.creature_toughness(target) > 0
+                and target.damage + incoming_damage
+                >= self.creature_toughness(target)
+            ):
+                self.pending_damage.regenerated_card_ids.add(target.id)
+                if self.combat is not None:
+                    self.combat.regenerated_card_ids.add(target.id)
+            if self.pending_destruction is not None:
+                matching = next(
+                    (
+                        item
+                        for item in self.pending_destruction.targets
+                        if item.card_id == target.id
+                    ),
+                    None,
+                )
+                if matching is not None and matching.regeneration_allowed:
+                    self.pending_destruction.regenerated_card_ids.add(target.id)
+                    target.tapped = True
+                    target.damage = 0
         self._resolve_damage_incident()
+        if self.pending_damage is None:
+            self._open_destruction_incident()
 
         for spell in spells:
             card = spell.card
@@ -1471,7 +1623,7 @@ class GameState:
         incident = self.pending_damage
         if incident is None:
             raise RuntimeError("there is no damage incident to resolve")
-        if not incident.packets and not incident.destroyed_card_ids:
+        if not incident.packets:
             self.pending_damage = None
             return None
 
@@ -1499,13 +1651,10 @@ class GameState:
         return any(
             CardType.CREATURE in card.definition.card_types
             and self.creature_toughness(card) > 0
-            and (
-                card.damage >= self.creature_toughness(card)
-                or card.id in incident.destroyed_card_ids
-            )
+            and card.damage >= self.creature_toughness(card)
             and any(
                 isinstance(ability, ActivatedRegenerationAbility)
-                for ability in card.definition.activated_abilities
+                for ability in self.activated_abilities(card)
             )
             for player in self.players
             for card in player.battlefield
@@ -1532,15 +1681,7 @@ class GameState:
             raise RuntimeError("the damage incident is not in an actionable window")
 
         incident.step = DamageResolutionStep.DEATH
-        destroyed = [
-            card
-            for player in self.players
-            for card in tuple(player.battlefield)
-            if card.id in incident.destroyed_card_ids
-            and card.id not in incident.regenerated_card_ids
-        ]
         self.pending_damage = None
-        self._destroy_permanents(destroyed)
         self.check_state_based_actions()
         incident.step = DamageResolutionStep.COMPLETE
         self.resolved_damage_incidents.append(incident)
@@ -1598,10 +1739,18 @@ class GameState:
                     card_name=recipient.name,
                 )
             )
+        for player in self.players:
+            for card in player.battlefield:
+                if card.id in incident.regenerated_card_ids:
+                    card.tapped = True
+                    card.damage = 0
 
     def _continue_after_damage_incident(self, incident: DamageIncident) -> None:
         """Resume a rule action that was split by interactive damage windows."""
 
+        if self.pending_destruction is not None:
+            self._open_destruction_incident()
+            return
         if self.combat is None or self.combat.step is not CombatStep.DAMAGE:
             return
         defender = self.player(self.combat.defending_player_id)
@@ -1616,6 +1765,69 @@ class GameState:
         elif incident.kind is not DamageIncidentKind.COMBAT:
             return
         self._finish_combat_damage()
+
+    def _open_destruction_incident(self) -> None:
+        """Open or auto-resolve an ordinary destruction regeneration window."""
+
+        incident = self.pending_destruction
+        if (
+            incident is None
+            or incident.step is not DestructionResolutionStep.WAITING
+        ):
+            return
+        incident.step = DestructionResolutionStep.REGENERATION
+        has_regenerable_target = any(
+            target.regeneration_allowed for target in incident.targets
+        )
+        if has_regenerable_target and (
+            self.pause_for_damage_windows or self._destruction_can_regenerate()
+        ):
+            self.priority_player_index = self.active_player_index
+            self.consecutive_passes = 0
+            return
+        self._finish_destruction_incident()
+
+    def _destruction_can_regenerate(self) -> bool:
+        assert self.pending_destruction is not None
+        target_ids = {
+            target.card_id
+            for target in self.pending_destruction.targets
+            if target.regeneration_allowed
+        }
+        return any(
+            card.id in target_ids
+            and any(
+                isinstance(ability, ActivatedRegenerationAbility)
+                for ability in self.activated_abilities(card)
+            )
+            for player in self.players
+            for card in player.battlefield
+        )
+
+    def _finish_destruction_incident(self) -> None:
+        incident = self.pending_destruction
+        if incident is None:
+            raise RuntimeError("there is no destruction incident to finish")
+        target_ids = {
+            target.card_id
+            for target in incident.targets
+            if target.card_id not in incident.regenerated_card_ids
+        }
+        doomed = [
+            card
+            for player in self.players
+            for card in tuple(player.battlefield)
+            if card.id in target_ids
+        ]
+        self.pending_destruction = None
+        self._destroy_permanents(doomed)
+        self.check_state_based_actions()
+        incident.step = DestructionResolutionStep.COMPLETE
+        self.resolved_destruction_incidents.append(incident)
+        self.consecutive_passes = 0
+        self.priority_player_index = (
+            self.active_player_index if self.timed_events else None
+        )
 
     def legal_enchantment_targets(self, card: Card) -> list[Card]:
         """Compatibility wrapper for callers using the older Aura API."""
@@ -1693,6 +1905,16 @@ class GameState:
         }
         return creature.definition.abilities | granted
 
+    def activated_abilities(self, card: Card) -> tuple[ActivatedAbility, ...]:
+        """Return printed and continuously granted activated abilities."""
+
+        granted = tuple(
+            ActivatedRegenerationAbility(effect.granted_regeneration_cost)
+            for effect in self._continuous_effects_for(card)
+            if effect.granted_regeneration_cost is not None
+        )
+        return card.definition.activated_abilities + granted
+
     def _continuous_effects_for(
         self, creature: Card
     ) -> Iterable[ContinuousEffect]:
@@ -1718,6 +1940,8 @@ class GameState:
                         continue
                     if effect.exclude_source and source is creature:
                         continue
+                    if effect.source_only and source is not creature:
+                        continue
                     if (
                         effect.controller_only
                         and creature.controller_id != source.controller_id
@@ -1725,6 +1949,17 @@ class GameState:
                         continue
                     if effect.attacking_only and not attacking:
                         continue
+                    if effect.controller_has_land_subtype is not None:
+                        controller = self.player(
+                            source.controller_id or source.owner_id
+                        )
+                        if not any(
+                            CardType.LAND in permanent.definition.card_types
+                            and effect.controller_has_land_subtype
+                            in permanent.definition.subtypes
+                            for permanent in controller.battlefield
+                        ):
+                            continue
                     yield effect
 
     def _creature_bonus(self, creature: Card) -> tuple[int, int]:

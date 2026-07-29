@@ -16,6 +16,7 @@ from .cards import (
     EffectRecipient,
     EffectScope,
     MoveTargetsEffect,
+    RegenerateTargetsEffect,
     TargetRequirement,
     TemporaryPumpEffect,
     UpkeepDamageEffect,
@@ -50,7 +51,13 @@ from .destruction_spells import (
     SINKHOLE,
     STONE_RAIN,
     TRANQUILITY,
+    TUNNEL,
     TSUNAMI,
+)
+from .destruction import (
+    DestructionIncident,
+    DestructionResolutionStep,
+    DestructionTarget,
 )
 from .damage_spells import LIGHTNING_BOLT, PSIONIC_BLAST, TARGETED_DAMAGE_SPELLS
 from .damage import (
@@ -77,6 +84,7 @@ from .enchant_creatures import (
     HOLY_STRENGTH,
     LANCE,
     PUMP_ENCHANT_CREATURES,
+    REGENERATION,
     SIMPLE_ENCHANT_CREATURES,
     UNHOLY_STRENGTH,
     WEAKNESS,
@@ -133,12 +141,16 @@ from .pump_creatures import (
 )
 from .regeneration_creatures import (
     DRUDGE_SKELETONS,
+    LIVING_WALL,
     REGENERATION_CREATURES,
+    SEDGE_TROLL,
     UTHDEN_TROLL,
     WALL_OF_BONE,
     WALL_OF_BRAMBLES,
     WILL_O_THE_WISP,
+    ZOMBIE_MASTER,
 )
+from .regeneration_spells import DEATH_WARD, REGENERATION_SPELLS
 from .types import (
     CardType,
     Color,
@@ -194,6 +206,10 @@ __all__ = [
     "DamageResolutionStep",
     "DestroyTargetsEffect",
     "DestroyAllEffect",
+    "RegenerateTargetsEffect",
+    "DestructionIncident",
+    "DestructionResolutionStep",
+    "DestructionTarget",
     "TargetRequirement",
     "TemporaryPumpEffect",
     "UpkeepDamageEffect",
@@ -233,6 +249,11 @@ __all__ = [
     "GRANITE_GARGOYLE",
     "DRAGON_WHELP",
     "REGENERATION_CREATURES",
+    "LIVING_WALL",
+    "SEDGE_TROLL",
+    "ZOMBIE_MASTER",
+    "REGENERATION_SPELLS",
+    "DEATH_WARD",
     "DRUDGE_SKELETONS",
     "UTHDEN_TROLL",
     "WILL_O_THE_WISP",
@@ -280,6 +301,7 @@ __all__ = [
     "WEAKNESS",
     "ABILITY_ENCHANT_CREATURES",
     "PUMP_ENCHANT_CREATURES",
+    "REGENERATION",
     "ENCHANT_CREATURES",
     "LANCE",
     "FLIGHT",
@@ -306,6 +328,7 @@ __all__ = [
     "DISENCHANT",
     "SHATTER",
     "TRANQUILITY",
+    "TUNNEL",
     "STONE_RAIN",
     "SINKHOLE",
     "ICE_STORM",

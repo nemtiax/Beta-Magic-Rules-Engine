@@ -38,6 +38,14 @@ expire during end-of-turn cleanup alongside marked creature damage. Dragon
 Whelp may be pumped three times safely each turn; a fourth activation schedules
 it to be destroyed at the end of that turn.
 
+Ordinary activated abilities are fast effects, not interrupts. Pump abilities,
+Goblin Balloon Brigade's temporary Flying, and targeted abilities such as
+Prodigal Sorcerer and Royal Assassin pay their costs when declared, enter the
+current simultaneous fast-effect batch, and give the opponent the first chance
+to respond. Their effects occur only after both players pass. Mana abilities
+remain immediate interrupts, while regeneration is used only in its dedicated
+damage-resolution window.
+
 The five Moxen and Sol Ring can be cast as artifacts and tapped immediately
 for mana; artifacts are not affected by creature summoning sickness. Black
 Lotus presents five three-mana choices, then destroys itself after producing
@@ -211,6 +219,24 @@ Regenerating pays the printed cost, taps the creature as an effect, removes all
 marked damage, preserves attachments, and prevents its pending destruction.
 A creature regenerated during combat remains part of combat but deals and
 receives no further combat damage that attack.
+
+Ordinary destroy effects use a separate `DestructionIncident`; they do not
+enter damage accumulation, prevention, or redirection. A destruction incident
+has only a Regeneration window followed by destruction of the permanents that
+were not saved. This pathway is type-agnostic so future regenerating artifact
+creatures and other regenerable permanents can use it as well. Regeneration
+permission is recorded per destruction target: Tunnel destroys only Walls and
+marks its target as unable to regenerate, while other targets in the same
+incident can still use their own regeneration abilities.
+
+Living Wall and Sedge Troll add more printed regeneration abilities; Sedge
+Troll's +1/+1 updates continuously as its controller gains or loses Swamps.
+The Regeneration Aura activates through its controller but regenerates the
+creature it enchants. Zombie Master continuously grants swampwalk and `{B}`
+regeneration to every other Zombie in play, including opposing Zombies, and
+both grants disappear when the Master leaves play. Death Ward can respond in a
+fast-effect batch to lethal damage or an ordinary destroy effect, but cannot
+override an effect such as Tunnel that expressly forbids regeneration.
 
 Dwarven Demolition Team, Royal Assassin, and Northern Paladin extend targeted
 tap abilities to destruction. Their legal-target highlighting filters for

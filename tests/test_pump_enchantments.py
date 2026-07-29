@@ -57,6 +57,15 @@ class PumpEnchantmentTests(unittest.TestCase):
                 self.game.discard(self.alice.hand[0])
             self.game.advance_phase()
 
+    def activate_and_resolve(self, aura, count=1) -> None:
+        for _ in range(count):
+            if self.game.priority_player_index is not None:
+                priority = self.game.players[self.game.priority_player_index]
+                self.game.pass_priority(priority.id)
+            self.game.activate_ability(self.alice.id, aura, 0)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
     def test_definitions(self) -> None:
         self.assertEqual(
             PUMP_ENCHANT_CREATURES, (BLESSING, HOLY_ARMOR, FIREBREATHING)
@@ -83,8 +92,7 @@ class PumpEnchantmentTests(unittest.TestCase):
         aura = self.cast_aura(BLESSING, bear, white=2)
         self.alice.mana_pool.white = 2
 
-        self.game.activate_ability(self.alice.id, aura, 0)
-        self.game.activate_ability(self.alice.id, aura, 0)
+        self.activate_and_resolve(aura, 2)
 
         self.assertEqual(
             (self.game.creature_power(bear), self.game.creature_toughness(bear)),
@@ -102,8 +110,7 @@ class PumpEnchantmentTests(unittest.TestCase):
         self.assertEqual(self.game.creature_toughness(bear), 4)
         self.alice.mana_pool.white = 2
 
-        self.game.activate_ability(self.alice.id, aura, 0)
-        self.game.activate_ability(self.alice.id, aura, 0)
+        self.activate_and_resolve(aura, 2)
 
         self.assertEqual(self.game.creature_toughness(bear), 6)
 
@@ -113,7 +120,7 @@ class PumpEnchantmentTests(unittest.TestCase):
         self.alice.mana_pool.red = 1
 
         self.assertFalse(self.game.can_activate_ability(self.bob.id, aura, 0))
-        self.game.activate_ability(self.alice.id, aura, 0)
+        self.activate_and_resolve(aura)
 
         self.assertEqual(self.game.creature_power(bear), 3)
 
@@ -123,7 +130,9 @@ class PumpEnchantmentTests(unittest.TestCase):
         self.alice.mana_pool.red = 1
         self.game.activate_ability(self.alice.id, aura, 0)
 
-        self.game.put_permanent_in_graveyard(aura)
+        self.game._move_card(aura, Zone.GRAVEYARD)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
 
         self.assertEqual(self.game.creature_power(bear), 3)
         self.assertIn(aura, self.alice.graveyard)

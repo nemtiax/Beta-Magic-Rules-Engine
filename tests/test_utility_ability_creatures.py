@@ -65,7 +65,12 @@ class UtilityAbilityCreatureTests(unittest.TestCase):
         self.alice.mana_pool.red = 2
 
         self.game.activate_ability(self.alice.id, brigade, 0)
+        self.assertNotIn(
+            KeywordAbility.FLYING, self.game.creature_abilities(brigade)
+        )
+        self.game.pass_priority(self.bob.id)
         self.game.activate_ability(self.alice.id, brigade, 0)
+        self.resolve_batch()
 
         self.assertEqual(self.alice.mana_pool.red, 0)
         self.assertIn(KeywordAbility.FLYING, self.game.creature_abilities(brigade))
@@ -85,6 +90,7 @@ class UtilityAbilityCreatureTests(unittest.TestCase):
         self.assertEqual(
             set(self.game.legal_targets_for()), {own_bear, opposing_bear}
         )
+        self.assertIsNotNone(self.game.pending_activation)
 
     def test_assassin_target_still_dies_if_untapped_during_responses(self) -> None:
         assassin = self.put_in_play(self.alice, ROYAL_ASSASSIN)

@@ -26,6 +26,7 @@ from beta_magic import (
     DAMAGE_ABILITY_CREATURES,
     UTILITY_ABILITY_CREATURES,
     REGENERATION_CREATURES,
+    REGENERATION_SPELLS,
     VANILLA_CREATURES,
     VANILLA_WALLS,
     GameStatus,
@@ -46,6 +47,7 @@ from beta_magic import (
     DISENCHANT,
     SHATTER,
     TRANQUILITY,
+    TUNNEL,
     TROPICAL_ISLAND,
     TAIGA,
     BIRDS_OF_PARADISE,
@@ -148,7 +150,8 @@ class DemoGameTests(unittest.TestCase):
             + len(VARIABLE_CREATURES)
             + len(DAMAGE_ABILITY_CREATURES)
             + len(UTILITY_ABILITY_CREATURES)
-            + len(REGENERATION_CREATURES),
+            + len(REGENERATION_CREATURES)
+            + len(REGENERATION_SPELLS),
         )
 
     def test_mana_display_only_lists_nonzero_colors(self) -> None:
@@ -234,6 +237,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertIn(PRODIGAL_SORCERER, VERDANT_TIDES_DECK)
         self.assertIn(WALL_OF_BRAMBLES, VERDANT_TIDES_DECK)
         self.assertIn(ORCISH_ARTILLERY, STONEFIRE_DECK)
+        self.assertIn(TUNNEL, STONEFIRE_DECK)
         self.assertIn(
             LLANOWAR_ELVES,
             [card.definition for card in first.players[0].hand],

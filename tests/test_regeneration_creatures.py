@@ -4,21 +4,26 @@ from beta_magic import (
     DRUDGE_SKELETONS,
     ELVISH_ARCHERS,
     MOUNTAIN,
+    LIVING_WALL,
     REGENERATION_CREATURES,
     ROYAL_ASSASSIN,
     SWAMP,
+    SEDGE_TROLL,
     UTHDEN_TROLL,
     WALL_OF_BONE,
     WALL_OF_BRAMBLES,
     WILL_O_THE_WISP,
+    ZOMBIE_MASTER,
+    REGENERATION,
     Card,
     DamageResolutionStep,
+    DestructionResolutionStep,
     GameState,
     KeywordAbility,
     PlayerState,
     Zone,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.vanilla_creatures import GRIZZLY_BEARS, SCATHE_ZOMBIES
 
 
 class RegenerationCreatureTests(unittest.TestCase):
@@ -66,11 +71,23 @@ class RegenerationCreatureTests(unittest.TestCase):
                 WILL_O_THE_WISP,
                 WALL_OF_BONE,
                 WALL_OF_BRAMBLES,
+                LIVING_WALL,
+                SEDGE_TROLL,
+                ZOMBIE_MASTER,
             ),
         )
         self.assertEqual(
             [(card.mana_cost.compact, card.power, card.toughness) for card in REGENERATION_CREATURES],
-            [("1B", 1, 1), ("2R", 2, 2), ("B", 0, 1), ("2B", 1, 4), ("2G", 2, 3)],
+            [
+                ("1B", 1, 1),
+                ("2R", 2, 2),
+                ("B", 0, 1),
+                ("2B", 1, 4),
+                ("2G", 2, 3),
+                ("4", 0, 6),
+                ("2R", 2, 2),
+                ("1BB", 2, 3),
+            ],
         )
         self.assertIn(KeywordAbility.FLYING, WILL_O_THE_WISP.abilities)
         self.assertEqual(WALL_OF_BONE.subtypes, ("Wall",))
@@ -91,6 +108,70 @@ class RegenerationCreatureTests(unittest.TestCase):
         self.pass_window()
         self.assertIn(skeleton, self.bob.battlefield)
         self.assertNotIn(skeleton, self.bob.graveyard)
+
+    def test_living_wall_uses_generic_mana_to_regenerate(self) -> None:
+        wall = self.put_in_play(self.bob, LIVING_WALL)
+        self.game._deal_damage(wall, 6, "test")
+        self.reach_regeneration_window()
+        self.bob.mana_pool.colorless = 1
+
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, wall, 0)
+        self.pass_window()
+
+        self.assertIn(wall, self.bob.battlefield)
+        self.assertTrue(wall.tapped)
+
+    def test_regeneration_aura_regenerates_its_attached_creature(self) -> None:
+        creature = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        aura = self.put_in_play(self.bob, REGENERATION)
+        aura.enchanted_card_id = creature.id
+        self.game._deal_damage(creature, 2, "test")
+        self.reach_regeneration_window()
+        self.bob.mana_pool.green = 1
+
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, aura, 0)
+        self.pass_window()
+
+        self.assertIn(creature, self.bob.battlefield)
+        self.assertTrue(creature.tapped)
+        self.assertFalse(aura.tapped)
+
+    def test_sedge_troll_bonus_tracks_controller_swamps(self) -> None:
+        troll = self.put_in_play(self.bob, SEDGE_TROLL)
+        swamp = self.put_in_play(self.bob, SWAMP)
+        self.assertEqual(
+            (self.game.creature_power(troll), self.game.creature_toughness(troll)),
+            (3, 3),
+        )
+
+        self.game._move_card(swamp, Zone.GRAVEYARD)
+        self.assertEqual(
+            (self.game.creature_power(troll), self.game.creature_toughness(troll)),
+            (2, 2),
+        )
+
+    def test_zombie_master_grants_other_zombies_swampwalk_and_regeneration(
+        self,
+    ) -> None:
+        master = self.put_in_play(self.alice, ZOMBIE_MASTER)
+        zombie = self.put_in_play(self.bob, SCATHE_ZOMBIES)
+
+        self.assertIn(
+            KeywordAbility.SWAMPWALK, self.game.creature_abilities(zombie)
+        )
+        self.assertEqual(len(self.game.activated_abilities(zombie)), 1)
+        self.assertNotIn(
+            KeywordAbility.SWAMPWALK, self.game.creature_abilities(master)
+        )
+        self.assertEqual(self.game.activated_abilities(master), ())
+
+        self.game._move_card(master, Zone.GRAVEYARD)
+        self.assertNotIn(
+            KeywordAbility.SWAMPWALK, self.game.creature_abilities(zombie)
+        )
+        self.assertEqual(self.game.activated_abilities(zombie), ())
 
     def test_mana_can_be_generated_during_regeneration_window(self) -> None:
         skeleton = self.put_in_play(self.bob, DRUDGE_SKELETONS)
@@ -125,7 +206,11 @@ class RegenerationCreatureTests(unittest.TestCase):
         self.game.complete_pending_activation((skeleton,))
         self.game.pass_priority(self.bob.id)
         self.game.pass_priority(self.alice.id)
-        self.reach_regeneration_window()
+        self.assertIsNone(self.game.pending_damage)
+        self.assertEqual(
+            self.game.pending_destruction.step,
+            DestructionResolutionStep.REGENERATION,
+        )
 
         self.game.pass_priority(self.alice.id)
         self.game.activate_ability(self.bob.id, skeleton, 0)

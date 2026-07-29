@@ -30,6 +30,7 @@ from .destruction_spells import (
     PERMANENT_DESTRUCTION_SPELLS,
     SHATTER,
     TRANQUILITY,
+    TUNNEL,
 )
 from .dual_lands import (
     BADLANDS,
@@ -69,7 +70,6 @@ from .mana_artifacts import (
     MOX_EMERALD,
     MOX_JET,
     MOX_PEARL,
-    MOX_RUBY,
     MOX_SAPPHIRE,
     SOL_RING,
 )
@@ -88,6 +88,7 @@ from .regeneration_creatures import (
     WALL_OF_BRAMBLES,
     WILL_O_THE_WISP,
 )
+from .regeneration_spells import REGENERATION_SPELLS
 from .flying_creatures import (
     FLYING_CREATURES,
     PHANTOM_MONSTER,
@@ -168,6 +169,7 @@ def make_demo_game() -> GameState:
         + DAMAGE_ABILITY_CREATURES
         + UTILITY_ABILITY_CREATURES
         + REGENERATION_CREATURES
+        + REGENERATION_SPELLS
     )
     game = GameState(
         [
@@ -206,7 +208,7 @@ VERDANT_TIDES_DECK = (
 
 STONEFIRE_DECK = (
     ORCISH_ORIFLAMME,
-    MOX_RUBY,
+    TUNNEL,
     FOREST,
     KELDON_WARLORD,
     TAIGA,
@@ -413,6 +415,7 @@ class GameViewModel(QObject):
             and self.game.upkeep_payment_required
         )
         damage_incident = self.game.pending_damage
+        destruction_incident = self.game.pending_destruction
         return {
             "turn": self.game.turn_number,
             "phase": (
@@ -461,6 +464,24 @@ class GameViewModel(QObject):
                     if packet.remaining
                 ]
                 if damage_incident is not None
+                else []
+            ),
+            "destructionWindow": (
+                destruction_incident.step.value.replace("_", " ").title()
+                if destruction_incident is not None
+                else ""
+            ),
+            "destructionTargets": (
+                [
+                    target.card_name
+                    + (
+                        ""
+                        if target.regeneration_allowed
+                        else " (cannot regenerate)"
+                    )
+                    for target in destruction_incident.targets
+                ]
+                if destruction_incident is not None
                 else []
             ),
             "upkeepPaymentRequired": upkeep_payment_required,
@@ -628,7 +649,9 @@ class GameViewModel(QObject):
                         )
                     ),
                 }
-                for index, ability in enumerate(card.definition.activated_abilities)
+                for index, ability in enumerate(
+                    self.game.activated_abilities(card)
+                )
             ]
             if card.zone is Zone.BATTLEFIELD
             else [],
@@ -843,7 +866,7 @@ class GameViewModel(QObject):
                 )
             self.stateChanged.emit()
         elif card in player.battlefield and CardType.LAND in card.definition.card_types:
-            abilities = card.definition.activated_abilities
+            abilities = self.game.activated_abilities(card)
             if len(abilities) == 1:
                 self.activateAbility(card_id, 0)
             elif abilities:
@@ -870,7 +893,7 @@ class GameViewModel(QObject):
         if card is None or card not in player.battlefield:
             return
         try:
-            ability = card.definition.activated_abilities[ability_index]
+            ability = self.game.activated_abilities(card)[ability_index]
         except IndexError:
             self._message = f"{card.name} has no such activated ability."
             self.stateChanged.emit()
@@ -923,6 +946,7 @@ class GameViewModel(QObject):
         player = self.game.players[self.perspective_index]
         resolved: list[tuple[Card, ...] | None] = []
         damage_incident = self.game.pending_damage
+        destruction_incident = self.game.pending_destruction
         batch_names = [
             *[card.name for card in self.game.stack],
             *[
@@ -942,7 +966,22 @@ class GameViewModel(QObject):
             success,
         ):
             return
-        if damage_incident is not None and self.game.pending_damage is None:
+        if (
+            destruction_incident is not None
+            and self.game.pending_destruction is None
+        ):
+            saved = [
+                target.card_name
+                for target in destruction_incident.targets
+                if target.card_id in destruction_incident.regenerated_card_ids
+            ]
+            self._message = (
+                "Regenerated " + ", ".join(saved) + "."
+                if saved
+                else "Resolved destruction."
+            )
+            self.stateChanged.emit()
+        elif damage_incident is not None and self.game.pending_damage is None:
             summaries = []
             for packet in damage_incident.packets:
                 if packet.remaining <= 0:

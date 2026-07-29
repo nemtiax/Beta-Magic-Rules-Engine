@@ -4,6 +4,7 @@ from beta_magic import (
     DRAGON_WHELP,
     FROZEN_SHADE,
     GRANITE_GARGOYLE,
+    LIGHTNING_BOLT,
     PUMP_CREATURES,
     SHIVAN_DRAGON,
     GameState,
@@ -40,6 +41,15 @@ class PumpCreatureTests(unittest.TestCase):
             self.game.advance_phase()
         self.game.advance_phase()
 
+    def activate_and_resolve(self, card, count=1) -> None:
+        for _ in range(count):
+            if self.game.priority_player_index is not None:
+                priority = self.game.players[self.game.priority_player_index]
+                self.game.pass_priority(priority.id)
+            self.game.activate_ability(self.alice.id, card, 0)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
     def test_definitions(self) -> None:
         self.assertEqual(
             PUMP_CREATURES,
@@ -61,7 +71,11 @@ class PumpCreatureTests(unittest.TestCase):
         self.alice.mana_pool.black = 2
 
         self.game.activate_ability(self.alice.id, shade, 0)
+        self.assertEqual(self.game.creature_power(shade), 0)
+        self.game.pass_priority(self.bob.id)
         self.game.activate_ability(self.alice.id, shade, 0)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
 
         self.assertEqual(self.alice.mana_pool.black, 0)
         self.assertEqual(
@@ -76,7 +90,7 @@ class PumpCreatureTests(unittest.TestCase):
         self.assertTrue(
             self.game.can_activate_ability(self.alice.id, dragon, 0)
         )
-        self.game.activate_ability(self.alice.id, dragon, 0)
+        self.activate_and_resolve(dragon)
 
         self.assertFalse(dragon.tapped)
         self.assertEqual(self.game.creature_power(dragon), 6)
@@ -84,7 +98,7 @@ class PumpCreatureTests(unittest.TestCase):
     def test_pumps_expire_when_the_turn_ends(self) -> None:
         gargoyle = self.put_in_play(GRANITE_GARGOYLE)
         self.alice.mana_pool.red = 1
-        self.game.activate_ability(self.alice.id, gargoyle, 0)
+        self.activate_and_resolve(gargoyle)
         self.assertEqual(self.game.creature_toughness(gargoyle), 3)
 
         self.finish_turn()
@@ -96,7 +110,7 @@ class PumpCreatureTests(unittest.TestCase):
         gargoyle = self.put_in_play(GRANITE_GARGOYLE)
         gargoyle.damage = 2
         self.alice.mana_pool.red = 1
-        self.game.activate_ability(self.alice.id, gargoyle, 0)
+        self.activate_and_resolve(gargoyle)
 
         self.finish_turn()
 
@@ -107,8 +121,7 @@ class PumpCreatureTests(unittest.TestCase):
     def test_three_whelp_activations_are_safe(self) -> None:
         whelp = self.put_in_play(DRAGON_WHELP)
         self.alice.mana_pool.red = 3
-        for _ in range(3):
-            self.game.activate_ability(self.alice.id, whelp, 0)
+        self.activate_and_resolve(whelp, 3)
         self.assertEqual(self.game.creature_power(whelp), 5)
         self.assertNotIn(whelp.id, self.game.destroy_at_end_of_turn)
 
@@ -120,8 +133,7 @@ class PumpCreatureTests(unittest.TestCase):
     def test_fourth_whelp_activation_schedules_end_of_turn_destruction(self) -> None:
         whelp = self.put_in_play(DRAGON_WHELP)
         self.alice.mana_pool.red = 4
-        for _ in range(4):
-            self.game.activate_ability(self.alice.id, whelp, 0)
+        self.activate_and_resolve(whelp, 4)
 
         self.assertIn(whelp, self.alice.battlefield)
         self.assertEqual(self.game.creature_power(whelp), 6)
@@ -135,11 +147,45 @@ class PumpCreatureTests(unittest.TestCase):
     def test_pump_disappears_if_creature_leaves_play(self) -> None:
         dragon = self.put_in_play(SHIVAN_DRAGON)
         self.alice.mana_pool.red = 1
-        self.game.activate_ability(self.alice.id, dragon, 0)
+        self.activate_and_resolve(dragon)
 
         self.game.put_permanent_in_graveyard(dragon)
 
         self.assertNotIn(dragon.id, self.game.temporary_creature_effects)
+
+    def test_unresolved_self_pump_has_no_effect_if_source_leaves_play(self) -> None:
+        dragon = self.put_in_play(SHIVAN_DRAGON)
+        self.alice.mana_pool.red = 1
+        self.game.activate_ability(self.alice.id, dragon, 0)
+
+        self.game._move_card(dragon, Zone.GRAVEYARD)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
+        self.assertNotIn(dragon.id, self.game.temporary_creature_effects)
+
+    def test_pump_abilities_can_respond_to_damage_in_the_same_batch(self) -> None:
+        shade = self.put_in_play(FROZEN_SHADE)
+        bolt = self.bob.library.pop()
+        bolt.definition = LIGHTNING_BOLT
+        bolt.zone = Zone.HAND
+        self.bob.hand.append(bolt)
+        self.bob.mana_pool.red = 1
+        self.alice.mana_pool.black = 3
+        self.game.begin_cast(bolt)
+        self.game.complete_pending_cast((shade,))
+
+        for _ in range(3):
+            self.game.activate_ability(self.alice.id, shade, 0)
+            self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
+        self.assertIn(shade, self.alice.battlefield)
+        self.assertEqual(
+            (self.game.creature_power(shade), self.game.creature_toughness(shade)),
+            (3, 4),
+        )
+        self.assertEqual(shade.damage, 3)
 
 
 if __name__ == "__main__":

@@ -131,6 +131,7 @@ ApplicationWindow {
                                 visible: gameState.stack.length > 0
                                          || gameState.timedEvent
                                          || gameState.damageWindow
+                                         || gameState.destructionWindow
                                 enabled: gameState.hasPriority
                                 text: "Pass priority"
                                 onClicked: gameBridge.passPriority()
@@ -139,6 +140,7 @@ ApplicationWindow {
                                 visible: gameState.stack.length > 0
                                          || gameState.timedEvent
                                          || gameState.damageWindow
+                                         || gameState.destructionWindow
                                 text: "Priority: " + gameState.priorityPlayer
                                 color: "#cbd2da"
                                 font.bold: true
@@ -163,6 +165,15 @@ ApplicationWindow {
                             visible: gameState.damageWindow
                             text: gameState.damageWindow + " window — "
                                   + gameState.damagePackets.join("  +  ")
+                            color: "#ef9f76"
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                        Label {
+                            visible: gameState.destructionWindow
+                            text: "Regeneration window — destroy "
+                                  + gameState.destructionTargets.join(", ")
                             color: "#ef9f76"
                             font.bold: true
                             wrapMode: Text.WordWrap

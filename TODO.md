@@ -8,6 +8,7 @@
 - [x] Attacking, blocking, damage, lethal damage
 - [x] Structured damage packets and simultaneous damage incidents
 - [x] Pass-driven prevention, redirection, and regeneration windows
+- [x] Separate regeneration-only pathway for ordinary destroy effects
 - [ ] Interactive damage prevention, redirection, and regeneration sequence
 
 # Creature Mechanics
@@ -17,6 +18,7 @@
 - [x] Trample
 - [ ] Landwalk
 - [x] Basic paid regeneration during damage and ordinary destruction
+- [x] Granted and spell-based regeneration (Regeneration, Zombie Master, Death Ward)
 - [ ] Protection
 - [ ] Banding (!!)
 
@@ -50,6 +52,7 @@
 - [x] 1993 fast-effect batches, responses, priority passing, and target snapshots
 - [x] Lightning Bolt, Psionic Blast
 - [x] Disenchant, Shatter, Tranquility
+- [x] Tunnel and per-target non-regenerable destruction
 - [x] Giant Growth, Righteousness
 - [ ] Terror
 - [x] Stone Rain, Sinkhole, Ice Storm, Armageddon, Flashfires, Tsunami

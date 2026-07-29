@@ -36,6 +36,20 @@ SHATTER = CardDefinition(
     spell_effects=(DestroyTargetsEffect(),),
 )
 
+TUNNEL = CardDefinition(
+    name="Tunnel",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{R}"),
+    rules_text="Destroys 1 wall. Target wall cannot be regenerated.",
+    colors=frozenset({Color.RED}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        subtypes=frozenset({"Wall"}),
+    ),
+    spell_effects=(DestroyTargetsEffect(regeneration_allowed=False),),
+)
+
 TRANQUILITY = CardDefinition(
     name="Tranquility",
     card_types=frozenset({CardType.SORCERY}),
@@ -132,5 +146,6 @@ LAND_DESTRUCTION_SPELLS = (
 PERMANENT_DESTRUCTION_SPELLS = (
     DISENCHANT,
     SHATTER,
+    TUNNEL,
     TRANQUILITY,
 ) + LAND_DESTRUCTION_SPELLS
