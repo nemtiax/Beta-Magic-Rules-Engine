@@ -198,12 +198,79 @@ REGENERATION = CardDefinition(
     ),
 )
 
+WEB = CardDefinition(
+    name="Web",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Enchanted creature gets +0/+2 and can block flying creatures."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Creature",),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            toughness=2,
+            granted_abilities=frozenset({KeywordAbility.CAN_BLOCK_FLYING}),
+        ),
+    ),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+    ),
+)
+
+def _ward(name: str, protected_color: Color, ability: KeywordAbility) -> CardDefinition:
+    return CardDefinition(
+        name=name,
+        card_types=frozenset({CardType.ENCHANTMENT}),
+        mana_cost=ManaCost.parse("{W}"),
+        rules_text=f"Target creature gains protection from {protected_color.name.lower()}.",
+        colors=frozenset({Color.WHITE}),
+        subtypes=("Enchant Creature",),
+        continuous_effects=(
+            ContinuousEffect(
+                scope=EffectScope.ATTACHED_CARD,
+                granted_abilities=frozenset({ability}),
+            ),
+        ),
+        target_requirement=TargetRequirement(
+            zone=Zone.BATTLEFIELD,
+            card_types=frozenset({CardType.CREATURE}),
+        ),
+    )
+
+
+BLACK_WARD = _ward(
+    "Black Ward", Color.BLACK, KeywordAbility.PROTECTION_FROM_BLACK
+)
+BLUE_WARD = _ward(
+    "Blue Ward", Color.BLUE, KeywordAbility.PROTECTION_FROM_BLUE
+)
+GREEN_WARD = _ward(
+    "Green Ward", Color.GREEN, KeywordAbility.PROTECTION_FROM_GREEN
+)
+RED_WARD = _ward(
+    "Red Ward", Color.RED, KeywordAbility.PROTECTION_FROM_RED
+)
+WHITE_WARD = _ward(
+    "White Ward", Color.WHITE, KeywordAbility.PROTECTION_FROM_WHITE
+)
+
 
 SIMPLE_ENCHANT_CREATURES = (HOLY_STRENGTH, UNHOLY_STRENGTH, WEAKNESS)
-ABILITY_ENCHANT_CREATURES = (LANCE, FLIGHT, BURROWING, REGENERATION)
+ABILITY_ENCHANT_CREATURES = (LANCE, FLIGHT, BURROWING, REGENERATION, WEB)
 PUMP_ENCHANT_CREATURES = (BLESSING, HOLY_ARMOR, FIREBREATHING)
+PROTECTION_ENCHANT_CREATURES = (
+    BLACK_WARD,
+    BLUE_WARD,
+    GREEN_WARD,
+    RED_WARD,
+    WHITE_WARD,
+)
 ENCHANT_CREATURES = (
     SIMPLE_ENCHANT_CREATURES
     + ABILITY_ENCHANT_CREATURES
     + PUMP_ENCHANT_CREATURES
+    + PROTECTION_ENCHANT_CREATURES
 )

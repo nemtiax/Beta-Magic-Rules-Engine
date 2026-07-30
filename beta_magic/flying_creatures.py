@@ -38,6 +38,23 @@ SCRYB_SPRITES = _flyer("Scryb Sprites", "{G}", Color.GREEN, "Faeries", 1, 1)
 WALL_OF_AIR = _flyer("Wall of Air", "{1}{U}{U}", Color.BLUE, "Wall", 1, 5)
 WALL_OF_SWORDS = _flyer("Wall of Swords", "{3}{W}", Color.WHITE, "Wall", 3, 5)
 
+SERRA_ANGEL = CardDefinition(
+    name="Serra Angel",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{W}{W}"),
+    rules_text="Flying. Does not tap when attacking.",
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Angel",),
+    power=4,
+    toughness=4,
+    abilities=frozenset(
+        {
+            KeywordAbility.FLYING,
+            KeywordAbility.DOES_NOT_TAP_TO_ATTACK,
+        }
+    ),
+)
+
 FLYING_CREATURES = (
     AIR_ELEMENTAL,
     MAHAMOTI_DJINN,
@@ -47,3 +64,4 @@ FLYING_CREATURES = (
     WALL_OF_AIR,
     WALL_OF_SWORDS,
 )
+SPECIAL_FLYING_CREATURES = (SERRA_ANGEL,)

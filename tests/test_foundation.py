@@ -33,9 +33,12 @@ class ManaCostTests(unittest.TestCase):
         self.assertEqual(str(cost), "{2}{U}{U}")
         self.assertEqual(cost.compact, "2UU")
 
-    def test_rejects_unknown_symbols(self) -> None:
-        with self.assertRaises(ValueError):
-            ManaCost.parse("{X}")
+    def test_parses_variable_costs(self) -> None:
+        cost = ManaCost.parse("{X}{G}")
+        self.assertEqual(cost.x_symbols, 1)
+        self.assertEqual(cost.mana_value, 1)
+        self.assertEqual(cost.compact, "XG")
+        self.assertEqual(cost.with_x(4).compact, "4G")
 
 
 class GameStateTests(unittest.TestCase):

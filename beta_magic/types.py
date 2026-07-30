@@ -40,6 +40,23 @@ class KeywordAbility(str, Enum):
     ISLANDWALK = "Islandwalk"
     MOUNTAINWALK = "Mountainwalk"
     SWAMPWALK = "Swampwalk"
+    DOES_NOT_TAP_TO_ATTACK = "Does not tap to attack"
+    CAN_BLOCK_FLYING = "Can block flying"
+    PROTECTION_FROM_WHITE = "Protection from white"
+    PROTECTION_FROM_BLUE = "Protection from blue"
+    PROTECTION_FROM_BLACK = "Protection from black"
+    PROTECTION_FROM_RED = "Protection from red"
+    PROTECTION_FROM_GREEN = "Protection from green"
+
+    @property
+    def protection_color(self) -> Color | None:
+        return {
+            KeywordAbility.PROTECTION_FROM_WHITE: Color.WHITE,
+            KeywordAbility.PROTECTION_FROM_BLUE: Color.BLUE,
+            KeywordAbility.PROTECTION_FROM_BLACK: Color.BLACK,
+            KeywordAbility.PROTECTION_FROM_RED: Color.RED,
+            KeywordAbility.PROTECTION_FROM_GREEN: Color.GREEN,
+        }.get(self)
 
     @property
     def landwalk_subtype(self) -> str | None:

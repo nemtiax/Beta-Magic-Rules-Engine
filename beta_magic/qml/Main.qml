@@ -15,6 +15,55 @@ ApplicationWindow {
     property var gameState: gameBridge.state
     property var inspectedCard: null
 
+    Dialog {
+        id: xPicker
+        anchors.centerIn: parent
+        implicitWidth: 360
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingX
+        title: "Choose X for " + gameState.xCardName
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: "Affordable range: 0\u2013" + gameState.xMaximum
+                color: "#ffffff"
+            }
+            RowLayout {
+                Button {
+                    text: "\u2212"
+                    enabled: gameState.xValue > 0
+                    onClicked: gameBridge.adjustX(-1)
+                }
+                Label {
+                    text: "X = " + gameState.xValue
+                    color: "#ffd978"
+                    font.bold: true
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: 100
+                }
+                Button {
+                    text: "+"
+                    enabled: gameState.xValue < gameState.xMaximum
+                    onClicked: gameBridge.adjustX(1)
+                }
+            }
+            RowLayout {
+                Button {
+                    text: "Cancel"
+                    onClicked: gameBridge.cancelXCast()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cast"
+                    onClicked: gameBridge.confirmXCast()
+                }
+            }
+        }
+    }
+
     Connections {
         target: gameBridge
         function onStateChanged() { window.gameState = gameBridge.state }
@@ -169,6 +218,33 @@ ApplicationWindow {
                             font.bold: true
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
+                        }
+                        RowLayout {
+                            visible: gameState.choosingPrevention
+                            Label {
+                                text: "Choose damage to prevent ("
+                                      + gameState.preventionRemaining + " remaining):"
+                                color: "#9fd6a8"
+                                font.bold: true
+                            }
+                            Repeater {
+                                model: gameState.damagePacketChoices
+                                delegate: Button {
+                                    required property var modelData
+                                    text: modelData.label
+                                    onClicked: gameBridge.chooseDamagePacket(modelData.id)
+                                }
+                            }
+                            Button {
+                                text: "Done"
+                                visible: gameState.preventionPaid
+                                onClicked: gameBridge.finishPrevention()
+                            }
+                            Button {
+                                text: "Cancel"
+                                visible: !gameState.preventionPaid
+                                onClicked: gameBridge.cancelPrevention()
+                            }
                         }
                         Label {
                             visible: gameState.destructionWindow

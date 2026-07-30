@@ -27,6 +27,7 @@ class ManaCost:
     black: int = 0
     red: int = 0
     green: int = 0
+    x_symbols: int = 0
 
     def __post_init__(self) -> None:
         if any(value < 0 for value in self.amounts):
@@ -34,11 +35,19 @@ class ManaCost:
 
     @property
     def amounts(self) -> tuple[int, ...]:
-        return (self.generic, self.white, self.blue, self.black, self.red, self.green)
+        return (
+            self.generic,
+            self.white,
+            self.blue,
+            self.black,
+            self.red,
+            self.green,
+            self.x_symbols,
+        )
 
     @property
     def mana_value(self) -> int:
-        return sum(self.amounts)
+        return sum(self.amounts[:-1])
 
     def colored(self, color: Color) -> int:
         fields = {
@@ -61,12 +70,15 @@ class ManaCost:
             raise ValueError(f"invalid mana cost: {notation!r}")
 
         generic = 0
+        counts_x = 0
         counts = {color: 0 for color in _COLORED_SYMBOLS.values()}
         for symbol in symbols:
             if symbol.isdecimal():
                 generic += int(symbol)
             elif symbol in _COLORED_SYMBOLS:
                 counts[_COLORED_SYMBOLS[symbol]] += 1
+            elif symbol == "X":
+                counts_x += 1
             else:
                 raise ValueError(f"unsupported mana symbol: {{{symbol}}}")
         return cls(
@@ -76,6 +88,19 @@ class ManaCost:
             black=counts[Color.BLACK],
             red=counts[Color.RED],
             green=counts[Color.GREEN],
+            x_symbols=counts_x,
+        )
+
+    def with_x(self, x_value: int) -> ManaCost:
+        if x_value < 0:
+            raise ValueError("X cannot be negative")
+        return ManaCost(
+            generic=self.generic + self.x_symbols * x_value,
+            white=self.white,
+            blue=self.blue,
+            black=self.black,
+            red=self.red,
+            green=self.green,
         )
 
     @classmethod
@@ -86,6 +111,7 @@ class ManaCost:
         symbols: list[str] = []
         if self.generic:
             symbols.append(str(self.generic))
+        symbols.extend("X" for _ in range(self.x_symbols))
         for symbol, count in (
             ("W", self.white),
             ("U", self.blue),
@@ -103,6 +129,7 @@ class ManaCost:
         symbols: list[str] = []
         if self.generic:
             symbols.append(str(self.generic))
+        symbols.extend("X" for _ in range(self.x_symbols))
         symbols.extend("W" for _ in range(self.white))
         symbols.extend("U" for _ in range(self.blue))
         symbols.extend("B" for _ in range(self.black))

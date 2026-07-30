@@ -2,8 +2,12 @@ import unittest
 
 from beta_magic import (
     BASIC_LANDS,
+    ALL_CARDS,
     FLYING_CREATURES,
+    SPECIAL_FLYING_CREATURES,
     FIRST_STRIKE_CREATURES,
+    PROTECTION_CREATURES,
+    PREVENTION_CARDS,
     GLOBAL_ENCHANTMENTS,
     ENCHANT_CREATURES,
     BAD_MOON,
@@ -15,9 +19,12 @@ from beta_magic import (
     MANA_CREATURES,
     PUMP_CREATURES,
     MANA_ARTIFACTS,
+    UTILITY_ARTIFACTS,
+    REACH_CREATURES,
     TARGETED_PUMP_SPELLS,
     LANDWALK_CREATURES,
     CREATURE_LORDS,
+    CIRCLES_OF_PROTECTION,
     GRAVEYARD_RECURSION_SPELLS,
     TIMED_ARTIFACTS,
     TIMED_ENCHANTMENTS,
@@ -27,12 +34,16 @@ from beta_magic import (
     UTILITY_ABILITY_CREATURES,
     REGENERATION_CREATURES,
     REGENERATION_SPELLS,
+    LIFE_GAIN_SPELLS,
+    VARIABLE_SPELLS,
+    BLUE_UTILITY_SPELLS,
     VANILLA_CREATURES,
     VANILLA_WALLS,
     GameStatus,
     GameState,
     PlayerState,
     CardType,
+    KeywordAbility,
     TurnPhase,
     Zone,
     WAR_MAMMOTH,
@@ -89,19 +100,32 @@ from beta_magic import (
     BLESSING,
     HOLY_ARMOR,
     FIREBREATHING,
+    STREAM_OF_LIFE,
+    BRAINGEYSER,
+    HOWL_FROM_BEYOND,
+    EARTHQUAKE,
+    HURRICANE,
 )
-from beta_magic.ui import (
+from beta_magic.decks import (
+    ARCANE_DEPTHS_DECK,
     COPPER_CONTROL_DECK,
     COPPER_PRESSURE_DECK,
+    ELEMENTAL_SURGE_DECK,
     MOONLIT_HORDE_DECK,
     RADIANT_CHARGE_DECK,
     STONEFIRE_DECK,
     VERDANT_TIDES_DECK,
-    GameViewModel,
     make_demo_game,
     make_enchantment_test_game,
+    make_protection_test_game,
     make_timed_event_test_game,
     make_test_game,
+    make_x_test_game,
+    AEGIS_WARDS_DECK,
+    SPECTRUM_ASSAULT_DECK,
+)
+from beta_magic.ui import (
+    GameViewModel,
     mana_text,
     parse_args,
 )
@@ -126,32 +150,7 @@ class DemoGameTests(unittest.TestCase):
             all_cards = player.library + player.hand
         self.assertEqual(
             len(all_cards),
-            len(BASIC_LANDS) * 5
-            + len(DUAL_LANDS)
-            + len(MANA_ARTIFACTS)
-            + len(VANILLA_CREATURES)
-            + len(MANA_CREATURES)
-            + len(LANDWALK_CREATURES)
-            + len(CREATURE_LORDS)
-            + len(PUMP_CREATURES)
-            + len(VANILLA_WALLS)
-            + len(FLYING_CREATURES)
-            + len(FIRST_STRIKE_CREATURES)
-            + len(TRAMPLE_CREATURES)
-            + len(GLOBAL_ENCHANTMENTS)
-            + len(ENCHANT_CREATURES)
-            + len(TARGETED_DAMAGE_SPELLS)
-            + len(TARGETED_PUMP_SPELLS)
-            + len(PERMANENT_DESTRUCTION_SPELLS)
-            + len(GRAVEYARD_RECURSION_SPELLS)
-            + len(TIMED_ARTIFACTS)
-            + len(TIMED_ENCHANTMENTS)
-            + len(UPKEEP_CREATURES)
-            + len(VARIABLE_CREATURES)
-            + len(DAMAGE_ABILITY_CREATURES)
-            + len(UTILITY_ABILITY_CREATURES)
-            + len(REGENERATION_CREATURES)
-            + len(REGENERATION_SPELLS),
+            len(ALL_CARDS) + len(BASIC_LANDS) * 4,
         )
 
     def test_mana_display_only_lists_nonzero_colors(self) -> None:
@@ -161,6 +160,32 @@ class DemoGameTests(unittest.TestCase):
         player.mana_pool.white = 2
         player.mana_pool.green = 1
         self.assertEqual(mana_text(player), "W:2 G:1")
+
+    def test_ui_x_picker_starts_at_maximum_and_supports_adjustment(self) -> None:
+        game = GameState(
+            [
+                PlayerState.with_deck("alice", "Alice", [STREAM_OF_LIFE] * 10),
+                PlayerState.with_deck("bob", "Bob", [STREAM_OF_LIFE] * 10),
+            ]
+        )
+        game.start(opening_hand_size=1, shuffle=False)
+        while game.current_phase is not TurnPhase.MAIN:
+            game.advance_phase()
+        spell = game.players[0].hand[0]
+        game.players[0].mana_pool.green = 1
+        game.players[0].mana_pool.colorless = 4
+        view_model = GameViewModel(game)
+
+        view_model.activateCard(str(spell.id))
+        self.assertTrue(view_model.state["choosingX"])
+        self.assertEqual(view_model.state["xMaximum"], 4)
+        self.assertEqual(view_model.state["xValue"], 4)
+
+        view_model.adjustX(-1)
+        self.assertEqual(view_model.state["xValue"], 3)
+        view_model.confirmXCast()
+        self.assertFalse(view_model.state["choosingX"])
+        self.assertEqual(game.pending_cast.x_value, 3)
 
     def test_view_model_hides_opponents_hand(self) -> None:
         view_model = GameViewModel(make_demo_game())
@@ -346,6 +371,8 @@ class DemoGameTests(unittest.TestCase):
         self.assertFalse(parse_args([]).test_decks)
         self.assertFalse(parse_args([]).enchantment_test_decks)
         self.assertFalse(parse_args([]).timed_event_test_decks)
+        self.assertFalse(parse_args([]).x_test_decks)
+        self.assertFalse(parse_args([]).protection_test_decks)
         self.assertTrue(parse_args(["--test-decks"]).test_decks)
         self.assertTrue(
             parse_args(["--enchantment-test-decks"]).enchantment_test_decks
@@ -353,6 +380,105 @@ class DemoGameTests(unittest.TestCase):
         self.assertTrue(
             parse_args(["--timed-event-test-decks"]).timed_event_test_decks
         )
+        self.assertTrue(parse_args(["--x-test-decks"]).x_test_decks)
+        self.assertTrue(
+            parse_args(["--protection-test-decks"]).protection_test_decks
+        )
+
+    def test_protection_test_decks_are_small_repeatable_and_focused(self) -> None:
+        first = make_protection_test_game()
+        second = make_protection_test_game()
+        self.assertEqual(len(AEGIS_WARDS_DECK), 20)
+        self.assertEqual(len(SPECTRUM_ASSAULT_DECK), 20)
+        self.assertEqual(
+            [card.name for card in first.players[0].hand],
+            [card.name for card in second.players[0].hand],
+        )
+        for name in (
+            "Black Ward",
+            "Blue Ward",
+            "Green Ward",
+            "Red Ward",
+            "White Ward",
+            "White Knight",
+            "Black Knight",
+            "Circle of Protection: Black",
+            "Circle of Protection: Blue",
+            "Circle of Protection: Green",
+            "Circle of Protection: Red",
+            "Circle of Protection: White",
+        ):
+            self.assertIn(name, [card.name for card in AEGIS_WARDS_DECK])
+        for name in (
+            "Lightning Bolt",
+            "Psionic Blast",
+            "Weakness",
+            "Giant Growth",
+            "Righteousness",
+            "Earthquake",
+        ):
+            self.assertIn(name, [card.name for card in SPECTRUM_ASSAULT_DECK])
+        spectrum_hand = first.players[1].hand
+        self.assertEqual(
+            {
+                subtype
+                for card in spectrum_hand
+                if CardType.LAND in card.definition.card_types
+                for subtype in card.definition.subtypes
+            },
+            {"Plains", "Island", "Swamp", "Mountain", "Forest"},
+        )
+
+    def test_x_test_decks_are_small_repeatable_and_effect_focused(self) -> None:
+        first = make_x_test_game()
+        second = make_x_test_game()
+        self.assertEqual(len(ARCANE_DEPTHS_DECK), 20)
+        self.assertEqual(len(ELEMENTAL_SURGE_DECK), 20)
+        self.assertEqual(
+            [card.name for card in first.players[0].hand],
+            [card.name for card in second.players[0].hand],
+        )
+        self.assertEqual(
+            {
+                color.value
+                for card in ARCANE_DEPTHS_DECK
+                for color in card.colors
+            },
+            {"U", "B"},
+        )
+        self.assertEqual(
+            {
+                color.value
+                for card in ELEMENTAL_SURGE_DECK
+                for color in card.colors
+            },
+            {"R", "G"},
+        )
+        combined = ARCANE_DEPTHS_DECK + ELEMENTAL_SURGE_DECK
+        for definition in (
+            BRAINGEYSER,
+            HOWL_FROM_BEYOND,
+            EARTHQUAKE,
+            HURRICANE,
+            STREAM_OF_LIFE,
+        ):
+            self.assertIn(definition, combined)
+        for player in first.players:
+            opening = [card.definition for card in player.hand]
+            self.assertTrue(
+                any(
+                    CardType.CREATURE in definition.card_types
+                    and KeywordAbility.FLYING in definition.abilities
+                    for definition in opening
+                )
+            )
+            self.assertTrue(
+                any(
+                    CardType.CREATURE in definition.card_types
+                    and KeywordAbility.FLYING not in definition.abilities
+                    for definition in opening
+                )
+            )
 
     def test_timed_event_test_decks_are_small_repeatable_and_effect_focused(
         self,
@@ -612,6 +738,22 @@ class DemoGameTests(unittest.TestCase):
             len(view_model.game.players[0].library)
             + len(view_model.game.players[0].hand),
             20,
+        )
+
+    def test_new_game_preserves_x_test_deck_mode(self) -> None:
+        view_model = GameViewModel(
+            make_x_test_game(), game_factory=make_x_test_game
+        )
+        view_model.newGame()
+        self.assertEqual(
+            [player.name for player in view_model.game.players],
+            ["Arcane Depths (U/B)", "Elemental Surge (R/G)"],
+        )
+        self.assertTrue(
+            all(
+                len(player.library) + len(player.hand) == 20
+                for player in view_model.game.players
+            )
         )
 
     def test_combat_damage_is_not_reported_as_mana_burn(self) -> None:

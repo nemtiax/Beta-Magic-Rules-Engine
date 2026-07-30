@@ -16,363 +16,30 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from .basic_lands import BASIC_LANDS, FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
-from .cards import Card, UpkeepCostEffect
-from .combat_tricks import GIANT_GROWTH, RIGHTEOUSNESS, TARGETED_PUMP_SPELLS
-from .damage_spells import LIGHTNING_BOLT, PSIONIC_BLAST, TARGETED_DAMAGE_SPELLS
-from .damage_ability_creatures import (
-    DAMAGE_ABILITY_CREATURES,
-    ORCISH_ARTILLERY,
-    PRODIGAL_SORCERER,
-)
-from .destruction_spells import (
-    DISENCHANT,
-    PERMANENT_DESTRUCTION_SPELLS,
-    SHATTER,
-    TRANQUILITY,
-    TUNNEL,
-)
-from .dual_lands import (
-    BADLANDS,
-    DUAL_LANDS,
-    PLATEAU,
-    TAIGA,
-    TROPICAL_ISLAND,
-    UNDERGROUND_SEA,
-)
-from .enchant_creatures import (
-    BLESSING,
-    BURROWING,
-    ENCHANT_CREATURES,
-    FIREBREATHING,
-    FLIGHT,
-    HOLY_ARMOR,
-    HOLY_STRENGTH,
-    LANCE,
-    UNHOLY_STRENGTH,
-    WEAKNESS,
+from .cards import Card
+from .decks import (
+    AEGIS_WARDS_DECK,
+    ARCANE_DEPTHS_DECK,
+    COPPER_CONTROL_DECK,
+    COPPER_PRESSURE_DECK,
+    ELEMENTAL_SURGE_DECK,
+    MOONLIT_HORDE_DECK,
+    RADIANT_CHARGE_DECK,
+    SPECTRUM_ASSAULT_DECK,
+    STONEFIRE_DECK,
+    VERDANT_TIDES_DECK,
+    make_demo_game,
+    make_enchantment_test_game,
+    make_protection_test_game,
+    make_test_game,
+    make_timed_event_test_game,
+    make_x_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
+from .effects import UpkeepCostEffect
 from .game import GameState, PlayerState
-from .global_enchantments import (
-    BAD_MOON,
-    CRUSADE,
-    GLOBAL_ENCHANTMENTS,
-    ORCISH_ORIFLAMME,
-)
-from .graveyard_spells import GRAVEYARD_RECURSION_SPELLS
-from .mana_creatures import BIRDS_OF_PARADISE, LLANOWAR_ELVES, MANA_CREATURES
-from .landwalk_creatures import BOG_WRAITH, LANDWALK_CREATURES, SHANODIN_DRYADS
-from .creature_lords import CREATURE_LORDS, GOBLIN_KING, LORD_OF_ATLANTIS
-from .mana_artifacts import (
-    BLACK_LOTUS,
-    MANA_ARTIFACTS,
-    MOX_EMERALD,
-    MOX_JET,
-    MOX_PEARL,
-    MOX_SAPPHIRE,
-    SOL_RING,
-)
-from .pump_creatures import (
-    DRAGON_WHELP,
-    FROZEN_SHADE,
-    GRANITE_GARGOYLE,
-    PUMP_CREATURES,
-    SHIVAN_DRAGON,
-)
-from .regeneration_creatures import (
-    DRUDGE_SKELETONS,
-    REGENERATION_CREATURES,
-    UTHDEN_TROLL,
-    WALL_OF_BONE,
-    WALL_OF_BRAMBLES,
-    WILL_O_THE_WISP,
-)
-from .regeneration_spells import REGENERATION_SPELLS
-from .flying_creatures import (
-    FLYING_CREATURES,
-    PHANTOM_MONSTER,
-    ROC_OF_KHER_RIDGES,
-    SCRYB_SPRITES,
-    WALL_OF_AIR,
-    WALL_OF_SWORDS,
-)
-from .first_strike_creatures import ELVISH_ARCHERS, FIRST_STRIKE_CREATURES
-from .types import CardType, CombatStep, TurnPhase, Zone
-from .trample_creatures import TRAMPLE_CREATURES, WAR_MAMMOTH
-from .timed_artifacts import COPPER_TABLET, TIMED_ARTIFACTS
-from .timed_enchantments import (
-    CURSED_LAND,
-    FEEDBACK,
-    TIMED_ENCHANTMENTS,
-    WANDERLUST,
-    WARP_ARTIFACT,
-)
-from .upkeep_creatures import FORCE_OF_NATURE, PHANTASMAL_FORCES, UPKEEP_CREATURES
-from .utility_ability_creatures import (
-    DWARVEN_DEMOLITION_TEAM,
-    GOBLIN_BALLOON_BRIGADE,
-    NORTHERN_PALADIN,
-    ROYAL_ASSASSIN,
-    UTILITY_ABILITY_CREATURES,
-)
-from .variable_creatures import (
-    KELDON_WARLORD,
-    NIGHTMARE,
-    PLAGUE_RATS,
-    VARIABLE_CREATURES,
-)
-from .vanilla_creatures import (
-    FIRE_ELEMENTAL,
-    GRAY_OGRE,
-    GRIZZLY_BEARS,
-    HILL_GIANT,
-    MONSS_GOBLIN_RAIDERS,
-    SAVANNAH_LIONS,
-    SCATHE_ZOMBIES,
-    VANILLA_CREATURES,
-)
-from .vanilla_walls import (
-    VANILLA_WALLS,
-    WALL_OF_ICE,
-    WALL_OF_STONE,
-    WALL_OF_WOOD,
-)
+from .types import CardType, CombatStep, Zone
 
-
-def make_demo_game() -> GameState:
-    """Create a started game with two legal decks of supported cards."""
-
-    deck = (
-        BASIC_LANDS * 5
-        + DUAL_LANDS
-        + MANA_ARTIFACTS
-        + VANILLA_CREATURES
-        + MANA_CREATURES
-        + LANDWALK_CREATURES
-        + CREATURE_LORDS
-        + PUMP_CREATURES
-        + VANILLA_WALLS
-        + FLYING_CREATURES
-        + FIRST_STRIKE_CREATURES
-        + TRAMPLE_CREATURES
-        + GLOBAL_ENCHANTMENTS
-        + ENCHANT_CREATURES
-        + TARGETED_DAMAGE_SPELLS
-        + TARGETED_PUMP_SPELLS
-        + PERMANENT_DESTRUCTION_SPELLS
-        + GRAVEYARD_RECURSION_SPELLS
-        + TIMED_ARTIFACTS
-        + TIMED_ENCHANTMENTS
-        + UPKEEP_CREATURES
-        + VARIABLE_CREATURES
-        + DAMAGE_ABILITY_CREATURES
-        + UTILITY_ABILITY_CREATURES
-        + REGENERATION_CREATURES
-        + REGENERATION_SPELLS
-    )
-    game = GameState(
-        [
-            PlayerState.with_deck("player-1", "Player 1", deck),
-            PlayerState.with_deck("player-2", "Player 2", deck),
-        ]
-    )
-    game.start()
-    return game
-
-
-# Libraries use the end of the list as the top. The last seven entries are
-# deliberately useful opening hands, making every test run reproducible.
-VERDANT_TIDES_DECK = (
-    WAR_MAMMOTH,
-    MOX_SAPPHIRE,
-    WALL_OF_BRAMBLES,
-    SHANODIN_DRYADS,
-    SOL_RING,
-    FOREST,
-    BIRDS_OF_PARADISE,
-    ISLAND,
-    LORD_OF_ATLANTIS,
-    PRODIGAL_SORCERER,
-    ISLAND,
-    FOREST,
-    ISLAND,
-    GIANT_GROWTH,
-    TROPICAL_ISLAND,
-    FLIGHT,
-    LLANOWAR_ELVES,
-    TRANQUILITY,
-    PSIONIC_BLAST,
-    ELVISH_ARCHERS,
-)
-
-STONEFIRE_DECK = (
-    ORCISH_ORIFLAMME,
-    TUNNEL,
-    FOREST,
-    KELDON_WARLORD,
-    TAIGA,
-    FOREST,
-    SHIVAN_DRAGON,
-    MOUNTAIN,
-    GOBLIN_KING,
-    ORCISH_ARTILLERY,
-    MOUNTAIN,
-    BURROWING,
-    MOUNTAIN,
-    FOREST,
-    TAIGA,
-    BLACK_LOTUS,
-    SHATTER,
-    DRAGON_WHELP,
-    LIGHTNING_BOLT,
-    ELVISH_ARCHERS,
-)
-
-# A second deterministic matchup focused on global enchantments. As above,
-# the final seven cards form each player's opening hand.
-RADIANT_CHARGE_DECK = (
-    PLAINS,
-    NORTHERN_PALADIN,
-    BLESSING,
-    PLAINS,
-    MOUNTAIN,
-    HOLY_ARMOR,
-    PLAINS,
-    RIGHTEOUSNESS,
-    PLAINS,
-    MOUNTAIN,
-    SAVANNAH_LIONS,
-    PLAINS,
-    DWARVEN_DEMOLITION_TEAM,
-    ORCISH_ORIFLAMME,
-    DISENCHANT,
-    HOLY_STRENGTH,
-    PLATEAU,
-    CRUSADE,
-    GOBLIN_BALLOON_BRIGADE,
-    LANCE,
-)
-
-MOONLIT_HORDE_DECK = (
-    DRUDGE_SKELETONS,
-    UTHDEN_TROLL,
-    BOG_WRAITH,
-    WILL_O_THE_WISP,
-    FIREBREATHING,
-    ROYAL_ASSASSIN,
-    WALL_OF_BONE,
-    PLAGUE_RATS,
-    SWAMP,
-    MOUNTAIN,
-    NIGHTMARE,
-    SWAMP,
-    MONSS_GOBLIN_RAIDERS,
-    ORCISH_ORIFLAMME,
-    MOUNTAIN,
-    UNHOLY_STRENGTH,
-    BADLANDS,
-    BAD_MOON,
-    WEAKNESS,
-    FROZEN_SHADE,
-)
-
-COPPER_CONTROL_DECK = (
-    SWAMP,
-    ISLAND,
-    BOG_WRAITH,
-    BAD_MOON,
-    UNDERGROUND_SEA,
-    COPPER_TABLET,
-    SOL_RING,
-    PHANTASMAL_FORCES,
-    SWAMP,
-    ISLAND,
-    SCATHE_ZOMBIES,
-    FEEDBACK,
-    WARP_ARTIFACT,
-    UNDERGROUND_SEA,
-    COPPER_TABLET,
-    SOL_RING,
-    FEEDBACK,
-    WARP_ARTIFACT,
-    CURSED_LAND,
-    PHANTASMAL_FORCES,
-)
-
-COPPER_PRESSURE_DECK = (
-    FOREST,
-    MOUNTAIN,
-    GRAY_OGRE,
-    TAIGA,
-    LIGHTNING_BOLT,
-    FOREST,
-    COPPER_TABLET,
-    MOUNTAIN,
-    SOL_RING,
-    GRAY_OGRE,
-    ORCISH_ORIFLAMME,
-    LIGHTNING_BOLT,
-    FOREST,
-    TAIGA,
-    COPPER_TABLET,
-    SOL_RING,
-    WANDERLUST,
-    ORCISH_ORIFLAMME,
-    FORCE_OF_NATURE,
-    LIGHTNING_BOLT,
-)
-
-
-def make_test_game() -> GameState:
-    """Create deterministic, compact decks for rapid UI playtesting."""
-
-    game = GameState(
-        [
-            PlayerState.with_deck(
-                "verdant-tides", "Verdant Tides (U/G)", VERDANT_TIDES_DECK
-            ),
-            PlayerState.with_deck(
-                "stonefire", "Stonefire (R/G)", STONEFIRE_DECK
-            ),
-        ]
-    )
-    game.start(shuffle=False)
-    return game
-
-
-def make_enchantment_test_game() -> GameState:
-    """Create deterministic decks focused on global creature enchantments."""
-
-    game = GameState(
-        [
-            PlayerState.with_deck(
-                "radiant-charge", "Radiant Charge (W/R)", RADIANT_CHARGE_DECK
-            ),
-            PlayerState.with_deck(
-                "moonlit-horde", "Moonlit Horde (B/R)", MOONLIT_HORDE_DECK
-            ),
-        ]
-    )
-    game.start(shuffle=False)
-    return game
-
-
-def make_timed_event_test_game() -> GameState:
-    """Create compact decks for exercising Copper Tablet response windows."""
-
-    game = GameState(
-        [
-            PlayerState.with_deck(
-                "copper-control", "Copper Control (U/B)", COPPER_CONTROL_DECK
-            ),
-            PlayerState.with_deck(
-                "copper-pressure", "Copper Pressure (R/G)", COPPER_PRESSURE_DECK
-            ),
-        ]
-    )
-    game.start(shuffle=False)
-    return game
 
 
 def mana_text(player: PlayerState) -> str:
@@ -398,6 +65,9 @@ class GameViewModel(QObject):
         self.game.pause_for_damage_windows = True
         self.perspective_index = 0
         self.selected_card_ids: set[UUID] = set()
+        self._x_card_id: UUID | None = None
+        self._x_value = 0
+        self._x_max = 0
         self._message = "Double-click a card to play, cast, or tap it."
 
     @Property("QVariantMap", notify=stateChanged)
@@ -432,8 +102,25 @@ class GameViewModel(QObject):
                 self.game.pending_cast is not None
                 or self.game.pending_activation is not None
             ),
+            "choosingX": self._x_card_id is not None,
+            "xValue": self._x_value,
+            "xMaximum": self._x_max,
+            "xCardName": (
+                self._card_by_id(self._x_card_id).name
+                if self._x_card_id is not None
+                and self._card_by_id(self._x_card_id) is not None
+                else ""
+            ),
             "stack": [
-                *[card.name for card in self.game.stack],
+                *[
+                    (
+                        f"{card.name} "
+                        f"(X={self.game.stack_spells[card.id].x_value})"
+                        if card.definition.mana_cost.x_symbols
+                        else card.name
+                    )
+                    for card in self.game.stack
+                ],
                 *[
                     f"{ability.source_name} ability"
                     for ability in self.game.batch_abilities
@@ -465,6 +152,36 @@ class GameViewModel(QObject):
                 ]
                 if damage_incident is not None
                 else []
+            ),
+            "damagePacketChoices": (
+                [
+                    {
+                        "id": str(packet.id),
+                        "label": (
+                            f"{packet.source_name}: {packet.remaining} to "
+                            f"{packet.recipient_name}"
+                        ),
+                    }
+                    for packet in self.game.legal_prevention_packets()
+                ]
+                if damage_incident is not None
+                and self.game.pending_prevention is not None
+                else []
+            ),
+            "choosingPrevention": self.game.pending_prevention is not None,
+            "preventionRemaining": (
+                (
+                    self.game.pending_prevention.remaining
+                    if self.game.pending_prevention.remaining is not None
+                    else "all"
+                )
+                if self.game.pending_prevention is not None
+                else 0
+            ),
+            "preventionPaid": (
+                self.game.pending_prevention.paid
+                if self.game.pending_prevention is not None
+                else False
             ),
             "destructionWindow": (
                 destruction_incident.step.value.replace("_", " ").title()
@@ -853,6 +570,28 @@ class GameViewModel(QObject):
             or CardType.SORCERY in card.definition.card_types
             or CardType.ARTIFACT in card.definition.card_types
         ):
+            if (
+                card.definition.prevention_amount
+                and self.game.pending_damage is not None
+                and self.game.pending_damage.step.value == "prevention"
+            ):
+                self._run(
+                    lambda: self.game.begin_prevention_spell(card),
+                    f"Choose damage for {card.name} to prevent.",
+                )
+                self.stateChanged.emit()
+                return
+            if card.definition.mana_cost.x_symbols:
+                try:
+                    self._x_max = self.game.maximum_affordable_x(card)
+                except (ValueError, RuntimeError) as error:
+                    self._message = str(error)
+                else:
+                    self._x_card_id = card.id
+                    self._x_value = self._x_max
+                    self._message = f"Choose X for {card.name}."
+                self.stateChanged.emit()
+                return
             try:
                 pending = self.game.begin_cast(card)
             except (ValueError, RuntimeError) as error:
@@ -878,6 +617,43 @@ class GameViewModel(QObject):
         else:
             self._message = f"{card.name} has no double-click action."
             self.stateChanged.emit()
+
+    @Slot(int)
+    def adjustX(self, delta: int) -> None:
+        if self._x_card_id is None:
+            return
+        self._x_value = max(0, min(self._x_max, self._x_value + delta))
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmXCast(self) -> None:
+        if self._x_card_id is None:
+            return
+        card = self._card_by_id(self._x_card_id)
+        if card is None:
+            self.cancelXCast()
+            return
+        x_value = self._x_value
+        try:
+            pending = self.game.begin_cast(card, x_value=x_value)
+        except (ValueError, RuntimeError) as error:
+            self._message = str(error)
+        else:
+            self._x_card_id = None
+            self._message = (
+                f"Choose a target for {card.name} (X={x_value})."
+                if pending is not None
+                else f"Cast {card.name} with X={x_value}."
+            )
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelXCast(self) -> None:
+        self._x_card_id = None
+        self._x_value = 0
+        self._x_max = 0
+        self._message = "Cancelled casting."
+        self.stateChanged.emit()
 
     @Slot(str, int)
     def activateAbility(self, card_id: str, ability_index: int) -> None:
@@ -907,6 +683,42 @@ class GameViewModel(QObject):
         ) and pending[0] is not None:
             self._message = f"Choose a target for {card.name}'s ability."
             self.stateChanged.emit()
+        elif self.game.pending_prevention is not None:
+            self._message = f"Choose damage for {card.name} to prevent."
+            self.stateChanged.emit()
+
+    @Slot(str)
+    def chooseDamagePacket(self, packet_id: str) -> None:
+        player = self.game.players[self.perspective_index]
+        prevented: list[int] = []
+        if self._run(
+            lambda: prevented.append(
+                self.game.prevent_damage(player.id, UUID(packet_id))
+            ),
+            "Prevented damage.",
+        ):
+            self._message = f"Prevented {prevented[0]} damage."
+            if self.game.pending_prevention is not None:
+                self._message += (
+                    f" {self.game.pending_prevention.remaining} prevention remains."
+                )
+            self.stateChanged.emit()
+
+    @Slot()
+    def finishPrevention(self) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.finish_prevention(player.id),
+            "Finished assigning damage prevention.",
+        )
+
+    @Slot()
+    def cancelPrevention(self) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.cancel_prevention(player.id),
+            "Cancelled damage prevention.",
+        )
 
     @Slot()
     def advance(self) -> None:
@@ -1134,6 +946,7 @@ class GameViewModel(QObject):
         self.game.pause_for_damage_windows = True
         self.perspective_index = 0
         self.selected_card_ids.clear()
+        self._x_card_id = None
         self._message = "Started a new game."
         self.stateChanged.emit()
 
@@ -1172,6 +985,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="use deterministic 20-card decks focused on Copper Tablet",
     )
+    deck_group.add_argument(
+        "--x-test-decks",
+        action="store_true",
+        help="use deterministic 20-card decks focused on X spells",
+    )
+    deck_group.add_argument(
+        "--protection-test-decks",
+        action="store_true",
+        help="use deterministic 20-card decks focused on protection",
+    )
     return parser.parse_args(argv)
 
 
@@ -1181,7 +1004,11 @@ def main(argv: list[str] | None = None) -> int:
     # interpret options owned by the game.
     app = QGuiApplication([sys.argv[0]])
     app.setApplicationName("Beta Magic")
-    if args.timed_event_test_decks:
+    if args.protection_test_decks:
+        game_factory = make_protection_test_game
+    elif args.x_test_decks:
+        game_factory = make_x_test_game
+    elif args.timed_event_test_decks:
         game_factory = make_timed_event_test_game
     elif args.enchantment_test_decks:
         game_factory = make_enchantment_test_game

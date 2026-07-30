@@ -2,25 +2,25 @@
  - [x] Armageddon
  - [ ] Balance
  - [ ] Benalish Hero
- - [ ] Black Ward
+ - [x] Black Ward
  - [ ] Blaze of Glory
  - [x] Blessing
- - [ ] Blue Ward
- - [ ] Castle
- - [ ] Circle of Protection: Black
- - [ ] Circle of Protection: Blue
- - [ ] Circle of Protection: Green
- - [ ] Circle of Protection: Red
- - [ ] Circle of Protection: White
+ - [x] Blue Ward
+ - [x] Castle
+ - [x] Circle of Protection: Black
+ - [x] Circle of Protection: Blue
+ - [x] Circle of Protection: Green
+ - [x] Circle of Protection: Red
+ - [x] Circle of Protection: White
  - [ ] Consecrate Land
  - [ ] Conversion
  - [x] Crusade
  - [x] Death Ward
  - [x] Disenchant
  - [ ] Farmstead
- - [ ] Green Ward
+ - [x] Green Ward
  - [ ] Guardian Angel
- - [ ] Healing Salve
+ - [x] Healing Salve
  - [x] Holy Armor
  - [x] Holy Strength
  - [ ] Island Sanctuary
@@ -31,24 +31,24 @@
  - [x] Pearled Unicorn
  - [ ] Personal Incarnation
  - [ ] Purelace
- - [ ] Red Ward
+ - [x] Red Ward
  - [x] Resurrection
  - [ ] Reverse Damage
  - [x] Righteousness
- - [ ] Samite Healer
+ - [x] Samite Healer
  - [x] Savannah Lions
- - [ ] Serra Angel
+ - [x] Serra Angel
  - [ ] Swords to Plowshares
  - [ ] Veteran Bodyguard
  - [x] Wall of Swords
- - [ ] White Knight
- - [ ] White Ward
+ - [x] White Knight
+ - [x] White Ward
  - [ ] Wrath of God
  - [x] Air Elemental
- - [ ] Ancestral Recall
+ - [x] Ancestral Recall
  - [ ] Animate Artifact
  - [ ] Blue Elemental Blast
- - [ ] Braingeyser
+ - [x] Braingeyser
  - [ ] Clone
  - [ ] Control Magic
  - [ ] Copy Artifact
@@ -58,7 +58,7 @@
  - [x] Feedback
  - [x] Flight
  - [ ] Invisibility
- - [ ] Jump
+ - [x] Jump
  - [ ] Lifetap
  - [x] Lord of Atlantis
  - [ ] Magical Hack
@@ -84,7 +84,7 @@
  - [ ] Time Walk
  - [ ] Timetwister
  - [ ] Twiddle
- - [ ] Unsummon
+ - [x] Unsummon
  - [ ] Vesuvan Doppelganger
  - [ ] Volcanic Eruption
  - [x] Wall of Air
@@ -92,7 +92,7 @@
  - [x] Water Elemental
  - [ ] Animate Dead
  - [x] Bad Moon
- - [ ] Black Knight
+ - [x] Black Knight
  - [x] Bog Wraith
  - [ ] Contract from Below
  - [x] Cursed Land
@@ -109,7 +109,7 @@
  - [ ] Fear
  - [x] Frozen Shade
  - [ ] Gloom
- - [ ] Howl from Beyond
+ - [x] Howl from Beyond
  - [ ] Hypnotic Specter
  - [ ] Lich
  - [ ] Lord of the Pit
@@ -144,7 +144,7 @@
  - [ ] Dwarven Warriors
  - [x] Earth Elemental
  - [ ] Earthbind
- - [ ] Earthquake
+ - [x] Earthquake
  - [ ] False Orders
  - [x] Fire Elemental
  - [ ] Fireball
@@ -196,9 +196,9 @@
  - [ ] Fungusaur
  - [ ] Gaea's Liege
  - [x] Giant Growth
- - [ ] Giant Spider
+ - [x] Giant Spider
  - [x] Grizzly Bears
- - [ ] Hurricane
+ - [x] Hurricane
  - [x] Ice Storm
  - [ ] Instill Energy
  - [x] Ironroot Treefolk
@@ -215,7 +215,7 @@
  - [x] Regrowth
  - [x] Scryb Sprites
  - [x] Shanodin Dryads
- - [ ] Stream of Life
+ - [x] Stream of Life
  - [ ] Thicket Basilisk
  - [ ] Timber Wolves
  - [x] Tranquility
@@ -226,7 +226,7 @@
  - [x] Wall of Wood
  - [x] Wanderlust
  - [x] War Mammoth
- - [ ] Web
+ - [x] Web
  - [ ] Wild Growth
  - [ ] Ankh of Mishra
  - [ ] Basalt Monolith
@@ -246,13 +246,13 @@
  - [ ] Glasses of Urza
  - [ ] Helm of Chatzuk
  - [ ] Howling Mine
- - [ ] Icy Manipulator
+ - [x] Icy Manipulator
  - [ ] Illusionary Mask
  - [ ] Iron Star
  - [ ] Ivory Cup
  - [ ] Jade Monolith
  - [ ] Jade Statue
- - [ ] Jayemdae Tome
+ - [x] Jayemdae Tome
  - [ ] Juggernaut
  - [ ] Kormus Bell
  - [ ] Library of Leng
@@ -266,7 +266,7 @@
  - [x] Mox Sapphire
  - [ ] Nevinyrral's Disk
  - [x] Obsianus Golem
- - [ ] Rod of Ruin
+ - [x] Rod of Ruin
  - [x] Sol Ring
  - [ ] Soul Net
  - [ ] Sunglasses of Urza

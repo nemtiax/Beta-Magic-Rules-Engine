@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     BAD_MOON,
+    CASTLE,
     CRUSADE,
     GLOBAL_ENCHANTMENTS,
     ORCISH_ORIFLAMME,
@@ -43,7 +44,10 @@ class GlobalEnchantmentTests(unittest.TestCase):
         return card
 
     def test_three_global_enchantment_definitions(self) -> None:
-        self.assertEqual(GLOBAL_ENCHANTMENTS, (CRUSADE, BAD_MOON, ORCISH_ORIFLAMME))
+        self.assertEqual(
+            GLOBAL_ENCHANTMENTS,
+            (CRUSADE, BAD_MOON, ORCISH_ORIFLAMME, CASTLE),
+        )
         self.assertEqual(CRUSADE.mana_cost.compact, "WW")
         self.assertEqual(BAD_MOON.mana_cost.compact, "1B")
         self.assertEqual(ORCISH_ORIFLAMME.mana_cost.compact, "3R")

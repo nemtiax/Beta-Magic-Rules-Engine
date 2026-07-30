@@ -38,4 +38,23 @@ ORCISH_ORIFLAMME = CardDefinition(
     ),
 )
 
-GLOBAL_ENCHANTMENTS = (CRUSADE, BAD_MOON, ORCISH_ORIFLAMME)
+CASTLE = CardDefinition(
+    name="Castle",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{3}{W}"),
+    rules_text=(
+        "Your untapped creatures gain +0/+2. "
+        "Attacking creatures lose this bonus."
+    ),
+    colors=frozenset({Color.WHITE}),
+    continuous_effects=(
+        ContinuousEffect(
+            toughness=2,
+            controller_only=True,
+            untapped_only=True,
+            nonattacking_only=True,
+        ),
+    ),
+)
+
+GLOBAL_ENCHANTMENTS = (CRUSADE, BAD_MOON, ORCISH_ORIFLAMME, CASTLE)

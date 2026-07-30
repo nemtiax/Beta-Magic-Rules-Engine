@@ -2,6 +2,43 @@ The goal of this project is to build a faithful rules engine for Magic: the Gath
 
 The project will support a simple graphical UI, which allows users to play the game. Local hotseat will be supported, but online/network play will be left for a possible future.
 
+## Card definition organization
+
+Supported cards are exposed through `beta_magic.card_defs`, organized by
+stable printed characteristics rather than whichever mechanic happened to be
+implemented first:
+
+- `white`, `blue`, `black`, `red`, and `green`
+- `artifacts`
+- `lands`
+
+`beta_magic.card_defs.catalog` owns the authoritative `ALL_CARDS` tuple and
+read-only `CARDS_BY_NAME` mapping. `card_named()` provides checked lookup by
+printed name. The UI builds its all-cards demo deck from this registry rather
+than duplicating a list of mechanic collections.
+
+The older mechanic-named modules remain import-compatible during the
+migration. They feed a private compatibility intake, while new definitions
+should be added to the appropriate printed-characteristic module and exposed
+through the central catalog.
+
+Seeded deck lists and their `GameState` factories live in
+`beta_magic.decks`. Deck entries are resolved by printed name through the
+card catalog, ensuring every seeded deck uses the canonical definition.
+`beta_magic.ui` imports those factories for command-line selection but no
+longer owns game content.
+
+The card model is split by responsibility:
+
+- `beta_magic.cards` owns `CardDefinition` and mutable `Card` instances.
+- `beta_magic.abilities` owns target requirements and activated-ability
+  descriptions.
+- `beta_magic.effects` owns continuous, spell, upkeep, and variable-stat
+  effect descriptions.
+
+`beta_magic.cards` re-exports the ability and effect names for compatibility,
+but engine code imports from the focused modules directly.
+
 ## Current foundation
 
 The `beta_magic` package contains the initial rules-engine data model:
@@ -70,6 +107,42 @@ python -m beta_magic.ui --test-decks
 This uses two intentionally ordered 20-card decks: blue/green **Verdant
 Tides** and red/green **Stonefire**. Both contain ordinary creatures, Walls,
 Flying, and First Strike, with repeatable opening hands and draws.
+
+For a deterministic matchup focused on variable casting costs, launch with:
+
+```console
+python -m beta_magic.ui --x-test-decks
+```
+
+Blue/black **Arcane Depths** exercises Braingeyser and Howl from Beyond.
+Red/green **Elemental Surge** exercises Earthquake, Hurricane, and Stream of
+Life. Both 20-card decks supply Sol Ring and put flying and non-flying
+creatures in their opening hands, making the damage filters and larger values
+of X practical to test quickly.
+
+For a deterministic protection matchup, launch with:
+
+```console
+python -m beta_magic.ui --protection-test-decks
+```
+
+White/black **Aegis Wards** contains all five Wards and both Knights.
+**Spectrum Assault** supplies creatures and targeted effects in every color,
+plus untargeted Earthquake damage for comparison.
+
+Castle continuously gives its controller's untapped, non-attacking creatures
++0/+2; tapping or attacking removes the bonus immediately. Serra Angel flies
+and does not tap to attack, but still obeys summoning sickness and loses
+Castle's bonus while attacking. Ancestral Recall draws three cards for either
+player, Jump grants Flying until end of turn, and Unsummon returns a creature
+to its owner's hand while the normal attachment cleanup sends its Auras to
+their owners' graveyards.
+
+Rod of Ruin, Jayemdae Tome, and Icy Manipulator add reusable Mono Artifact
+effects that pay mana, tap their source, and wait through the ordinary
+fast-effect response batch before dealing damage, drawing, or tapping a
+target. Giant Spider and Web share the historical ability to block Flying
+without gaining Flying; Web also gives its enchanted creature +0/+2.
 
 To play a second deterministic matchup focused on the global creature-buff
 enchantments, launch with:
@@ -238,6 +311,17 @@ both grants disappear when the Master leaves play. Death Ward can respond in a
 fast-effect batch to lethal damage or an ordinary destroy effect, but cannot
 override an effect such as Tunnel that expressly forbids regeneration.
 
+Mana costs now retain printed `{X}` symbols separately from fixed generic and
+colored requirements. The caster declares X before choosing targets, pays the
+resulting cost, and that value remains attached to the spell through response
+and resolution. Stream of Life is the first supported X spell. In the UI,
+double-clicking it opens a modal `-`/`+` picker initialized to the highest
+currently affordable value, with the affordable range displayed explicitly.
+The same casting flow now supports Braingeyser, Howl from Beyond, Earthquake,
+and Hurricane, and the chosen X remains visible beside the spell in the UI's
+response-batch display. Earthquake and Hurricane use the normal simultaneous
+damage pipeline and determine Flying from the battlefield state at resolution.
+
 Dwarven Demolition Team, Royal Assassin, and Northern Paladin extend targeted
 tap abilities to destruction. Their legal-target highlighting filters for
 Walls, tapped creatures, and black permanents respectively; Northern Paladin
@@ -298,6 +382,28 @@ First Strike is supported for Elvish Archers. Combat damage resolves in a
 first-strike wave followed by a regular wave; lethal creatures are removed
 between them, so a creature killed by first-strike damage does not deal regular
 combat damage. First strikers fighting each other deal damage simultaneously.
+
+Protection from color follows the contemporary FAQ rather than modern rules.
+White Knight and Black Knight cannot be damaged, blocked, or targeted by the
+opposing protected color, and cannot receive new Auras of that color. Global
+effects still apply. In keeping with the pre-Revised rule noted by the FAQ,
+gaining protection does not remove Auras that are already attached.
+Black Ward, Blue Ward, Green Ward, Red Ward, and White Ward grant those same
+protection abilities while attached. The Ward itself remains attached when
+its continuous effect begins granting protection.
+
+Healing Salve can either give a player 3 life through the ordinary targeting
+flow or, when cast during a damage-prevention window, prevent up to 3 assigned
+damage to one creature or player. Samite Healer taps during that same window
+to prevent 1 damage. The UI exposes individual damage packets so the player
+can choose which source's conceptual damage tokens to remove, as required by
+the FAQ.
+
+All five Beta Circles of Protection are supported, including Circle of
+Protection: Black. Each costs `1` to activate during prevention and removes
+all damage against its controller from one selected source of the named
+color. Circles do not tap, and each separate damage event requires another
+activation. The `--protection-test-decks` matchup includes all five Circles.
 
 Trample is supported for War Mammoth. Excess damage assigned beyond a
 blocker's remaining toughness is redirected to the defending player. Against

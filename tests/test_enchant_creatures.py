@@ -2,16 +2,23 @@ import unittest
 
 from beta_magic import (
     ABILITY_ENCHANT_CREATURES,
+    BLACK_WARD,
+    BLUE_WARD,
     ENCHANT_CREATURES,
     FLIGHT,
     BURROWING,
     HOLY_STRENGTH,
     LANCE,
     PUMP_ENCHANT_CREATURES,
+    PROTECTION_ENCHANT_CREATURES,
+    GREEN_WARD,
+    RED_WARD,
     REGENERATION,
     SIMPLE_ENCHANT_CREATURES,
     UNHOLY_STRENGTH,
     WEAKNESS,
+    WEB,
+    WHITE_WARD,
     CardType,
     GameState,
     KeywordAbility,
@@ -64,7 +71,7 @@ class EnchantCreatureTests(unittest.TestCase):
         self.assertEqual(WEAKNESS.mana_cost.compact, "B")
         self.assertEqual(
             ABILITY_ENCHANT_CREATURES,
-            (LANCE, FLIGHT, BURROWING, REGENERATION),
+            (LANCE, FLIGHT, BURROWING, REGENERATION, WEB),
         )
         self.assertEqual(
             ENCHANT_CREATURES,
@@ -72,7 +79,12 @@ class EnchantCreatureTests(unittest.TestCase):
                 SIMPLE_ENCHANT_CREATURES
                 + ABILITY_ENCHANT_CREATURES
                 + PUMP_ENCHANT_CREATURES
+                + PROTECTION_ENCHANT_CREATURES
             ),
+        )
+        self.assertEqual(
+            PROTECTION_ENCHANT_CREATURES,
+            (BLACK_WARD, BLUE_WARD, GREEN_WARD, RED_WARD, WHITE_WARD),
         )
         self.assertEqual(LANCE.mana_cost.compact, "W")
         self.assertEqual(FLIGHT.mana_cost.compact, "U")

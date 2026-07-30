@@ -1,13 +1,18 @@
 """Core data model for the Beta Magic rules engine."""
 
-from .cards import (
+from .abilities import (
     ActivatedDamageAbility,
+    ActivatedDrawAbility,
     ActivatedDestroyAbility,
     ActivatedRegenerationAbility,
+    ActivatedTapAbility,
     ActivatedManaAbility,
     ActivatedPumpAbility,
-    Card,
-    CardDefinition,
+    ActivatedPreventDamageAbility,
+    TargetRequirement,
+)
+from .cards import Card, CardDefinition
+from .effects import (
     ContinuousEffect,
     CreatureBuff,
     DamageEffect,
@@ -15,9 +20,11 @@ from .cards import (
     DestroyTargetsEffect,
     EffectRecipient,
     EffectScope,
+    DrawCardsEffect,
+    GainLifeEffect,
+    GlobalDamageEffect,
     MoveTargetsEffect,
     RegenerateTargetsEffect,
-    TargetRequirement,
     TemporaryPumpEffect,
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
@@ -26,7 +33,22 @@ from .cards import (
     VariableCreatureStats,
     VariableStatKind,
 )
+from .card_defs.catalog import ALL_CARDS, CARDS_BY_NAME, card_named
 from .combat_tricks import GIANT_GROWTH, RIGHTEOUSNESS, TARGETED_PUMP_SPELLS
+from .circles_of_protection import (
+    CIRCLE_OF_PROTECTION_BLACK,
+    CIRCLE_OF_PROTECTION_BLUE,
+    CIRCLE_OF_PROTECTION_GREEN,
+    CIRCLE_OF_PROTECTION_RED,
+    CIRCLE_OF_PROTECTION_WHITE,
+    CIRCLES_OF_PROTECTION,
+)
+from .blue_utility_spells import (
+    ANCESTRAL_RECALL,
+    BLUE_UTILITY_SPELLS,
+    JUMP,
+    UNSUMMON,
+)
 from .dual_lands import (
     BADLANDS,
     BAYOU,
@@ -76,18 +98,25 @@ from .basic_lands import BASIC_LANDS, FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
 from .enchant_creatures import (
     ABILITY_ENCHANT_CREATURES,
     BLESSING,
+    BLACK_WARD,
+    BLUE_WARD,
     ENCHANT_CREATURES,
     FIREBREATHING,
     FLIGHT,
     BURROWING,
     HOLY_ARMOR,
     HOLY_STRENGTH,
+    GREEN_WARD,
     LANCE,
     PUMP_ENCHANT_CREATURES,
+    PROTECTION_ENCHANT_CREATURES,
+    RED_WARD,
     REGENERATION,
     SIMPLE_ENCHANT_CREATURES,
     UNHOLY_STRENGTH,
     WEAKNESS,
+    WEB,
+    WHITE_WARD,
 )
 from .creature_lords import CREATURE_LORDS, GOBLIN_KING, LORD_OF_ATLANTIS
 from .events import (
@@ -106,6 +135,7 @@ from .game import (
 )
 from .global_enchantments import (
     BAD_MOON,
+    CASTLE,
     CRUSADE,
     GLOBAL_ENCHANTMENTS,
     ORCISH_ORIFLAMME,
@@ -116,10 +146,17 @@ from .graveyard_spells import (
     REGROWTH,
     RESURRECTION,
 )
-from .flying_creatures import FLYING_CREATURES
+from .flying_creatures import (
+    FLYING_CREATURES,
+    SERRA_ANGEL,
+    SPECIAL_FLYING_CREATURES,
+)
 from .first_strike_creatures import ELVISH_ARCHERS, FIRST_STRIKE_CREATURES
+from .protection_creatures import BLACK_KNIGHT, PROTECTION_CREATURES, WHITE_KNIGHT
+from .prevention_cards import HEALING_SALVE, PREVENTION_CARDS, SAMITE_HEALER
 from .mana import ManaCost, ManaPool
 from .landwalk_creatures import BOG_WRAITH, LANDWALK_CREATURES, SHANODIN_DRYADS
+from .life_spells import LIFE_GAIN_SPELLS, STREAM_OF_LIFE
 from .mana_creatures import BIRDS_OF_PARADISE, LLANOWAR_ELVES, MANA_CREATURES
 from .mana_artifacts import (
     BLACK_LOTUS,
@@ -132,6 +169,13 @@ from .mana_artifacts import (
     MOXEN,
     SOL_RING,
 )
+from .utility_artifacts import (
+    ICY_MANIPULATOR,
+    JAYEMDAE_TOME,
+    ROD_OF_RUIN,
+    UTILITY_ARTIFACTS,
+)
+from .reach_creatures import GIANT_SPIDER, REACH_CREATURES
 from .pump_creatures import (
     DRAGON_WHELP,
     FROZEN_SHADE,
@@ -178,6 +222,13 @@ from .variable_creatures import (
     PLAGUE_RATS,
     VARIABLE_CREATURES,
 )
+from .variable_spells import (
+    BRAINGEYSER,
+    EARTHQUAKE,
+    HOWL_FROM_BEYOND,
+    HURRICANE,
+    VARIABLE_SPELLS,
+)
 from .utility_ability_creatures import (
     DWARVEN_DEMOLITION_TEAM,
     GOBLIN_BALLOON_BRIGADE,
@@ -188,11 +239,17 @@ from .utility_ability_creatures import (
 
 __all__ = [
     "Card",
+    "ALL_CARDS",
+    "CARDS_BY_NAME",
+    "card_named",
     "ActivatedManaAbility",
     "ActivatedDamageAbility",
+    "ActivatedDrawAbility",
+    "ActivatedTapAbility",
     "ActivatedDestroyAbility",
     "ActivatedRegenerationAbility",
     "ActivatedPumpAbility",
+    "ActivatedPreventDamageAbility",
     "CardDefinition",
     "CreatureBuff",
     "ContinuousEffect",
@@ -207,6 +264,9 @@ __all__ = [
     "DestroyTargetsEffect",
     "DestroyAllEffect",
     "RegenerateTargetsEffect",
+    "GainLifeEffect",
+    "DrawCardsEffect",
+    "GlobalDamageEffect",
     "DestructionIncident",
     "DestructionResolutionStep",
     "DestructionTarget",
@@ -235,6 +295,24 @@ __all__ = [
     "LLANOWAR_ELVES",
     "BIRDS_OF_PARADISE",
     "MANA_ARTIFACTS",
+    "UTILITY_ARTIFACTS",
+    "ROD_OF_RUIN",
+    "JAYEMDAE_TOME",
+    "ICY_MANIPULATOR",
+    "REACH_CREATURES",
+    "BLACK_KNIGHT",
+    "PROTECTION_CREATURES",
+    "WHITE_KNIGHT",
+    "HEALING_SALVE",
+    "SAMITE_HEALER",
+    "PREVENTION_CARDS",
+    "CIRCLE_OF_PROTECTION_BLACK",
+    "CIRCLE_OF_PROTECTION_BLUE",
+    "CIRCLE_OF_PROTECTION_GREEN",
+    "CIRCLE_OF_PROTECTION_RED",
+    "CIRCLE_OF_PROTECTION_WHITE",
+    "CIRCLES_OF_PROTECTION",
+    "GIANT_SPIDER",
     "MOXEN",
     "MOX_PEARL",
     "MOX_SAPPHIRE",
@@ -254,6 +332,17 @@ __all__ = [
     "ZOMBIE_MASTER",
     "REGENERATION_SPELLS",
     "DEATH_WARD",
+    "LIFE_GAIN_SPELLS",
+    "STREAM_OF_LIFE",
+    "VARIABLE_SPELLS",
+    "BRAINGEYSER",
+    "HOWL_FROM_BEYOND",
+    "EARTHQUAKE",
+    "HURRICANE",
+    "BLUE_UTILITY_SPELLS",
+    "ANCESTRAL_RECALL",
+    "JUMP",
+    "UNSUMMON",
     "DRUDGE_SKELETONS",
     "UTHDEN_TROLL",
     "WILL_O_THE_WISP",
@@ -287,11 +376,14 @@ __all__ = [
     "WALL_OF_STONE",
     "WALL_OF_WOOD",
     "FLYING_CREATURES",
+    "SPECIAL_FLYING_CREATURES",
+    "SERRA_ANGEL",
     "FIRST_STRIKE_CREATURES",
     "ELVISH_ARCHERS",
     "TRAMPLE_CREATURES",
     "WAR_MAMMOTH",
     "GLOBAL_ENCHANTMENTS",
+    "CASTLE",
     "CRUSADE",
     "BAD_MOON",
     "ORCISH_ORIFLAMME",
@@ -301,6 +393,12 @@ __all__ = [
     "WEAKNESS",
     "ABILITY_ENCHANT_CREATURES",
     "PUMP_ENCHANT_CREATURES",
+    "PROTECTION_ENCHANT_CREATURES",
+    "BLACK_WARD",
+    "BLUE_WARD",
+    "GREEN_WARD",
+    "RED_WARD",
+    "WHITE_WARD",
     "REGENERATION",
     "ENCHANT_CREATURES",
     "LANCE",
@@ -309,6 +407,7 @@ __all__ = [
     "BLESSING",
     "HOLY_ARMOR",
     "FIREBREATHING",
+    "WEB",
     "CREATURE_LORDS",
     "LORD_OF_ATLANTIS",
     "GOBLIN_KING",
