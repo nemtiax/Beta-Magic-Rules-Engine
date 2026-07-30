@@ -5,7 +5,6 @@ from __future__ import annotations
 from types import MappingProxyType
 
 from ..cards import CardDefinition
-from ._legacy import LEGACY_CARDS
 from .artifacts import ARTIFACT_CARDS
 from .black import BLACK_CARDS
 from .blue import BLUE_CARDS
@@ -36,12 +35,6 @@ def _build_catalog() -> tuple[CardDefinition, ...]:
                     f"conflicting definitions for supported card: {card.name}"
                 )
 
-    uncategorized = set(LEGACY_CARDS) - set(cards_by_name.values())
-    if uncategorized:
-        raise RuntimeError(
-            "uncategorized supported cards: "
-            + ", ".join(sorted(card.name for card in uncategorized))
-        )
     return tuple(sorted(cards_by_name.values(), key=lambda card: card.name))
 
 

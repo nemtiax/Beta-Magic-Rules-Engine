@@ -16,7 +16,7 @@ from beta_magic import (
     PlayerState,
     Zone,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 class DamageIncidentTests(unittest.TestCase):

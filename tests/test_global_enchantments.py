@@ -13,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.vanilla_creatures import (
+from beta_magic.card_defs import (
     GRAY_OGRE,
     GRIZZLY_BEARS,
     MONSS_GOBLIN_RAIDERS,

@@ -33,55 +33,12 @@ from .effects import (
     VariableCreatureStats,
     VariableStatKind,
 )
-from .card_defs.catalog import ALL_CARDS, CARDS_BY_NAME, card_named
-from .combat_tricks import GIANT_GROWTH, RIGHTEOUSNESS, TARGETED_PUMP_SPELLS
-from .circles_of_protection import (
-    CIRCLE_OF_PROTECTION_BLACK,
-    CIRCLE_OF_PROTECTION_BLUE,
-    CIRCLE_OF_PROTECTION_GREEN,
-    CIRCLE_OF_PROTECTION_RED,
-    CIRCLE_OF_PROTECTION_WHITE,
-    CIRCLES_OF_PROTECTION,
-)
-from .blue_utility_spells import (
-    ANCESTRAL_RECALL,
-    BLUE_UTILITY_SPELLS,
-    JUMP,
-    UNSUMMON,
-)
-from .dual_lands import (
-    BADLANDS,
-    BAYOU,
-    DUAL_LANDS,
-    PLATEAU,
-    SAVANNAH,
-    SCRUBLAND,
-    TAIGA,
-    TROPICAL_ISLAND,
-    TUNDRA,
-    UNDERGROUND_SEA,
-    VOLCANIC_ISLAND,
-)
-from .destruction_spells import (
-    ARMAGEDDON,
-    DISENCHANT,
-    FLASHFIRES,
-    ICE_STORM,
-    LAND_DESTRUCTION_SPELLS,
-    PERMANENT_DESTRUCTION_SPELLS,
-    SHATTER,
-    SINKHOLE,
-    STONE_RAIN,
-    TRANQUILITY,
-    TUNNEL,
-    TSUNAMI,
-)
+from .card_defs import *
 from .destruction import (
     DestructionIncident,
     DestructionResolutionStep,
     DestructionTarget,
 )
-from .damage_spells import LIGHTNING_BOLT, PSIONIC_BLAST, TARGETED_DAMAGE_SPELLS
 from .damage import (
     DamageIncident,
     DamageIncidentKind,
@@ -89,36 +46,6 @@ from .damage import (
     DamageRecipientKind,
     DamageResolutionStep,
 )
-from .damage_ability_creatures import (
-    DAMAGE_ABILITY_CREATURES,
-    ORCISH_ARTILLERY,
-    PRODIGAL_SORCERER,
-)
-from .basic_lands import BASIC_LANDS, FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
-from .enchant_creatures import (
-    ABILITY_ENCHANT_CREATURES,
-    BLESSING,
-    BLACK_WARD,
-    BLUE_WARD,
-    ENCHANT_CREATURES,
-    FIREBREATHING,
-    FLIGHT,
-    BURROWING,
-    HOLY_ARMOR,
-    HOLY_STRENGTH,
-    GREEN_WARD,
-    LANCE,
-    PUMP_ENCHANT_CREATURES,
-    PROTECTION_ENCHANT_CREATURES,
-    RED_WARD,
-    REGENERATION,
-    SIMPLE_ENCHANT_CREATURES,
-    UNHOLY_STRENGTH,
-    WEAKNESS,
-    WEB,
-    WHITE_WARD,
-)
-from .creature_lords import CREATURE_LORDS, GOBLIN_KING, LORD_OF_ATLANTIS
 from .events import (
     CardMovedEvent,
     DamageEvent,
@@ -133,68 +60,7 @@ from .game import (
     PendingTimedEvent,
     PlayerState,
 )
-from .global_enchantments import (
-    BAD_MOON,
-    CASTLE,
-    CRUSADE,
-    GLOBAL_ENCHANTMENTS,
-    ORCISH_ORIFLAMME,
-)
-from .graveyard_spells import (
-    GRAVEYARD_RECURSION_SPELLS,
-    RAISE_DEAD,
-    REGROWTH,
-    RESURRECTION,
-)
-from .flying_creatures import (
-    FLYING_CREATURES,
-    SERRA_ANGEL,
-    SPECIAL_FLYING_CREATURES,
-)
-from .first_strike_creatures import ELVISH_ARCHERS, FIRST_STRIKE_CREATURES
-from .protection_creatures import BLACK_KNIGHT, PROTECTION_CREATURES, WHITE_KNIGHT
-from .prevention_cards import HEALING_SALVE, PREVENTION_CARDS, SAMITE_HEALER
 from .mana import ManaCost, ManaPool
-from .landwalk_creatures import BOG_WRAITH, LANDWALK_CREATURES, SHANODIN_DRYADS
-from .life_spells import LIFE_GAIN_SPELLS, STREAM_OF_LIFE
-from .mana_creatures import BIRDS_OF_PARADISE, LLANOWAR_ELVES, MANA_CREATURES
-from .mana_artifacts import (
-    BLACK_LOTUS,
-    MANA_ARTIFACTS,
-    MOX_EMERALD,
-    MOX_JET,
-    MOX_PEARL,
-    MOX_RUBY,
-    MOX_SAPPHIRE,
-    MOXEN,
-    SOL_RING,
-)
-from .utility_artifacts import (
-    ICY_MANIPULATOR,
-    JAYEMDAE_TOME,
-    ROD_OF_RUIN,
-    UTILITY_ARTIFACTS,
-)
-from .reach_creatures import GIANT_SPIDER, REACH_CREATURES
-from .pump_creatures import (
-    DRAGON_WHELP,
-    FROZEN_SHADE,
-    GRANITE_GARGOYLE,
-    PUMP_CREATURES,
-    SHIVAN_DRAGON,
-)
-from .regeneration_creatures import (
-    DRUDGE_SKELETONS,
-    LIVING_WALL,
-    REGENERATION_CREATURES,
-    SEDGE_TROLL,
-    UTHDEN_TROLL,
-    WALL_OF_BONE,
-    WALL_OF_BRAMBLES,
-    WILL_O_THE_WISP,
-    ZOMBIE_MASTER,
-)
-from .regeneration_spells import DEATH_WARD, REGENERATION_SPELLS
 from .types import (
     CardType,
     Color,
@@ -203,38 +69,6 @@ from .types import (
     KeywordAbility,
     TurnPhase,
     Zone,
-)
-from .trample_creatures import TRAMPLE_CREATURES, WAR_MAMMOTH
-from .timed_artifacts import COPPER_TABLET, TIMED_ARTIFACTS
-from .timed_enchantments import (
-    CURSED_LAND,
-    FEEDBACK,
-    TIMED_ENCHANTMENTS,
-    WANDERLUST,
-    WARP_ARTIFACT,
-)
-from .upkeep_creatures import FORCE_OF_NATURE, PHANTASMAL_FORCES, UPKEEP_CREATURES
-from .vanilla_creatures import VANILLA_CREATURES
-from .vanilla_walls import VANILLA_WALLS, WALL_OF_ICE, WALL_OF_STONE, WALL_OF_WOOD
-from .variable_creatures import (
-    KELDON_WARLORD,
-    NIGHTMARE,
-    PLAGUE_RATS,
-    VARIABLE_CREATURES,
-)
-from .variable_spells import (
-    BRAINGEYSER,
-    EARTHQUAKE,
-    HOWL_FROM_BEYOND,
-    HURRICANE,
-    VARIABLE_SPELLS,
-)
-from .utility_ability_creatures import (
-    DWARVEN_DEMOLITION_TEAM,
-    GOBLIN_BALLOON_BRIGADE,
-    NORTHERN_PALADIN,
-    ROYAL_ASSASSIN,
-    UTILITY_ABILITY_CREATURES,
 )
 
 __all__ = [
@@ -295,6 +129,8 @@ __all__ = [
     "LLANOWAR_ELVES",
     "BIRDS_OF_PARADISE",
     "MANA_ARTIFACTS",
+    "ARTIFACT_CARDS",
+    "ARTIFACT_CREATURES",
     "UTILITY_ARTIFACTS",
     "ROD_OF_RUIN",
     "JAYEMDAE_TOME",
@@ -321,6 +157,9 @@ __all__ = [
     "MOX_EMERALD",
     "SOL_RING",
     "BLACK_LOTUS",
+    "COPPER_TABLET",
+    "TIMED_ARTIFACTS",
+    "OBSIANUS_GOLEM",
     "PUMP_CREATURES",
     "SHIVAN_DRAGON",
     "FROZEN_SHADE",

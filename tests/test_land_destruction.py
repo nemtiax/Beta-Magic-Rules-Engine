@@ -14,9 +14,9 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.basic_lands import FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
-from beta_magic.dual_lands import BADLANDS, SAVANNAH, TROPICAL_ISLAND, TUNDRA
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
+from beta_magic.card_defs import BADLANDS, SAVANNAH, TROPICAL_ISLAND, TUNDRA
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 class LandDestructionTests(unittest.TestCase):

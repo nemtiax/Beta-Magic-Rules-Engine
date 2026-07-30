@@ -12,7 +12,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS, HILL_GIANT
+from beta_magic.card_defs import GRIZZLY_BEARS, HILL_GIANT
 
 
 class TargetedDamageSpellTests(unittest.TestCase):

@@ -1,23 +1,15 @@
-"""Stable, printed-characteristic organization for supported Beta cards."""
+"""Authoritative printed-characteristic definitions for supported cards."""
 
-from .artifacts import ARTIFACT_CARDS
-from .black import BLACK_CARDS
-from .blue import BLUE_CARDS
+from .artifacts import *
+from .black import *
+from .blue import *
 from .catalog import ALL_CARDS, CARDS_BY_NAME, card_named
-from .green import GREEN_CARDS
-from .lands import LAND_CARDS
-from .red import RED_CARDS
-from .white import WHITE_CARDS
+from .green import *
+from .groups import *
+from .lands import *
+from .red import *
+from .white import *
 
-__all__ = [
-    "ALL_CARDS",
-    "CARDS_BY_NAME",
-    "card_named",
-    "WHITE_CARDS",
-    "BLUE_CARDS",
-    "BLACK_CARDS",
-    "RED_CARDS",
-    "GREEN_CARDS",
-    "ARTIFACT_CARDS",
-    "LAND_CARDS",
-]
+__all__ = ["ALL_CARDS", "CARDS_BY_NAME", "card_named"] + sorted(
+    name for name in globals() if name.isupper()
+)

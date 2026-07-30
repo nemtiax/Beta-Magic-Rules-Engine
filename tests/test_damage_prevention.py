@@ -10,7 +10,7 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:

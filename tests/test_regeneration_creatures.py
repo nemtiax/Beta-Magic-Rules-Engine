@@ -23,7 +23,7 @@ from beta_magic import (
     PlayerState,
     Zone,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS, SCATHE_ZOMBIES
+from beta_magic.card_defs import GRIZZLY_BEARS, SCATHE_ZOMBIES
 
 
 class RegenerationCreatureTests(unittest.TestCase):

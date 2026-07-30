@@ -19,12 +19,12 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.vanilla_creatures import (
+from beta_magic.card_defs import (
     GRIZZLY_BEARS,
     OBSIANUS_GOLEM,
     SAVANNAH_LIONS,
 )
-from beta_magic.regeneration_creatures import WALL_OF_BONE, WALL_OF_BRAMBLES
+from beta_magic.card_defs import WALL_OF_BONE, WALL_OF_BRAMBLES
 
 
 class PermanentDestructionSpellTests(unittest.TestCase):

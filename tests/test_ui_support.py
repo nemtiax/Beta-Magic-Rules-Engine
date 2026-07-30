@@ -129,7 +129,7 @@ from beta_magic.ui import (
     mana_text,
     parse_args,
 )
-from beta_magic.vanilla_creatures import HILL_GIANT
+from beta_magic.card_defs import HILL_GIANT
 
 
 class DemoGameTests(unittest.TestCase):

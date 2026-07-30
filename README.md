@@ -17,10 +17,11 @@ read-only `CARDS_BY_NAME` mapping. `card_named()` provides checked lookup by
 printed name. The UI builds its all-cards demo deck from this registry rather
 than duplicating a list of mechanic collections.
 
-The older mechanic-named modules remain import-compatible during the
-migration. They feed a private compatibility intake, while new definitions
-should be added to the appropriate printed-characteristic module and exposed
-through the central catalog.
+All card definitions now live exclusively in these printed-characteristic
+modules. The former mechanic-named definition modules and their temporary
+legacy catalog intake have been removed. Mechanic-focused tuples used by
+tests and UI support are catalog views in `beta_magic.card_defs.groups`, not
+additional card definitions.
 
 Seeded deck lists and their `GameState` factories live in
 `beta_magic.decks`. Deck entries are resolved by printed name through the
@@ -404,6 +405,10 @@ Protection: Black. Each costs `1` to activate during prevention and removes
 all damage against its controller from one selected source of the named
 color. Circles do not tap, and each separate damage event requires another
 activation. The `--protection-test-decks` matchup includes all five Circles.
+
+The five colors, artifacts, and lands are fully canonicalized under
+`beta_magic.card_defs`. Every currently supported card has one authoritative
+definition in that package.
 
 Trample is supported for War Mammoth. Excess damage assigned beyond a
 blocker's remaining toughness is redirected to the defending player. Against

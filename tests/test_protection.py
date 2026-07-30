@@ -19,8 +19,8 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.cards import CardDefinition, EffectScope
-from beta_magic.enchant_creatures import WEAKNESS
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import WEAKNESS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:

@@ -11,8 +11,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.dual_lands import TAIGA, TUNDRA
-from beta_magic.vanilla_creatures import (
+from beta_magic.card_defs import TAIGA, TUNDRA
+from beta_magic.card_defs import (
     GRIZZLY_BEARS,
     MERFOLK_OF_THE_PEARL_TRIDENT,
     MONSS_GOBLIN_RAIDERS,

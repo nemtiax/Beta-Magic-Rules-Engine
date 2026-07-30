@@ -12,8 +12,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.basic_lands import FOREST, SWAMP
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import FOREST, SWAMP
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 class LandwalkTests(unittest.TestCase):

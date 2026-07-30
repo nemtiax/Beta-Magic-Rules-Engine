@@ -11,7 +11,7 @@ from beta_magic import (
     WALL_OF_WOOD,
     Zone,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:

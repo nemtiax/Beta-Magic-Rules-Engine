@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .basic_lands import BASIC_LANDS
 from .card_defs.catalog import ALL_CARDS, card_named
+from .card_defs.lands import BASIC_LANDS
 from .cards import CardDefinition
 from .game import GameState, PlayerState
 

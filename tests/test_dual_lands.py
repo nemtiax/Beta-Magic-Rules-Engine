@@ -18,7 +18,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.basic_lands import FOREST
+from beta_magic.card_defs import FOREST
 
 
 class DualLandTests(unittest.TestCase):

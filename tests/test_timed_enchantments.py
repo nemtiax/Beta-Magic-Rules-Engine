@@ -14,8 +14,8 @@ from beta_magic import (
     Zone,
     SOL_RING,
 )
-from beta_magic.basic_lands import PLAINS
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import PLAINS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 class TimedEnchantmentTests(unittest.TestCase):

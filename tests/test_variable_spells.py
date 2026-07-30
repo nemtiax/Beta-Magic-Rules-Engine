@@ -12,8 +12,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.flying_creatures import PHANTOM_MONSTER
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import PHANTOM_MONSTER
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 class VariableSpellTests(unittest.TestCase):

@@ -13,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.basic_lands import MOUNTAIN
+from beta_magic.card_defs import MOUNTAIN
 
 
 class PumpCreatureTests(unittest.TestCase):

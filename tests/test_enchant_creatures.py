@@ -26,9 +26,9 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.basic_lands import PLAINS
-from beta_magic.global_enchantments import CRUSADE
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS, SAVANNAH_LIONS
+from beta_magic.card_defs import PLAINS
+from beta_magic.card_defs import CRUSADE
+from beta_magic.card_defs import GRIZZLY_BEARS, SAVANNAH_LIONS
 
 
 def player(player_id: str) -> PlayerState:

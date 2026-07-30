@@ -9,12 +9,12 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.flying_creatures import (
+from beta_magic.card_defs import (
     AIR_ELEMENTAL,
     SCRYB_SPRITES,
     WALL_OF_AIR,
 )
-from beta_magic.vanilla_creatures import GRIZZLY_BEARS
+from beta_magic.card_defs import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
