@@ -7,6 +7,7 @@ from beta_magic import (
     LAND_DESTRUCTION_SPELLS,
     PERMANENT_DESTRUCTION_SPELLS,
     SHATTER,
+    TERROR,
     TRANQUILITY,
     TUNNEL,
     WEAKNESS,
@@ -74,7 +75,7 @@ class PermanentDestructionSpellTests(unittest.TestCase):
     def test_card_definitions(self) -> None:
         self.assertEqual(
             PERMANENT_DESTRUCTION_SPELLS,
-            (DISENCHANT, SHATTER, TUNNEL, TRANQUILITY)
+            (DISENCHANT, SHATTER, TERROR, TUNNEL, TRANQUILITY)
             + LAND_DESTRUCTION_SPELLS,
         )
         self.assertEqual(DISENCHANT.mana_cost.compact, "1W")

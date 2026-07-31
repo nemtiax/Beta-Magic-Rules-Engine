@@ -5,6 +5,7 @@ from ..abilities import (
     ActivatedDestroyAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
+    ActivatedUnblockableAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
@@ -20,12 +21,15 @@ from ..effects import (
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
+from .shared import lace
 
 
 _CREATURE_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
 )
+
+CHAOSLACE = lace("Chaoslace", Color.RED)
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
@@ -62,6 +66,33 @@ MONSS_GOBLIN_RAIDERS = _creature(
     "Mons's Goblin Raiders", "{R}", "Goblins", 1, 1
 )
 WALL_OF_STONE = _creature("Wall of Stone", "{1}{R}{R}", "Wall", 0, 8)
+WALL_OF_FIRE = CardDefinition(
+    name="Wall of Fire",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{R}{R}"),
+    rules_text="{R}: Wall of Fire gets +1/+0 until end of turn.",
+    colors=frozenset({Color.RED}),
+    subtypes=("Wall",),
+    power=0,
+    toughness=5,
+    activated_abilities=(
+        ActivatedPumpAbility(ManaCost.parse("{R}"), power=1),
+    ),
+)
+IRONCLAW_ORCS = CardDefinition(
+    name="Ironclaw Orcs",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{R}"),
+    rules_text=(
+        "Ironclaw Orcs cannot be assigned to block any creature with "
+        "power greater than 1."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Orcs",),
+    power=2,
+    toughness=2,
+    maximum_blocked_power=1,
+)
 
 ROC_OF_KHER_RIDGES = CardDefinition(
     name="Roc of Kher Ridges",
@@ -245,6 +276,29 @@ DWARVEN_DEMOLITION_TEAM = CardDefinition(
     ),
 )
 
+DWARVEN_WARRIORS = CardDefinition(
+    name="Dwarven Warriors",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{2}{R}"),
+    rules_text=(
+        "Tap: Target creature with power no greater than 2 is unblockable "
+        "this turn."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Dwarves",),
+    power=1,
+    toughness=1,
+    activated_abilities=(
+        ActivatedUnblockableAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.CREATURE}),
+                maximum_power=2,
+            )
+        ),
+    ),
+)
+
 GOBLIN_BALLOON_BRIGADE = CardDefinition(
     name="Goblin Balloon Brigade",
     card_types=frozenset({CardType.CREATURE}),
@@ -389,8 +443,10 @@ RED_CARDS = tuple(
     sorted(
         (
             BURROWING,
+            CHAOSLACE,
             DRAGON_WHELP,
             DWARVEN_DEMOLITION_TEAM,
+            DWARVEN_WARRIORS,
             EARTH_ELEMENTAL,
             EARTHQUAKE,
             FIRE_ELEMENTAL,
@@ -402,6 +458,7 @@ RED_CARDS = tuple(
             GRAY_OGRE,
             HILL_GIANT,
             HURLOON_MINOTAUR,
+            IRONCLAW_ORCS,
             KELDON_WARLORD,
             LIGHTNING_BOLT,
             MONSS_GOBLIN_RAIDERS,
@@ -415,6 +472,7 @@ RED_CARDS = tuple(
             TUNNEL,
             UTHDEN_TROLL,
             WALL_OF_STONE,
+            WALL_OF_FIRE,
         ),
         key=lambda card: card.name,
     )

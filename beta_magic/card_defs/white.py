@@ -16,14 +16,40 @@ from ..effects import (
     MoveTargetsEffect,
     RegenerateTargetsEffect,
     TemporaryPumpEffect,
+    GlobalLandTypeConversion,
+    UpkeepCostEffect,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
+from .shared import lace
 
 
 _CREATURE_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
+)
+_WALL_IN_PLAY = TargetRequirement(
+    zone=Zone.BATTLEFIELD,
+    card_types=frozenset({CardType.CREATURE}),
+    subtypes=frozenset({"Wall"}),
+)
+
+PURELACE = lace("Purelace", Color.WHITE)
+
+ANIMATE_WALL = CardDefinition(
+    name="Animate Wall",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{W}"),
+    rules_text="Target Wall can attack. Its power and toughness are unchanged.",
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Enchant Wall",),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            wall_can_attack=True,
+        ),
+    ),
+    target_requirement=_WALL_IN_PLAY,
 )
 
 
@@ -181,6 +207,18 @@ HOLY_STRENGTH = CardDefinition(
         ),
     ),
     target_requirement=_CREATURE_IN_PLAY,
+)
+
+CONVERSION = CardDefinition(
+    name="Conversion",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{2}{W}{W}"),
+    rules_text=(
+        "All Mountains are Plains. Pay {W}{W} during upkeep or destroy Conversion."
+    ),
+    colors=frozenset({Color.WHITE}),
+    land_type_effects=(GlobalLandTypeConversion("Mountain", "Plains"),),
+    upkeep_effects=(UpkeepCostEffect(ManaCost.parse("{W}{W}")),),
 )
 
 LANCE = CardDefinition(
@@ -381,14 +419,30 @@ ARMAGEDDON = CardDefinition(
     spell_effects=(DestroyAllEffect(frozenset({CardType.LAND})),),
 )
 
+WRATH_OF_GOD = CardDefinition(
+    name="Wrath of God",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{2}{W}{W}"),
+    rules_text="Destroy all creatures. They cannot regenerate.",
+    colors=frozenset({Color.WHITE}),
+    spell_effects=(
+        DestroyAllEffect(
+            frozenset({CardType.CREATURE}),
+            regeneration_allowed=False,
+        ),
+    ),
+)
+
 WHITE_CARDS = tuple(
     sorted(
         (
+            ANIMATE_WALL,
             ARMAGEDDON,
             BLACK_WARD,
             BLESSING,
             BLUE_WARD,
             CASTLE,
+            CONVERSION,
             *CIRCLES_OF_PROTECTION,
             CRUSADE,
             DEATH_WARD,
@@ -400,6 +454,7 @@ WHITE_CARDS = tuple(
             LANCE,
             NORTHERN_PALADIN,
             PEARLED_UNICORN,
+            PURELACE,
             RED_WARD,
             RESURRECTION,
             RIGHTEOUSNESS,
@@ -409,6 +464,7 @@ WHITE_CARDS = tuple(
             WALL_OF_SWORDS,
             WHITE_KNIGHT,
             WHITE_WARD,
+            WRATH_OF_GOD,
         ),
         key=lambda card: card.name,
     )

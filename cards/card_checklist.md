@@ -1,4 +1,4 @@
- - [ ] Animate Wall
+ - [x] Animate Wall
  - [x] Armageddon
  - [ ] Balance
  - [ ] Benalish Hero
@@ -13,7 +13,7 @@
  - [x] Circle of Protection: Red
  - [x] Circle of Protection: White
  - [ ] Consecrate Land
- - [ ] Conversion
+ - [x] Conversion
  - [x] Crusade
  - [x] Death Ward
  - [x] Disenchant
@@ -30,7 +30,7 @@
  - [x] Northern Paladin
  - [x] Pearled Unicorn
  - [ ] Personal Incarnation
- - [ ] Purelace
+ - [x] Purelace
  - [x] Red Ward
  - [x] Resurrection
  - [ ] Reverse Damage
@@ -43,21 +43,21 @@
  - [x] Wall of Swords
  - [x] White Knight
  - [x] White Ward
- - [ ] Wrath of God
+ - [x] Wrath of God
  - [x] Air Elemental
  - [x] Ancestral Recall
- - [ ] Animate Artifact
+ - [x] Animate Artifact
  - [ ] Blue Elemental Blast
  - [x] Braingeyser
  - [ ] Clone
- - [ ] Control Magic
+ - [x] Control Magic
  - [ ] Copy Artifact
- - [ ] Counterspell
+ - [x] Counterspell
  - [ ] Creature Bond
  - [ ] Drain Power
  - [x] Feedback
  - [x] Flight
- - [ ] Invisibility
+ - [x] Invisibility
  - [x] Jump
  - [ ] Lifetap
  - [x] Lord of Atlantis
@@ -66,29 +66,29 @@
  - [ ] Mana Short
  - [x] Merfolk of the Pearl Trident
  - [x] Phantasmal Forces
- - [ ] Phantasmal Terrain
+ - [x] Phantasmal Terrain
  - [x] Phantom Monster
- - [ ] Pirate Ship
+ - [x] Pirate Ship
  - [ ] Power Leak
  - [ ] Power Sink
  - [x] Prodigal Sorcerer
  - [x] Psionic Blast
  - [ ] Psychic Venom
- - [ ] Sea Serpent
+ - [x] Sea Serpent
  - [ ] Siren's Call
  - [ ] Sleight of Mind
- - [ ] Spell Blast
+ - [x] Spell Blast
  - [ ] Stasis
- - [ ] Steal Artifact
- - [ ] Thoughtlace
+ - [x] Steal Artifact
+ - [x] Thoughtlace
  - [ ] Time Walk
  - [ ] Timetwister
- - [ ] Twiddle
+ - [x] Twiddle
  - [x] Unsummon
  - [ ] Vesuvan Doppelganger
  - [ ] Volcanic Eruption
  - [x] Wall of Air
- - [ ] Wall of Water
+ - [x] Wall of Water
  - [x] Water Elemental
  - [ ] Animate Dead
  - [x] Bad Moon
@@ -96,17 +96,17 @@
  - [x] Bog Wraith
  - [ ] Contract from Below
  - [x] Cursed Land
- - [ ] Dark Ritual
+ - [x] Dark Ritual
  - [ ] Darkpact
  - [ ] Deathgrip
- - [ ] Deathlace
+ - [x] Deathlace
  - [ ] Demonic Attorney
  - [ ] Demonic Hordes
  - [ ] Demonic Tutor
  - [ ] Drain Life
  - [x] Drudge Skeletons
- - [ ] Evil Presence
- - [ ] Fear
+ - [x] Evil Presence
+ - [x] Fear
  - [x] Frozen Shade
  - [ ] Gloom
  - [x] Howl from Beyond
@@ -128,7 +128,7 @@
  - [ ] Sengir Vampire
  - [ ] Simulacrum
  - [x] Sinkhole
- - [ ] Terror
+ - [x] Terror
  - [x] Unholy Strength
  - [x] Wall of Bone
  - [x] Warp Artifact
@@ -137,11 +137,11 @@
  - [ ] Word of Command
  - [x] Zombie Master
  - [x] Burrowing
- - [ ] Chaoslace
+ - [x] Chaoslace
  - [ ] Disintegrate
  - [x] Dragon Whelp
  - [x] Dwarven Demolition Team
- - [ ] Dwarven Warriors
+ - [x] Dwarven Warriors
  - [x] Earth Elemental
  - [ ] Earthbind
  - [x] Earthquake
@@ -157,7 +157,7 @@
  - [x] Gray Ogre
  - [x] Hill Giant
  - [x] Hurloon Minotaur
- - [ ] Ironclaw Orcs
+ - [x] Ironclaw Orcs
  - [x] Keldon Warlord
  - [x] Lightning Bolt
  - [ ] Mana Flare
@@ -179,7 +179,7 @@
  - [x] Tunnel
  - [ ] Two-Headed Giant of Foriys
  - [x] Uthden Troll
- - [ ] Wall of Fire
+ - [x] Wall of Fire
  - [x] Wall of Stone
  - [ ] Wheel of Fortune
  - [ ] Aspect of Wolf
@@ -187,7 +187,7 @@
  - [x] Birds of Paradise
  - [ ] Camouflage
  - [ ] Channel
- - [ ] Cockatrice
+ - [x] Cockatrice
  - [x] Craw Wurm
  - [x] Elvish Archers
  - [ ] Fastbond
@@ -205,7 +205,7 @@
  - [ ] Kudzu
  - [ ] Ley Druid
  - [ ] Lifeforce
- - [ ] Lifelace
+ - [x] Lifelace
  - [ ] Living Artifact
  - [ ] Living Lands
  - [x] Llanowar Elves
@@ -216,7 +216,7 @@
  - [x] Scryb Sprites
  - [x] Shanodin Dryads
  - [x] Stream of Life
- - [ ] Thicket Basilisk
+ - [x] Thicket Basilisk
  - [ ] Timber Wolves
  - [x] Tranquility
  - [x] Tsunami
@@ -237,7 +237,7 @@
  - [ ] Clockwork Beast
  - [ ] Conservator
  - [x] Copper Tablet
- - [ ] Crystal Rod
+ - [x] Crystal Rod
  - [ ] Cyclopean Tomb
  - [ ] Dingus Egg
  - [ ] Disrupting Scepter
@@ -248,8 +248,8 @@
  - [ ] Howling Mine
  - [x] Icy Manipulator
  - [ ] Illusionary Mask
- - [ ] Iron Star
- - [ ] Ivory Cup
+ - [x] Iron Star
+ - [x] Ivory Cup
  - [ ] Jade Monolith
  - [ ] Jade Statue
  - [x] Jayemdae Tome
@@ -268,13 +268,13 @@
  - [x] Obsianus Golem
  - [x] Rod of Ruin
  - [x] Sol Ring
- - [ ] Soul Net
+ - [x] Soul Net
  - [ ] Sunglasses of Urza
  - [ ] The Hive
- - [ ] Throne of Bone
+ - [x] Throne of Bone
  - [ ] Time Vault
  - [ ] Winter Orb
- - [ ] Wooden Sphere
+ - [x] Wooden Sphere
  - [x] Badlands
  - [x] Bayou
  - [x] Plateau

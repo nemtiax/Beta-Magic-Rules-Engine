@@ -4,6 +4,7 @@ from beta_magic import CARDS_BY_NAME
 from beta_magic.card_defs.artifacts import (
     ARTIFACT_CARDS,
     ARTIFACT_CREATURES,
+    EVENT_LIFE_ARTIFACTS,
     LIVING_WALL,
     MANA_ARTIFACTS,
     OBSIANUS_GOLEM,
@@ -17,13 +18,14 @@ class ArtifactDefinitionMigrationTests(unittest.TestCase):
         self.assertEqual(ARTIFACT_CREATURES, (LIVING_WALL, OBSIANUS_GOLEM))
 
     def test_catalog_uses_all_artifact_definitions(self) -> None:
-        self.assertEqual(len(ARTIFACT_CARDS), 13)
+        self.assertEqual(len(ARTIFACT_CARDS), 19)
         for artifact in ARTIFACT_CARDS:
             self.assertIs(CARDS_BY_NAME[artifact.name], artifact)
 
     def test_artifact_groups_cover_each_definition_once(self) -> None:
         grouped = (
             MANA_ARTIFACTS
+            + EVENT_LIFE_ARTIFACTS
             + UTILITY_ARTIFACTS
             + TIMED_ARTIFACTS
             + ARTIFACT_CREATURES

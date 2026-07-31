@@ -64,6 +64,62 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: landTypePicker
+        anchors.centerIn: parent
+        implicitWidth: 360
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingLandType
+        title: "Choose a land type for " + gameState.landTypeCardName
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Repeater {
+                model: gameState.landTypeChoices
+                Button {
+                    required property string modelData
+                    text: modelData
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseLandType(modelData)
+                }
+            }
+            Button {
+                text: "Cancel"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.cancelLandTypeChoice()
+            }
+        }
+    }
+
+    Dialog {
+        id: modePicker
+        anchors.centerIn: parent
+        implicitWidth: 360
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingMode
+        title: "Choose how to cast " + gameState.modeCardName
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Repeater {
+                model: gameState.modeChoices
+                Button {
+                    required property string modelData
+                    text: modelData
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseCastingMode(modelData)
+                }
+            }
+            Button {
+                text: "Cancel"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.cancelCastingMode()
+            }
+        }
+    }
+
     Connections {
         target: gameBridge
         function onStateChanged() { window.gameState = gameBridge.state }
@@ -210,6 +266,24 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
+                        RowLayout {
+                            visible: gameState.targeting
+                                     && gameState.stackCards.length > 0
+                            Label {
+                                text: "Spells being cast:"
+                                color: "#f2c66d"
+                                font.bold: true
+                            }
+                            Repeater {
+                                model: gameState.stackCards
+                                Button {
+                                    required property var modelData
+                                    text: modelData.label
+                                    enabled: modelData.legalTarget
+                                    onClicked: gameBridge.toggleCard(modelData.id)
+                                }
+                            }
+                        }
                         Label {
                             visible: gameState.damageWindow
                             text: gameState.damageWindow + " window — "
@@ -260,6 +334,16 @@ ApplicationWindow {
                             text: "Current batch (declaration order): "
                                   + gameState.stack.join("  +  ")
                             color: "#f2c66d"
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                        Label {
+                            visible: gameState.rulesEvents.length > 0
+                            text: "Catchable event"
+                                  + (gameState.rulesEvents.length > 1 ? "s: " : ": ")
+                                  + gameState.rulesEvents.join("  ·  ")
+                            color: "#9fd6a8"
                             font.bold: true
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true

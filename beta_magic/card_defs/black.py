@@ -8,7 +8,9 @@ from ..abilities import (
 )
 from ..cards import CardDefinition
 from ..effects import (
+    AddManaEffect,
     ContinuousEffect,
+    AttachedLandTypeEffect,
     DestroyTargetsEffect,
     EffectScope,
     MoveTargetsEffect,
@@ -20,11 +22,18 @@ from ..effects import (
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
+from .shared import lace
 
 
 _CREATURE_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
+)
+
+DEATHLACE = lace("Deathlace", Color.BLACK)
+_LAND_IN_PLAY = TargetRequirement(
+    zone=Zone.BATTLEFIELD,
+    card_types=frozenset({CardType.LAND}),
 )
 
 
@@ -239,6 +248,17 @@ BAD_MOON = CardDefinition(
     ),
 )
 
+EVIL_PRESENCE = CardDefinition(
+    name="Evil Presence",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{B}"),
+    rules_text="Target land becomes a Swamp.",
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Enchant Land",),
+    land_type_effects=(AttachedLandTypeEffect(replacement_subtype="Swamp"),),
+    target_requirement=_LAND_IN_PLAY,
+)
+
 UNHOLY_STRENGTH = CardDefinition(
     name="Unholy Strength",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -313,6 +333,53 @@ HOWL_FROM_BEYOND = CardDefinition(
     spell_effects=(TemporaryPumpEffect(power_per_x=1),),
 )
 
+DARK_RITUAL = CardDefinition(
+    name="Dark Ritual",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{B}"),
+    rules_text="Add 3 black mana to your mana pool.",
+    colors=frozenset({Color.BLACK}),
+    spell_effects=(AddManaEffect(Color.BLACK, 3),),
+)
+
+FEAR = CardDefinition(
+    name="Fear",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{B}{B}"),
+    rules_text=(
+        "Target creature cannot be blocked except by artifact creatures "
+        "and black creatures."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Enchant Creature",),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            blocking_allowed_colors=frozenset({Color.BLACK}),
+            blocking_allowed_card_types=frozenset({CardType.ARTIFACT}),
+        ),
+    ),
+    target_requirement=_CREATURE_IN_PLAY,
+)
+
+TERROR = CardDefinition(
+    name="Terror",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{1}{B}"),
+    rules_text=(
+        "Destroy target nonartifact, nonblack creature. "
+        "That creature cannot be regenerated."
+    ),
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        excluded_card_types=frozenset({CardType.ARTIFACT}),
+        excluded_colors=frozenset({Color.BLACK}),
+    ),
+    spell_effects=(DestroyTargetsEffect(regeneration_allowed=False),),
+)
+
 
 BLACK_CARDS = tuple(
     sorted(
@@ -321,7 +388,11 @@ BLACK_CARDS = tuple(
             BLACK_KNIGHT,
             BOG_WRAITH,
             CURSED_LAND,
+            DARK_RITUAL,
+            DEATHLACE,
             DRUDGE_SKELETONS,
+            EVIL_PRESENCE,
+            FEAR,
             FROZEN_SHADE,
             HOWL_FROM_BEYOND,
             NIGHTMARE,
@@ -330,6 +401,7 @@ BLACK_CARDS = tuple(
             ROYAL_ASSASSIN,
             SCATHE_ZOMBIES,
             SINKHOLE,
+            TERROR,
             UNHOLY_STRENGTH,
             WALL_OF_BONE,
             WARP_ARTIFACT,

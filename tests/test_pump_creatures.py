@@ -7,6 +7,8 @@ from beta_magic import (
     LIGHTNING_BOLT,
     PUMP_CREATURES,
     SHIVAN_DRAGON,
+    WALL_OF_FIRE,
+    WALL_OF_WATER,
     GameState,
     KeywordAbility,
     PlayerState,
@@ -53,14 +55,28 @@ class PumpCreatureTests(unittest.TestCase):
     def test_definitions(self) -> None:
         self.assertEqual(
             PUMP_CREATURES,
-            (SHIVAN_DRAGON, FROZEN_SHADE, GRANITE_GARGOYLE, DRAGON_WHELP),
+            (
+                SHIVAN_DRAGON,
+                FROZEN_SHADE,
+                GRANITE_GARGOYLE,
+                DRAGON_WHELP,
+                WALL_OF_WATER,
+                WALL_OF_FIRE,
+            ),
         )
         self.assertEqual(
             [
                 (card.mana_cost.compact, card.power, card.toughness)
                 for card in PUMP_CREATURES
             ],
-            [("4RR", 5, 5), ("2B", 0, 1), ("2R", 2, 2), ("2RR", 2, 3)],
+            [
+                ("4RR", 5, 5),
+                ("2B", 0, 1),
+                ("2R", 2, 2),
+                ("2RR", 2, 3),
+                ("1UU", 0, 5),
+                ("1RR", 0, 5),
+            ],
         )
         self.assertIn(KeywordAbility.FLYING, SHIVAN_DRAGON.abilities)
         self.assertIn(KeywordAbility.FLYING, GRANITE_GARGOYLE.abilities)

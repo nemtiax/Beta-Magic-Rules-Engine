@@ -40,6 +40,36 @@ The card model is split by responsibility:
 `beta_magic.cards` re-exports the ability and effect names for compatibility,
 but engine code imports from the focused modules directly.
 
+Target selection and spell casting live in `beta_magic.casting`.
+`GameState` inherits that focused behavior as its public façade, so callers
+continue to use methods such as `begin_cast()`, `legal_targets_for()`, and
+`complete_pending_cast()` directly on the game state. Priority and batch
+resolution remain in `game.py` because they also coordinate timed events,
+damage, and destruction.
+
+Combat declaration, blocking legality, combat damage assignment, first-strike
+waves, and trample allocation live in `beta_magic.combat`. `CombatState` is
+defined alongside that behavior, while `GameState` continues to expose the
+combat API directly.
+
+Damage packets, prevention and regeneration windows, and the dedicated
+regeneration path for destroy effects are coordinated in
+`beta_magic.incident_resolution`. `GameState` exposes those methods through
+the same public facade. Its central `pass_priority()` dispatcher remains in
+`game.py`, where it selects among spell batches, timed events, damage
+incidents, and destruction incidents.
+
+Game setup, phase advancement, turn rollover, mana-pool boundaries, cleanup,
+and mandatory upkeep events live in `beta_magic.turn_flow`. Upkeep choices and
+timed-event resolution remain available directly through `GameState`, while
+the cross-system priority dispatcher stays in `game.py`.
+
+Current power, toughness, keyword abilities, activated abilities, variable
+base statistics, and continuous-effect filtering live in
+`beta_magic.characteristics`. These queries are exposed through `GameState`;
+state-based actions remain in `game.py` because they mutate zones and
+coordinate with damage resolution.
+
 ## Current foundation
 
 The `beta_magic` package contains the initial rules-engine data model:
@@ -189,6 +219,13 @@ checks the defending player's current land subtypes, so dual lands count for
 each subtype they possess: Bayou, for example, enables both Swampwalk and
 Forestwalk. Landwalk does not care whether the matching land is basic.
 
+Pirate Ship and Sea Serpent implement their printed Island-dependent
+restrictions without introducing a modern keyword. Each is removed
+immediately if its controller has no land with the Island subtype, and it
+cannot attack unless the defending player has one. Dual lands with the Island
+subtype satisfy either condition. Pirate Ship can still use its tap-to-damage
+ability when the defending player has no Island.
+
 Burrowing grants Mountainwalk through the existing Enchant Creature system.
 Lord of Atlantis buffs all printed Merfolk on either battlefield and grants
 them Islandwalk; Goblin King does the same for cards printed as Summon Goblins
@@ -201,6 +238,15 @@ Enchant Creature permanents. The Aura's controller pays the activation cost,
 and the temporary bonus is applied to its enchanted creature. Holy Armor also
 supplies its continuous +0/+2 bonus. An activated bonus lasts through the end
 of the turn even if its Aura subsequently leaves play.
+
+Control Magic and Steal Artifact change control without changing ownership.
+The controlled permanent moves to its new controller's battlefield display,
+but cards leaving play still go to their owner's zone. Control effects are
+ordered by when their Auras entered play: removing the newest Aura reveals an
+older control effect, or restores the permanent's baseline controller. A
+creature cannot attack or use a tap ability immediately after changing
+controllers, while regaining it during the same turn restores usability when
+it began that turn on that player's side.
 
 Disenchant and Shatter use the same targeting flow for enchantments and
 artifacts. Tranquility is cast only at sorcery speed and removes every
@@ -226,6 +272,17 @@ fast-effect batch. Instead, the UI displays the pending event and gives both
 players priority; any declared responses resolve as an ordinary batch, after
 which both players must pass again before the event occurs. If the Tablet has
 left play or is tapped by then, its pending event has no effect.
+
+Throne of Bone, Wooden Sphere, Ivory Cup, Iron Star, and Crystal Rod use
+optional event-conditioned artifact abilities rather than modern automatic
+triggers. A successfully cast spell of the appropriate color creates a
+catchable event; each matching artifact may pay `{1}` once for that event to
+gain one life through the normal fast-effect batch. Multiple artifacts may
+catch the same spell, and one artifact may catch separate spells. Soul Net
+uses the same system for creatures that actually reach the graveyard after
+regeneration. Exile and successfully regenerated destruction create no Soul
+Net opportunity. The UI lists currently catchable events and enables only
+the matching artifact abilities.
 
 Run `python -m beta_magic.ui --timed-event-test-decks` for deterministic
 20-card timed-effect decks. Their opening hands contain Copper Tablet and Sol

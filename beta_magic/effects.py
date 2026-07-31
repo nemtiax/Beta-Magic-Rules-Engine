@@ -56,6 +56,50 @@ class VariableCreatureStats:
 
 
 @dataclass(frozen=True, slots=True)
+class LandhomeRequirement:
+    """Printed land subtype required both at home and for attacking."""
+
+    land_subtype: str
+
+    def __post_init__(self) -> None:
+        if not self.land_subtype.strip():
+            raise ValueError("a landhome requirement must name a land subtype")
+
+
+@dataclass(frozen=True, slots=True)
+class AttachedLandTypeEffect:
+    """Replace an enchanted land's types with one basic land type."""
+
+    replacement_subtype: str | None = None
+    chosen_basic_subtype: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            self.replacement_subtype is not None
+        ) == self.chosen_basic_subtype:
+            raise ValueError(
+                "an attached land-type effect needs a fixed or chosen subtype"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalLandTypeConversion:
+    """Continuously replace one current land subtype with another."""
+
+    source_subtype: str
+    replacement_subtype: str
+
+    def __post_init__(self) -> None:
+        if not self.source_subtype.strip() or not self.replacement_subtype.strip():
+            raise ValueError("land conversion subtypes cannot be blank")
+        if self.source_subtype == self.replacement_subtype:
+            raise ValueError("land conversion must change the subtype")
+
+
+LandTypeEffect = AttachedLandTypeEffect | GlobalLandTypeConversion
+
+
+@dataclass(frozen=True, slots=True)
 class DamageEffect:
     amount: int
     recipient: EffectRecipient = EffectRecipient.TARGET
@@ -99,6 +143,24 @@ class DrawCardsEffect:
 
     amount: int = 0
     amount_per_x: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class CounterTargetSpellEffect:
+    """Counter the targeted spell during its interrupt window."""
+
+    x_equals_target_cost: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeTargetColorEffect:
+    """Permanently replace a spell or permanent's color."""
+
+    color: Color
+
+    def __post_init__(self) -> None:
+        if self.color is Color.COLORLESS:
+            raise ValueError("a Lace must choose one of the five colors")
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +225,30 @@ class MoveTargetsEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class SetTappedEffect:
+    """Tap or untap each targeted permanent, as chosen while casting."""
+
+
+@dataclass(frozen=True, slots=True)
+class AddManaEffect:
+    """Add mana to the resolving spell's caster's mana pool."""
+
+    color: Color
+    amount: int
+
+    def __post_init__(self) -> None:
+        if self.amount <= 0:
+            raise ValueError("a mana effect must add a positive amount")
+
+
+@dataclass(frozen=True, slots=True)
+class CombatDestructionEffect:
+    """Destroy creatures paired in combat with this creature at combat's end."""
+
+    spare_blocking_walls: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class DestroyAllEffect:
     """Move all battlefield permanents matching any listed type."""
 
@@ -174,12 +260,28 @@ class DestroyAllEffect:
         if not self.card_types:
             raise ValueError("a global destruction effect must name a card type")
 
-    def matches(self, card: Card) -> bool:
+    def matches(
+        self,
+        card: Card,
+        *,
+        current_card_types: frozenset[CardType] | None = None,
+        current_subtypes: tuple[str, ...] | None = None,
+    ) -> bool:
+        card_types = (
+            card.definition.card_types
+            if current_card_types is None
+            else current_card_types
+        )
         return bool(
-            self.card_types & card.definition.card_types
+            self.card_types & card_types
             and (
                 not self.subtypes
-                or self.subtypes & set(card.definition.subtypes)
+                or self.subtypes
+                & set(
+                    card.definition.subtypes
+                    if current_subtypes is None
+                    else current_subtypes
+                )
             )
         )
 
@@ -190,10 +292,14 @@ SpellEffect = (
     | RegenerateTargetsEffect
     | GainLifeEffect
     | DrawCardsEffect
+    | CounterTargetSpellEffect
+    | ChangeTargetColorEffect
     | GlobalDamageEffect
     | DestroyTargetsEffect
     | DestroyAllEffect
     | MoveTargetsEffect
+    | SetTappedEffect
+    | AddManaEffect
 )
 
 
@@ -215,6 +321,25 @@ class ContinuousEffect:
     untapped_only: bool = False
     nonattacking_only: bool = False
     controller_has_land_subtype: str | None = None
+    controls_attached_card: bool = False
+    granted_card_types: frozenset[CardType] = field(default_factory=frozenset)
+    base_stats_from_mana_value: bool = False
+    wall_can_attack: bool = False
+    blocking_subtype: str | None = None
+    blocking_allowed_colors: frozenset[Color] = field(default_factory=frozenset)
+    blocking_allowed_card_types: frozenset[CardType] = field(
+        default_factory=frozenset
+    )
+    unblockable: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            self.controls_attached_card
+            and self.scope is not EffectScope.ATTACHED_CARD
+        ):
+            raise ValueError(
+                "a control-changing effect must apply to its attached card"
+            )
 
 
 # Compatibility name for extensions built against the earlier stat-only model.
@@ -228,17 +353,26 @@ __all__ = [
     "UpkeepFailure",
     "VariableStatKind",
     "VariableCreatureStats",
+    "LandhomeRequirement",
+    "AttachedLandTypeEffect",
+    "GlobalLandTypeConversion",
+    "LandTypeEffect",
     "DamageEffect",
     "TemporaryPumpEffect",
     "RegenerateTargetsEffect",
     "GainLifeEffect",
     "DrawCardsEffect",
+    "CounterTargetSpellEffect",
+    "ChangeTargetColorEffect",
     "GlobalDamageEffect",
     "UpkeepDamageEffect",
     "UpkeepCostEffect",
     "UpkeepEffect",
     "DestroyTargetsEffect",
     "MoveTargetsEffect",
+    "SetTappedEffect",
+    "AddManaEffect",
+    "CombatDestructionEffect",
     "DestroyAllEffect",
     "SpellEffect",
     "ContinuousEffect",

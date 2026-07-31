@@ -15,17 +15,21 @@ from .abilities import (
     ActivatedDamageAbility,
     ActivatedDestroyAbility,
     ActivatedDrawAbility,
+    ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
     ActivatedPreventDamageAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
     ActivatedTapAbility,
+    ActivatedUnblockableAbility,
     BatchActivatedAbility,
     TargetedActivatedAbility,
     TargetRequirement,
 )
 from .effects import (
     ContinuousEffect,
+    CounterTargetSpellEffect,
+    ChangeTargetColorEffect,
     CreatureBuff,
     DamageEffect,
     DestroyAllEffect,
@@ -35,7 +39,12 @@ from .effects import (
     EffectScope,
     GainLifeEffect,
     GlobalDamageEffect,
+    LandhomeRequirement,
+    LandTypeEffect,
     MoveTargetsEffect,
+    SetTappedEffect,
+    AddManaEffect,
+    CombatDestructionEffect,
     RegenerateTargetsEffect,
     SpellEffect,
     TemporaryPumpEffect,
@@ -64,6 +73,8 @@ class CardDefinition:
     power: int | None = None
     toughness: int | None = None
     variable_stats: VariableCreatureStats | None = None
+    landhome: LandhomeRequirement | None = None
+    land_type_effects: tuple[LandTypeEffect, ...] = ()
     produces_mana: Color | None = None
     activated_abilities: tuple[ActivatedAbility, ...] = ()
     supertypes: tuple[str, ...] = ()
@@ -73,6 +84,9 @@ class CardDefinition:
     spell_effects: tuple[SpellEffect, ...] = ()
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
     prevention_amount: int = 0
+    casting_modes: tuple[str, ...] = ()
+    maximum_blocked_power: int | None = None
+    combat_destruction_effects: tuple[CombatDestructionEffect, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -91,6 +105,11 @@ class CardDefinition:
             raise ValueError("only creatures can have variable stats")
         if self.variable_stats is not None and self.power is not None:
             raise ValueError("variable stats cannot also have printed numeric stats")
+        if (
+            self.landhome is not None
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can have landhome requirements")
         if self.produces_mana is not None and CardType.LAND not in self.card_types:
             raise ValueError("only lands can have an intrinsic mana ability")
         if self.activated_abilities and not self.is_permanent:
@@ -106,6 +125,8 @@ class CardDefinition:
             raise ValueError("an attached pump ability must define its target requirement")
         if self.continuous_effects and not self.is_permanent:
             raise ValueError("only permanents can supply continuous effects")
+        if self.land_type_effects and not self.is_permanent:
+            raise ValueError("only permanents can change land types")
         if (
             any(
                 effect.scope is EffectScope.ATTACHED_CARD
@@ -116,13 +137,30 @@ class CardDefinition:
             raise ValueError("an attached effect must define its target requirement")
         if self.spell_effects and not self.card_types & {
             CardType.INSTANT,
+            CardType.INTERRUPT,
             CardType.SORCERY,
         }:
-            raise ValueError("only instants and sorceries can have spell effects")
+            raise ValueError(
+                "only instants, interrupts, and sorceries can have spell effects"
+            )
         if self.upkeep_effects and not self.is_permanent:
             raise ValueError("only permanents can supply upkeep effects")
         if self.prevention_amount < 0:
             raise ValueError("damage prevention cannot be negative")
+        if len(set(self.casting_modes)) != len(self.casting_modes):
+            raise ValueError("casting modes must be unique")
+        if any(not mode.strip() for mode in self.casting_modes):
+            raise ValueError("casting modes cannot be empty")
+        if (
+            self.maximum_blocked_power is not None
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can restrict what they block")
+        if (
+            self.combat_destruction_effects
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can have combat destruction effects")
 
     @property
     def is_permanent(self) -> bool:
@@ -177,7 +215,12 @@ class Card:
     tapped: bool = False
     damage: int = 0
     entered_battlefield_turn: int | None = None
+    battlefield_entry_sequence: int | None = None
+    base_controller_id: str | None = None
+    controller_at_turn_start_id: str | None = None
     enchanted_card_id: UUID | None = None
+    chosen_land_subtype: str | None = None
+    color_override: Color | None = None
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
@@ -185,6 +228,8 @@ class Card:
             raise ValueError("a card must have an owner")
         if self.controller_id is None:
             self.controller_id = self.owner_id
+        if self.base_controller_id is None:
+            self.base_controller_id = self.controller_id
         if self.damage < 0:
             raise ValueError("damage cannot be negative")
         if self.zone is not Zone.BATTLEFIELD and self.tapped:
@@ -202,15 +247,19 @@ __all__ = [
     "ActivatedDamageAbility",
     "ActivatedDestroyAbility",
     "ActivatedDrawAbility",
+    "ActivatedEventLifeGainAbility",
     "ActivatedManaAbility",
     "ActivatedPreventDamageAbility",
     "ActivatedPumpAbility",
     "ActivatedRegenerationAbility",
     "ActivatedTapAbility",
+    "ActivatedUnblockableAbility",
     "BatchActivatedAbility",
     "TargetedActivatedAbility",
     "TargetRequirement",
     "ContinuousEffect",
+    "CounterTargetSpellEffect",
+    "ChangeTargetColorEffect",
     "CreatureBuff",
     "DamageEffect",
     "DestroyAllEffect",
@@ -220,7 +269,12 @@ __all__ = [
     "EffectScope",
     "GainLifeEffect",
     "GlobalDamageEffect",
+    "LandhomeRequirement",
+    "LandTypeEffect",
     "MoveTargetsEffect",
+    "SetTappedEffect",
+    "AddManaEffect",
+    "CombatDestructionEffect",
     "RegenerateTargetsEffect",
     "SpellEffect",
     "TemporaryPumpEffect",

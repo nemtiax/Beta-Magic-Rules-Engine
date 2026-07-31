@@ -7,8 +7,10 @@ from beta_magic.types import Color
 
 EXPECTED_NAMES = {
     "Burrowing",
+    "Chaoslace",
     "Dragon Whelp",
     "Dwarven Demolition Team",
+    "Dwarven Warriors",
     "Earth Elemental",
     "Earthquake",
     "Fire Elemental",
@@ -20,6 +22,7 @@ EXPECTED_NAMES = {
     "Gray Ogre",
     "Hill Giant",
     "Hurloon Minotaur",
+    "Ironclaw Orcs",
     "Keldon Warlord",
     "Lightning Bolt",
     "Mons's Goblin Raiders",
@@ -33,12 +36,13 @@ EXPECTED_NAMES = {
     "Tunnel",
     "Uthden Troll",
     "Wall of Stone",
+    "Wall of Fire",
 }
 
 
 class RedDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_red_cards_are_migrated(self) -> None:
-        self.assertEqual(len(RED_CARDS), 27)
+        self.assertEqual(len(RED_CARDS), 31)
         self.assertEqual(
             {card.name for card in RED_CARDS}, EXPECTED_NAMES
         )

@@ -36,9 +36,9 @@ from .decks import (
     make_x_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
-from .effects import UpkeepCostEffect
+from .effects import AttachedLandTypeEffect, UpkeepCostEffect
 from .game import GameState, PlayerState
-from .types import CardType, CombatStep, Zone
+from .types import BASIC_LAND_SUBTYPES, CardType, CombatStep, Zone
 
 
 
@@ -68,6 +68,8 @@ class GameViewModel(QObject):
         self._x_card_id: UUID | None = None
         self._x_value = 0
         self._x_max = 0
+        self._land_type_card_id: UUID | None = None
+        self._mode_card_id: UUID | None = None
         self._message = "Double-click a card to play, cast, or tap it."
 
     @Property("QVariantMap", notify=stateChanged)
@@ -103,6 +105,27 @@ class GameViewModel(QObject):
                 or self.game.pending_activation is not None
             ),
             "choosingX": self._x_card_id is not None,
+            "choosingLandType": self._land_type_card_id is not None,
+            "choosingMode": self._mode_card_id is not None,
+            "modeChoices": (
+                list(self._card_by_id(self._mode_card_id).definition.casting_modes)
+                if self._mode_card_id is not None
+                and self._card_by_id(self._mode_card_id) is not None
+                else []
+            ),
+            "modeCardName": (
+                self._card_by_id(self._mode_card_id).name
+                if self._mode_card_id is not None
+                and self._card_by_id(self._mode_card_id) is not None
+                else ""
+            ),
+            "landTypeChoices": list(BASIC_LAND_SUBTYPES),
+            "landTypeCardName": (
+                self._card_by_id(self._land_type_card_id).name
+                if self._land_type_card_id is not None
+                and self._card_by_id(self._land_type_card_id) is not None
+                else ""
+            ),
             "xValue": self._x_value,
             "xMaximum": self._x_max,
             "xCardName": (
@@ -126,11 +149,26 @@ class GameViewModel(QObject):
                     for ability in self.game.batch_abilities
                 ],
             ],
+            "stackCards": [
+                {
+                    "id": str(card.id),
+                    "label": (
+                        f"{card.name} (X={self.game.stack_spells[card.id].x_value})"
+                        if card.definition.mana_cost.x_symbols
+                        else card.name
+                    ),
+                    "legalTarget": card in self.game.legal_targets_for(),
+                }
+                for card in self.game.stack
+            ],
             "timedEvent": (
                 self.game.timed_events[0].label
                 if self.game.timed_events
                 else ""
             ),
+            "rulesEvents": [
+                event.label for event in self.game.event_opportunities
+            ],
             "damageWindow": (
                 damage_incident.step.value.replace("_", " ").title()
                 if damage_incident is not None
@@ -274,6 +312,13 @@ class GameViewModel(QObject):
 
     def _card_data(self, card: Card) -> dict[str, Any]:
         background, foreground = self._card_colors(card)
+        current_card_types = self.game.card_types(card)
+        displayed_subtypes = (
+            self.game.land_subtypes(card)
+            if card.zone is Zone.BATTLEFIELD
+            and CardType.LAND in card.definition.card_types
+            else card.definition.subtypes
+        )
         enchanted_card = next(
             (
                 permanent
@@ -291,10 +336,10 @@ class GameViewModel(QObject):
             "tapped": card.tapped,
             "selected": card.id in self.selected_card_ids,
             "legalTarget": card in self.game.legal_targets_for(),
-            "isCreature": CardType.CREATURE in card.definition.card_types,
+            "isCreature": CardType.CREATURE in current_card_types,
             "power": (
                 self.game.creature_power(card)
-                if CardType.CREATURE in card.definition.card_types
+                if CardType.CREATURE in current_card_types
                 and card.zone is Zone.BATTLEFIELD
                 and (
                     card.definition.power is not None
@@ -308,7 +353,7 @@ class GameViewModel(QObject):
             ),
             "toughness": (
                 self.game.creature_toughness(card)
-                if CardType.CREATURE in card.definition.card_types
+                if CardType.CREATURE in current_card_types
                 and card.zone is Zone.BATTLEFIELD
                 and (
                     card.definition.toughness is not None
@@ -334,20 +379,20 @@ class GameViewModel(QObject):
                 (
                     *card.definition.supertypes,
                     *(t.value for t in sorted(
-                        card.definition.card_types, key=lambda card_type: card_type.value
+                        current_card_types, key=lambda card_type: card_type.value
                     )),
                 )
             )
             + (
-                " — " + " ".join(card.definition.subtypes)
-                if card.definition.subtypes
+                " — " + " ".join(displayed_subtypes)
+                if displayed_subtypes
                 else ""
             ),
             "abilities": ", ".join(
                 ability.value
                 for ability in sorted(
                     self.game.creature_abilities(card)
-                    if CardType.CREATURE in card.definition.card_types
+                    if CardType.CREATURE in current_card_types
                     and card.zone is Zone.BATTLEFIELD
                     else card.definition.abilities,
                     key=lambda ability: ability.value,
@@ -374,11 +419,13 @@ class GameViewModel(QObject):
             else [],
         }
 
-    @staticmethod
-    def _card_colors(card: Card) -> tuple[str, str]:
-        color = card.definition.produces_mana
-        if color is None and len(card.definition.colors) == 1:
-            color = next(iter(card.definition.colors))
+    def _card_colors(self, card: Card) -> tuple[str, str]:
+        current_colors = self.game.card_colors(card)
+        color = None
+        if len(current_colors) == 1:
+            color = next(iter(current_colors))
+        elif card.color_override is None:
+            color = card.definition.produces_mana
         palette = {
             "W": ("#f1edcf", "#29271e"),
             "U": ("#79b9dc", "#102b3a"),
@@ -567,6 +614,7 @@ class GameViewModel(QObject):
             CardType.CREATURE in card.definition.card_types
             or CardType.ENCHANTMENT in card.definition.card_types
             or CardType.INSTANT in card.definition.card_types
+            or CardType.INTERRUPT in card.definition.card_types
             or CardType.SORCERY in card.definition.card_types
             or CardType.ARTIFACT in card.definition.card_types
         ):
@@ -590,6 +638,20 @@ class GameViewModel(QObject):
                     self._x_card_id = card.id
                     self._x_value = self._x_max
                     self._message = f"Choose X for {card.name}."
+                self.stateChanged.emit()
+                return
+            if any(
+                isinstance(effect, AttachedLandTypeEffect)
+                and effect.chosen_basic_subtype
+                for effect in card.definition.land_type_effects
+            ):
+                self._land_type_card_id = card.id
+                self._message = f"Choose a basic land type for {card.name}."
+                self.stateChanged.emit()
+                return
+            if card.definition.casting_modes:
+                self._mode_card_id = card.id
+                self._message = f"Choose how to cast {card.name}."
                 self.stateChanged.emit()
                 return
             try:
@@ -653,6 +715,60 @@ class GameViewModel(QObject):
         self._x_value = 0
         self._x_max = 0
         self._message = "Cancelled casting."
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def chooseLandType(self, subtype: str) -> None:
+        if self._land_type_card_id is None:
+            return
+        card = self._card_by_id(self._land_type_card_id)
+        if card is None:
+            self.cancelLandTypeChoice()
+            return
+        try:
+            pending = self.game.begin_cast(card, land_subtype=subtype)
+        except (ValueError, RuntimeError) as error:
+            self._message = str(error)
+        else:
+            self._land_type_card_id = None
+            self._message = (
+                f"Choose a target in play for {card.name} ({subtype})."
+                if pending is not None
+                else f"Cast {card.name}, choosing {subtype}."
+            )
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelLandTypeChoice(self) -> None:
+        self._land_type_card_id = None
+        self._message = "Land-type choice cancelled."
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def chooseCastingMode(self, mode: str) -> None:
+        if self._mode_card_id is None:
+            return
+        card = self._card_by_id(self._mode_card_id)
+        if card is None:
+            self.cancelCastingMode()
+            return
+        try:
+            pending = self.game.begin_cast(card, mode=mode)
+        except (ValueError, RuntimeError) as error:
+            self._message = str(error)
+        else:
+            self._mode_card_id = None
+            self._message = (
+                f"Choose a target for {card.name} ({mode})."
+                if pending is not None
+                else f"Cast {card.name} ({mode})."
+            )
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelCastingMode(self) -> None:
+        self._mode_card_id = None
+        self._message = "Casting-mode choice cancelled."
         self.stateChanged.emit()
 
     @Slot(str, int)

@@ -4,8 +4,10 @@ from beta_magic import (
     ABILITY_ENCHANT_CREATURES,
     BLACK_WARD,
     BLUE_WARD,
+    CONTROL_MAGIC,
     ENCHANT_CREATURES,
     FLIGHT,
+    FEAR,
     BURROWING,
     HOLY_STRENGTH,
     LANCE,
@@ -71,7 +73,7 @@ class EnchantCreatureTests(unittest.TestCase):
         self.assertEqual(WEAKNESS.mana_cost.compact, "B")
         self.assertEqual(
             ABILITY_ENCHANT_CREATURES,
-            (LANCE, FLIGHT, BURROWING, REGENERATION, WEB),
+            (LANCE, FLIGHT, BURROWING, FEAR, REGENERATION, WEB),
         )
         self.assertEqual(
             ENCHANT_CREATURES,
@@ -80,6 +82,7 @@ class EnchantCreatureTests(unittest.TestCase):
                 + ABILITY_ENCHANT_CREATURES
                 + PUMP_ENCHANT_CREATURES
                 + PROTECTION_ENCHANT_CREATURES
+                + (CONTROL_MAGIC,)
             ),
         )
         self.assertEqual(

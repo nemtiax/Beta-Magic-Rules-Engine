@@ -3,6 +3,7 @@
 from ..abilities import (
     ActivatedDamageAbility,
     ActivatedDrawAbility,
+    ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
     ActivatedRegenerationAbility,
     ActivatedTapAbility,
@@ -66,6 +67,56 @@ BLACK_LOTUS = CardDefinition(
 
 MOXEN = (MOX_PEARL, MOX_SAPPHIRE, MOX_JET, MOX_RUBY, MOX_EMERALD)
 MANA_ARTIFACTS = MOXEN + (SOL_RING, BLACK_LOTUS)
+
+
+def _lucky_charm(name: str, color: Color) -> CardDefinition:
+    return CardDefinition(
+        name=name,
+        card_types=frozenset({CardType.ARTIFACT}),
+        mana_cost=ManaCost.parse("{1}"),
+        rules_text=(
+            f"{{1}}: Any {color.name.lower()} spell cast by any player "
+            "gives you 1 life."
+        ),
+        activated_abilities=(
+            ActivatedEventLifeGainAbility(
+                ManaCost.parse("{1}"),
+                spell_color=color,
+            ),
+        ),
+    )
+
+
+THRONE_OF_BONE = _lucky_charm("Throne of Bone", Color.BLACK)
+WOODEN_SPHERE = _lucky_charm("Wooden Sphere", Color.GREEN)
+IVORY_CUP = _lucky_charm("Ivory Cup", Color.WHITE)
+IRON_STAR = _lucky_charm("Iron Star", Color.RED)
+CRYSTAL_ROD = _lucky_charm("Crystal Rod", Color.BLUE)
+LUCKY_CHARMS = (
+    THRONE_OF_BONE,
+    WOODEN_SPHERE,
+    IVORY_CUP,
+    IRON_STAR,
+    CRYSTAL_ROD,
+)
+
+SOUL_NET = CardDefinition(
+    name="Soul Net",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "{1}: You gain 1 life every time a creature is destroyed, "
+        "unless it is then regenerated."
+    ),
+    activated_abilities=(
+        ActivatedEventLifeGainAbility(
+            ManaCost.parse("{1}"),
+            creature_death=True,
+        ),
+    ),
+)
+
+EVENT_LIFE_ARTIFACTS = LUCKY_CHARMS + (SOUL_NET,)
 
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
     zone=Zone.BATTLEFIELD,
@@ -152,6 +203,7 @@ ARTIFACT_CREATURES = (LIVING_WALL, OBSIANUS_GOLEM)
 ARTIFACT_CARDS = tuple(
     sorted(
         MANA_ARTIFACTS
+        + EVENT_LIFE_ARTIFACTS
         + UTILITY_ARTIFACTS
         + TIMED_ARTIFACTS
         + ARTIFACT_CREATURES,
@@ -169,6 +221,14 @@ __all__ = [
     "SOL_RING",
     "BLACK_LOTUS",
     "MANA_ARTIFACTS",
+    "THRONE_OF_BONE",
+    "WOODEN_SPHERE",
+    "IVORY_CUP",
+    "IRON_STAR",
+    "CRYSTAL_ROD",
+    "LUCKY_CHARMS",
+    "SOUL_NET",
+    "EVENT_LIFE_ARTIFACTS",
     "ROD_OF_RUIN",
     "JAYEMDAE_TOME",
     "ICY_MANIPULATOR",

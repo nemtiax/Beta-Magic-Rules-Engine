@@ -22,6 +22,7 @@ DEFINITION_FILES = {
     "green.py",
     "lands.py",
     "red.py",
+    "shared.py",
     "white.py",
 }
 
@@ -37,7 +38,7 @@ class CardDefinitionArchitectureTests(unittest.TestCase):
             + ARTIFACT_CARDS
             + LAND_CARDS
         )
-        self.assertEqual(len(grouped), 143)
+        self.assertEqual(len(grouped), 177)
         self.assertEqual(len(grouped), len(set(grouped)))
         self.assertEqual(set(grouped), set(ALL_CARDS))
 

@@ -22,7 +22,8 @@ MANA_CREATURES = _cards("Llanowar Elves", "Birds of Paradise")
 LANDWALK_CREATURES = _cards("Bog Wraith", "Shanodin Dryads")
 CREATURE_LORDS = _cards("Lord of Atlantis", "Goblin King")
 PUMP_CREATURES = _cards(
-    "Shivan Dragon", "Frozen Shade", "Granite Gargoyle", "Dragon Whelp"
+    "Shivan Dragon", "Frozen Shade", "Granite Gargoyle", "Dragon Whelp",
+    "Wall of Water", "Wall of Fire",
 )
 VANILLA_WALLS = _cards("Wall of Ice", "Wall of Stone", "Wall of Wood")
 FLYING_CREATURES = _cards(
@@ -43,7 +44,7 @@ SIMPLE_ENCHANT_CREATURES = _cards(
     "Holy Strength", "Unholy Strength", "Weakness"
 )
 ABILITY_ENCHANT_CREATURES = _cards(
-    "Lance", "Flight", "Burrowing", "Regeneration", "Web"
+    "Lance", "Flight", "Burrowing", "Fear", "Regeneration", "Web"
 )
 PUMP_ENCHANT_CREATURES = _cards(
     "Blessing", "Holy Armor", "Firebreathing"
@@ -51,21 +52,31 @@ PUMP_ENCHANT_CREATURES = _cards(
 PROTECTION_ENCHANT_CREATURES = _cards(
     "Black Ward", "Blue Ward", "Green Ward", "Red Ward", "White Ward"
 )
+CONTROL_ENCHANTMENTS = _cards("Control Magic", "Steal Artifact")
+LAND_TYPE_ENCHANTMENTS = _cards(
+    "Conversion", "Evil Presence", "Phantasmal Terrain"
+)
 ENCHANT_CREATURES = (
     SIMPLE_ENCHANT_CREATURES
     + ABILITY_ENCHANT_CREATURES
     + PUMP_ENCHANT_CREATURES
     + PROTECTION_ENCHANT_CREATURES
+    + _cards("Control Magic")
 )
 
 TARGETED_DAMAGE_SPELLS = _cards("Lightning Bolt", "Psionic Blast")
+COUNTERSPELLS = _cards("Counterspell", "Spell Blast")
+LACES = _cards(
+    "Purelace", "Thoughtlace", "Deathlace", "Chaoslace", "Lifelace"
+)
+ANIMATION_ENCHANTMENTS = _cards("Animate Wall", "Animate Artifact")
 TARGETED_PUMP_SPELLS = _cards("Giant Growth", "Righteousness")
 LAND_DESTRUCTION_SPELLS = _cards(
     "Stone Rain", "Sinkhole", "Ice Storm", "Armageddon", "Flashfires",
     "Tsunami",
 )
 PERMANENT_DESTRUCTION_SPELLS = _cards(
-    "Disenchant", "Shatter", "Tunnel", "Tranquility",
+    "Disenchant", "Shatter", "Terror", "Tunnel", "Tranquility",
 ) + LAND_DESTRUCTION_SPELLS
 GRAVEYARD_RECURSION_SPELLS = _cards(
     "Regrowth", "Raise Dead", "Resurrection"
@@ -76,11 +87,12 @@ TIMED_ENCHANTMENTS = _cards(
 UPKEEP_CREATURES = _cards("Phantasmal Forces", "Force of Nature")
 VARIABLE_CREATURES = _cards("Keldon Warlord", "Nightmare", "Plague Rats")
 DAMAGE_ABILITY_CREATURES = _cards(
-    "Prodigal Sorcerer", "Orcish Artillery"
+    "Prodigal Sorcerer", "Orcish Artillery", "Pirate Ship"
 )
+LANDHOME_CREATURES = _cards("Pirate Ship", "Sea Serpent")
 UTILITY_ABILITY_CREATURES = _cards(
-    "Dwarven Demolition Team", "Goblin Balloon Brigade", "Royal Assassin",
-    "Northern Paladin",
+    "Dwarven Demolition Team", "Dwarven Warriors", "Goblin Balloon Brigade",
+    "Royal Assassin", "Northern Paladin",
 )
 REGENERATION_CREATURES = _cards(
     "Drudge Skeletons", "Uthden Troll", "Will-o'-the-Wisp", "Wall of Bone",

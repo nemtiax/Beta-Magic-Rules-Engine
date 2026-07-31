@@ -10,7 +10,11 @@ EXPECTED_NAMES = {
     "Black Knight",
     "Bog Wraith",
     "Cursed Land",
+    "Deathlace",
+    "Dark Ritual",
     "Drudge Skeletons",
+    "Evil Presence",
+    "Fear",
     "Frozen Shade",
     "Howl from Beyond",
     "Nightmare",
@@ -19,6 +23,7 @@ EXPECTED_NAMES = {
     "Royal Assassin",
     "Scathe Zombies",
     "Sinkhole",
+    "Terror",
     "Unholy Strength",
     "Wall of Bone",
     "Warp Artifact",
@@ -30,7 +35,7 @@ EXPECTED_NAMES = {
 
 class BlackDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_black_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLACK_CARDS), 19)
+        self.assertEqual(len(BLACK_CARDS), 24)
         self.assertEqual(
             {card.name for card in BLACK_CARDS}, EXPECTED_NAMES
         )

@@ -7,27 +7,39 @@ from beta_magic.types import Color
 
 EXPECTED_NAMES = {
     "Air Elemental",
+    "Animate Artifact",
     "Ancestral Recall",
     "Braingeyser",
+    "Control Magic",
+    "Counterspell",
     "Feedback",
     "Flight",
     "Jump",
+    "Invisibility",
     "Lord of Atlantis",
     "Mahamoti Djinn",
     "Merfolk of the Pearl Trident",
     "Phantasmal Forces",
+    "Phantasmal Terrain",
     "Phantom Monster",
+    "Pirate Ship",
     "Prodigal Sorcerer",
     "Psionic Blast",
+    "Sea Serpent",
+    "Spell Blast",
+    "Steal Artifact",
+    "Thoughtlace",
+    "Twiddle",
     "Unsummon",
     "Wall of Air",
+    "Wall of Water",
     "Water Elemental",
 }
 
 
 class BlueDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_blue_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLUE_CARDS), 16)
+        self.assertEqual(len(BLUE_CARDS), 28)
         self.assertEqual(
             {card.name for card in BLUE_CARDS}, EXPECTED_NAMES
         )

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+BASIC_LAND_SUBTYPES = ("Plains", "Island", "Swamp", "Mountain", "Forest")
+
 
 class Color(str, Enum):
     WHITE = "W"

@@ -7,6 +7,7 @@ from ..abilities import (
 )
 from ..cards import CardDefinition
 from ..effects import (
+    CombatDestructionEffect,
     ContinuousEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
@@ -22,12 +23,15 @@ from ..effects import (
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
+from .shared import lace
 
 
 _CREATURE_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
 )
+
+LIFELACE = lace("Lifelace", Color.GREEN)
 
 
 def _creature(
@@ -51,6 +55,37 @@ IRONROOT_TREEFOLK = _creature(
 )
 WALL_OF_ICE = _creature("Wall of Ice", "{2}{G}", "Wall", 0, 7)
 WALL_OF_WOOD = _creature("Wall of Wood", "{G}", "Wall", 0, 3)
+
+THICKET_BASILISK = CardDefinition(
+    name="Thicket Basilisk",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{G}{G}"),
+    rules_text=(
+        "Any non-Wall creature blocking Thicket Basilisk, or any creature "
+        "blocked by it, is destroyed at end of combat."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Basilisk",),
+    power=2,
+    toughness=4,
+    combat_destruction_effects=(CombatDestructionEffect(),),
+)
+
+COCKATRICE = CardDefinition(
+    name="Cockatrice",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{G}{G}"),
+    rules_text=(
+        "Flying. Any non-Wall creature blocking Cockatrice, or any creature "
+        "blocked by it, is destroyed at end of combat."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Cockatrice",),
+    power=2,
+    toughness=4,
+    abilities=frozenset({KeywordAbility.FLYING}),
+    combat_destruction_effects=(CombatDestructionEffect(),),
+)
 
 SCRYB_SPRITES = CardDefinition(
     name="Scryb Sprites",
@@ -320,6 +355,7 @@ GREEN_CARDS = tuple(
     sorted(
         (
             BIRDS_OF_PARADISE,
+            COCKATRICE,
             CRAW_WURM,
             ELVISH_ARCHERS,
             FORCE_OF_NATURE,
@@ -330,11 +366,13 @@ GREEN_CARDS = tuple(
             ICE_STORM,
             IRONROOT_TREEFOLK,
             LLANOWAR_ELVES,
+            LIFELACE,
             REGENERATION,
             REGROWTH,
             SCRYB_SPRITES,
             SHANODIN_DRYADS,
             STREAM_OF_LIFE,
+            THICKET_BASILISK,
             TRANQUILITY,
             TSUNAMI,
             WALL_OF_BRAMBLES,

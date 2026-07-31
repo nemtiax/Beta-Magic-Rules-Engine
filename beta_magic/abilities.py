@@ -17,38 +17,87 @@ class TargetRequirement:
     """A declarative requirement for one or more card targets."""
 
     zone: Zone | None = None
+    additional_zones: frozenset[Zone] = field(default_factory=frozenset)
     card_types: frozenset[CardType] = field(default_factory=frozenset)
     any_card_types: frozenset[CardType] = field(default_factory=frozenset)
+    excluded_card_types: frozenset[CardType] = field(default_factory=frozenset)
     players: bool = False
     blocking_only: bool = False
     tapped_only: bool = False
     color: Color | None = None
+    excluded_colors: frozenset[Color] = field(default_factory=frozenset)
     subtypes: frozenset[str] = field(default_factory=frozenset)
     owner_only: bool = False
+    maximum_power: int | None = None
     count: int = 1
 
     def __post_init__(self) -> None:
         if self.count < 1:
             raise ValueError("a target requirement must require at least one target")
-        if self.zone is None and not self.players:
+        if self.zone is None and not self.additional_zones and not self.players:
             raise ValueError("a target requirement must accept cards or players")
         if self.blocking_only and self.zone is not Zone.BATTLEFIELD:
             raise ValueError("a blocking target must be on the battlefield")
 
-    def accepts_card(self, card: Card, *, check_tapped: bool = True) -> bool:
+    def accepts_card(
+        self,
+        card: Card,
+        *,
+        check_tapped: bool = True,
+        current_colors: frozenset[Color] | None = None,
+        current_card_types: frozenset[CardType] | None = None,
+    ) -> bool:
         return (
-            self.zone is not None
-            and card.zone is self.zone
-            and self.card_types.issubset(card.definition.card_types)
+            (self.zone is not None or self.additional_zones)
+            and card.zone in (
+                self.additional_zones
+                | (frozenset({self.zone}) if self.zone is not None else frozenset())
+            )
+            and self.card_types.issubset(
+                card.definition.card_types
+                if current_card_types is None
+                else current_card_types
+            )
+            and not (
+                self.excluded_card_types
+                & (
+                    card.definition.card_types
+                    if current_card_types is None
+                    else current_card_types
+                )
+            )
             and (not check_tapped or not self.tapped_only or card.tapped)
-            and (self.color is None or self.color in card.definition.colors)
+            and (
+                self.color is None
+                or self.color
+                in (
+                    card.definition.colors
+                    if current_colors is None
+                    else current_colors
+                )
+            )
+            and not (
+                self.excluded_colors
+                & (
+                    card.definition.colors
+                    if current_colors is None
+                    else current_colors
+                )
+            )
             and (
                 not self.subtypes
                 or bool(self.subtypes & set(card.definition.subtypes))
             )
             and (
                 not self.any_card_types
-                or bool(self.any_card_types & card.definition.card_types)
+                or bool(
+                    self.any_card_types
+                    & (
+                        card.definition.card_types
+                        if current_card_types is None
+                        else current_card_types
+                    )
+                )
             )
         )
 
@@ -160,6 +209,19 @@ class ActivatedTapAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedUnblockableAbility:
+    """A targeted fast effect that makes a creature unblockable this turn."""
+
+    target_requirement: TargetRequirement
+    tap_cost: bool = True
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    @property
+    def label(self) -> str:
+        return "Tap: Target creature is unblockable this turn"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedDrawAbility:
     mana_cost: ManaCost
     amount: int = 1
@@ -168,6 +230,36 @@ class ActivatedDrawAbility:
     @property
     def label(self) -> str:
         return f"Pay {self.mana_cost.compact} and tap: Draw {self.amount} card"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedEventLifeGainAbility:
+    """Gain life by paying during a matching spell-cast or death event."""
+
+    mana_cost: ManaCost
+    spell_color: Color | None = None
+    creature_death: bool = False
+    amount: int = 1
+
+    def __post_init__(self) -> None:
+        if (self.spell_color is None) == (not self.creature_death):
+            raise ValueError(
+                "event life gain must match either a spell color or creature death"
+            )
+        if self.amount < 1:
+            raise ValueError("event life gain must be positive")
+
+    @property
+    def label(self) -> str:
+        event = (
+            "a creature death"
+            if self.creature_death
+            else f"a {self.spell_color.name.lower()} spell being cast"
+        )
+        return (
+            f"Pay {self.mana_cost.compact}: Gain {self.amount} life "
+            f"for {event}"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,10 +302,16 @@ class ActivatedRegenerationAbility:
 
 
 TargetedActivatedAbility = (
-    ActivatedDamageAbility | ActivatedDestroyAbility | ActivatedTapAbility
+    ActivatedDamageAbility
+    | ActivatedDestroyAbility
+    | ActivatedTapAbility
+    | ActivatedUnblockableAbility
 )
 BatchActivatedAbility = (
-    TargetedActivatedAbility | ActivatedPumpAbility | ActivatedDrawAbility
+    TargetedActivatedAbility
+    | ActivatedPumpAbility
+    | ActivatedDrawAbility
+    | ActivatedEventLifeGainAbility
 )
 ActivatedAbility = (
     ActivatedManaAbility
@@ -221,7 +319,9 @@ ActivatedAbility = (
     | ActivatedDamageAbility
     | ActivatedDestroyAbility
     | ActivatedTapAbility
+    | ActivatedUnblockableAbility
     | ActivatedDrawAbility
+    | ActivatedEventLifeGainAbility
     | ActivatedPreventDamageAbility
     | ActivatedRegenerationAbility
 )
@@ -234,7 +334,9 @@ __all__ = [
     "ActivatedDamageAbility",
     "ActivatedDestroyAbility",
     "ActivatedTapAbility",
+    "ActivatedUnblockableAbility",
     "ActivatedDrawAbility",
+    "ActivatedEventLifeGainAbility",
     "ActivatedPreventDamageAbility",
     "ActivatedRegenerationAbility",
     "TargetedActivatedAbility",
