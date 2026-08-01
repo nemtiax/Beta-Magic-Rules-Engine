@@ -21,6 +21,7 @@ EXPECTED_NAMES = {
     "Crusade",
     "Death Ward",
     "Disenchant",
+    "Farmstead",
     "Green Ward",
     "Healing Salve",
     "Holy Armor",
@@ -28,6 +29,7 @@ EXPECTED_NAMES = {
     "Lance",
     "Northern Paladin",
     "Pearled Unicorn",
+    "Personal Incarnation",
     "Purelace",
     "Red Ward",
     "Resurrection",
@@ -36,6 +38,7 @@ EXPECTED_NAMES = {
     "Savannah Lions",
     "Serra Angel",
     "Wall of Swords",
+    "Veteran Bodyguard",
     "White Knight",
     "White Ward",
     "Wrath of God",
@@ -44,7 +47,7 @@ EXPECTED_NAMES = {
 
 class WhiteDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_white_cards_are_migrated(self) -> None:
-        self.assertEqual(len(WHITE_CARDS), 33)
+        self.assertEqual(len(WHITE_CARDS), 36)
         self.assertEqual(
             {card.name for card in WHITE_CARDS}, EXPECTED_NAMES
         )

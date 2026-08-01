@@ -17,7 +17,7 @@
  - [x] Crusade
  - [x] Death Ward
  - [x] Disenchant
- - [ ] Farmstead
+ - [x] Farmstead
  - [x] Green Ward
  - [ ] Guardian Angel
  - [x] Healing Salve
@@ -29,7 +29,7 @@
  - [ ] Mesa Pegasus
  - [x] Northern Paladin
  - [x] Pearled Unicorn
- - [ ] Personal Incarnation
+ - [x] Personal Incarnation
  - [x] Purelace
  - [x] Red Ward
  - [x] Resurrection
@@ -39,7 +39,7 @@
  - [x] Savannah Lions
  - [x] Serra Angel
  - [ ] Swords to Plowshares
- - [ ] Veteran Bodyguard
+ - [x] Veteran Bodyguard
  - [x] Wall of Swords
  - [x] White Knight
  - [x] White Ward
@@ -47,13 +47,13 @@
  - [x] Air Elemental
  - [x] Ancestral Recall
  - [x] Animate Artifact
- - [ ] Blue Elemental Blast
+ - [x] Blue Elemental Blast
  - [x] Braingeyser
  - [ ] Clone
  - [x] Control Magic
  - [ ] Copy Artifact
  - [x] Counterspell
- - [ ] Creature Bond
+ - [x] Creature Bond
  - [ ] Drain Power
  - [x] Feedback
  - [x] Flight
@@ -73,7 +73,7 @@
  - [ ] Power Sink
  - [x] Prodigal Sorcerer
  - [x] Psionic Blast
- - [ ] Psychic Venom
+ - [x] Psychic Venom
  - [x] Sea Serpent
  - [ ] Siren's Call
  - [ ] Sleight of Mind
@@ -81,8 +81,8 @@
  - [ ] Stasis
  - [x] Steal Artifact
  - [x] Thoughtlace
- - [ ] Time Walk
- - [ ] Timetwister
+ - [x] Time Walk
+ - [x] Timetwister
  - [x] Twiddle
  - [x] Unsummon
  - [ ] Vesuvan Doppelganger
@@ -110,14 +110,14 @@
  - [x] Frozen Shade
  - [ ] Gloom
  - [x] Howl from Beyond
- - [ ] Hypnotic Specter
+ - [x] Hypnotic Specter
  - [ ] Lich
  - [ ] Lord of the Pit
- - [ ] Mind Twist
+ - [x] Mind Twist
  - [ ] Nether Shadow
  - [ ] Nettling Imp
  - [x] Nightmare
- - [ ] Paralyze
+ - [x] Paralyze
  - [ ] Pestilence
  - [x] Plague Rats
  - [x] Raise Dead
@@ -167,17 +167,17 @@
  - [x] Orcish Oriflamme
  - [ ] Power Surge
  - [ ] Raging River
- - [ ] Red Elemental Blast
+ - [x] Red Elemental Blast
  - [x] Roc of Kher Ridges
  - [ ] Rock Hydra
  - [x] Sedge Troll
  - [x] Shatter
  - [x] Shivan Dragon
  - [ ] Smoke
- - [ ] Stone Giant
+ - [x] Stone Giant
  - [x] Stone Rain
  - [x] Tunnel
- - [ ] Two-Headed Giant of Foriys
+ - [x] Two-Headed Giant of Foriys
  - [x] Uthden Troll
  - [x] Wall of Fire
  - [x] Wall of Stone
@@ -228,7 +228,7 @@
  - [x] War Mammoth
  - [x] Web
  - [ ] Wild Growth
- - [ ] Ankh of Mishra
+ - [x] Ankh of Mishra
  - [ ] Basalt Monolith
  - [x] Black Lotus
  - [ ] Black Vise
@@ -239,8 +239,8 @@
  - [x] Copper Tablet
  - [x] Crystal Rod
  - [ ] Cyclopean Tomb
- - [ ] Dingus Egg
- - [ ] Disrupting Scepter
+ - [x] Dingus Egg
+ - [x] Disrupting Scepter
  - [ ] Forcefield
  - [ ] Gauntlet of Might
  - [ ] Glasses of Urza
@@ -250,14 +250,14 @@
  - [ ] Illusionary Mask
  - [x] Iron Star
  - [x] Ivory Cup
- - [ ] Jade Monolith
- - [ ] Jade Statue
+ - [x] Jade Monolith
+ - [x] Jade Statue
  - [x] Jayemdae Tome
- - [ ] Juggernaut
+ - [x] Juggernaut
  - [ ] Kormus Bell
  - [ ] Library of Leng
  - [x] Living Wall
- - [ ] Mana Vault
+ - [x] Mana Vault
  - [ ] Meekstone
  - [x] Mox Emerald
  - [x] Mox Jet
@@ -272,7 +272,7 @@
  - [ ] Sunglasses of Urza
  - [ ] The Hive
  - [x] Throne of Bone
- - [ ] Time Vault
+ - [x] Time Vault
  - [ ] Winter Orb
  - [x] Wooden Sphere
  - [x] Badlands

@@ -22,12 +22,14 @@ class TargetRequirement:
     any_card_types: frozenset[CardType] = field(default_factory=frozenset)
     excluded_card_types: frozenset[CardType] = field(default_factory=frozenset)
     players: bool = False
+    opponent_only: bool = False
     blocking_only: bool = False
     tapped_only: bool = False
     color: Color | None = None
     excluded_colors: frozenset[Color] = field(default_factory=frozenset)
     subtypes: frozenset[str] = field(default_factory=frozenset)
     owner_only: bool = False
+    controller_only: bool = False
     maximum_power: int | None = None
     count: int = 1
 
@@ -38,6 +40,10 @@ class TargetRequirement:
             raise ValueError("a target requirement must accept cards or players")
         if self.blocking_only and self.zone is not Zone.BATTLEFIELD:
             raise ValueError("a blocking target must be on the battlefield")
+        if self.owner_only and self.controller_only:
+            raise ValueError("a target cannot require both owner and controller")
+        if self.opponent_only and not self.players:
+            raise ValueError("an opponent-only target must accept players")
 
     def accepts_card(
         self,
@@ -222,6 +228,25 @@ class ActivatedUnblockableAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedTemporaryAbility:
+    """Grant a target an ability temporarily, with an optional delayed cost."""
+
+    target_requirement: TargetRequirement
+    granted_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+    tap_cost: bool = True
+    toughness_less_than_source_power: bool = False
+    destroy_at_end_of_turn: bool = False
+
+    @property
+    def label(self) -> str:
+        abilities = ", ".join(
+            ability.value for ability in self.granted_abilities
+        )
+        return f"Tap: Target creature gains {abilities} until end of turn"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedDrawAbility:
     mana_cost: ManaCost
     amount: int = 1
@@ -230,6 +255,63 @@ class ActivatedDrawAbility:
     @property
     def label(self) -> str:
         return f"Pay {self.mana_cost.compact} and tap: Draw {self.amount} card"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedDiscardAbility:
+    """A targeted fast effect that makes an opponent choose discards."""
+
+    mana_cost: ManaCost
+    amount: int = 1
+    tap_cost: bool = True
+    target_requirement: TargetRequirement = field(
+        default_factory=lambda: TargetRequirement(players=True, opponent_only=True)
+    )
+
+    @property
+    def label(self) -> str:
+        return f"Pay {self.mana_cost.compact} and tap: Opponent discards a card"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedExtraTurnAbility:
+    """Tap a permanent to grant its controller an additional turn."""
+
+    tap_cost: bool = True
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    @property
+    def label(self) -> str:
+        return "Tap: Take an additional turn after this one"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedUntapAbility:
+    """Pay mana to untap the source as a fast effect."""
+
+    mana_cost: ManaCost
+    tap_cost: bool = False
+
+    @property
+    def label(self) -> str:
+        return f"Pay {self.mana_cost.compact}: Untap"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedAnimationAbility:
+    """Temporarily make an artifact a creature for the current combat."""
+
+    mana_cost: ManaCost
+    power: int
+    toughness: int
+    once_per_turn: bool = True
+
+    @property
+    def label(self) -> str:
+        return (
+            f"Pay {self.mana_cost.compact}: Become a {self.power}/"
+            f"{self.toughness} artifact creature for this combat"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +374,30 @@ class ActivatedPreventDamageAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedRedirectDamageAbility:
+    """Redirect a selected damage packet during the FAQ redirection step."""
+
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+    source_only: bool = False
+    bidirectional_with_owner: bool = False
+    any_amount: bool = False
+    owner_activates: bool = False
+
+    @property
+    def label(self) -> str:
+        cost = (
+            f"Pay {self.mana_cost.compact}: "
+            if self.mana_cost.mana_value
+            else ""
+        )
+        if self.bidirectional_with_owner:
+            return (
+                f"{cost}Redirect damage between this creature and its owner"
+            )
+        return f"{cost}Redirect all damage to a creature to you"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedRegenerationAbility:
     mana_cost: ManaCost
     affects_attached_creature: bool = False
@@ -306,12 +412,18 @@ TargetedActivatedAbility = (
     | ActivatedDestroyAbility
     | ActivatedTapAbility
     | ActivatedUnblockableAbility
+    | ActivatedTemporaryAbility
+    | ActivatedDiscardAbility
 )
 BatchActivatedAbility = (
     TargetedActivatedAbility
     | ActivatedPumpAbility
     | ActivatedDrawAbility
+    | ActivatedDiscardAbility
+    | ActivatedExtraTurnAbility
+    | ActivatedUntapAbility
     | ActivatedEventLifeGainAbility
+    | ActivatedAnimationAbility
 )
 ActivatedAbility = (
     ActivatedManaAbility
@@ -320,9 +432,14 @@ ActivatedAbility = (
     | ActivatedDestroyAbility
     | ActivatedTapAbility
     | ActivatedUnblockableAbility
+    | ActivatedTemporaryAbility
     | ActivatedDrawAbility
+    | ActivatedExtraTurnAbility
+    | ActivatedUntapAbility
     | ActivatedEventLifeGainAbility
+    | ActivatedAnimationAbility
     | ActivatedPreventDamageAbility
+    | ActivatedRedirectDamageAbility
     | ActivatedRegenerationAbility
 )
 
@@ -335,9 +452,15 @@ __all__ = [
     "ActivatedDestroyAbility",
     "ActivatedTapAbility",
     "ActivatedUnblockableAbility",
+    "ActivatedTemporaryAbility",
     "ActivatedDrawAbility",
+    "ActivatedDiscardAbility",
+    "ActivatedExtraTurnAbility",
+    "ActivatedUntapAbility",
     "ActivatedEventLifeGainAbility",
+    "ActivatedAnimationAbility",
     "ActivatedPreventDamageAbility",
+    "ActivatedRedirectDamageAbility",
     "ActivatedRegenerationAbility",
     "TargetedActivatedAbility",
     "BatchActivatedAbility",

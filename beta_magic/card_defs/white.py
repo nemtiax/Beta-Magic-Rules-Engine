@@ -4,6 +4,7 @@ from ..abilities import (
     ActivatedDestroyAbility,
     ActivatedPreventDamageAbility,
     ActivatedPumpAbility,
+    ActivatedRedirectDamageAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
@@ -14,10 +15,12 @@ from ..effects import (
     EffectScope,
     GainLifeEffect,
     MoveTargetsEffect,
+    OptionalUpkeepPaymentEffect,
     RegenerateTargetsEffect,
     TemporaryPumpEffect,
     GlobalLandTypeConversion,
     UpkeepCostEffect,
+    UpkeepBenefit,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
@@ -35,6 +38,68 @@ _WALL_IN_PLAY = TargetRequirement(
 )
 
 PURELACE = lace("Purelace", Color.WHITE)
+
+FARMSTEAD = CardDefinition(
+    name="Farmstead",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{W}{W}{W}"),
+    rules_text=(
+        "Enchant land. During that land controller's upkeep, they may pay "
+        "{W}{W} to gain 1 life. Use only once each turn."
+    ),
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Enchant Land",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+    ),
+    upkeep_effects=(
+        OptionalUpkeepPaymentEffect(
+            ManaCost.parse("{W}{W}"),
+            UpkeepBenefit.GAIN_LIFE,
+            amount=1,
+            attached_permanent_controller=True,
+        ),
+    ),
+)
+
+PERSONAL_INCARNATION = CardDefinition(
+    name="Personal Incarnation",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{W}{W}{W}"),
+    rules_text=(
+        "Its owner may redirect any amount of damage between Personal "
+        "Incarnation and themselves. If it goes to the graveyard from play, "
+        "its owner loses half their life, rounded up."
+    ),
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Avatar",),
+    power=6,
+    toughness=6,
+    activated_abilities=(
+        ActivatedRedirectDamageAbility(
+            bidirectional_with_owner=True,
+            any_amount=True,
+            owner_activates=True,
+        ),
+    ),
+    owner_life_loss_on_death_divisor=2,
+)
+
+VETERAN_BODYGUARD = CardDefinition(
+    name="Veteran Bodyguard",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{W}{W}"),
+    rules_text=(
+        "Damage dealt to you by unblocked attacking creatures is dealt to "
+        "Veteran Bodyguard instead."
+    ),
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Bodyguard",),
+    power=2,
+    toughness=5,
+    redirects_unblocked_combat_damage=True,
+)
 
 ANIMATE_WALL = CardDefinition(
     name="Animate Wall",
@@ -447,6 +512,7 @@ WHITE_CARDS = tuple(
             CRUSADE,
             DEATH_WARD,
             DISENCHANT,
+            FARMSTEAD,
             GREEN_WARD,
             HEALING_SALVE,
             HOLY_ARMOR,
@@ -454,6 +520,7 @@ WHITE_CARDS = tuple(
             LANCE,
             NORTHERN_PALADIN,
             PEARLED_UNICORN,
+            PERSONAL_INCARNATION,
             PURELACE,
             RED_WARD,
             RESURRECTION,
@@ -462,6 +529,7 @@ WHITE_CARDS = tuple(
             SAVANNAH_LIONS,
             SERRA_ANGEL,
             WALL_OF_SWORDS,
+            VETERAN_BODYGUARD,
             WHITE_KNIGHT,
             WHITE_WARD,
             WRATH_OF_GOD,

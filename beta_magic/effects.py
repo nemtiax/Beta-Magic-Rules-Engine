@@ -33,6 +33,11 @@ class UpkeepFailure(str, Enum):
     DAMAGE_CONTROLLER = "damage_controller"
 
 
+class UpkeepBenefit(str, Enum):
+    GAIN_LIFE = "gain_life"
+    UNTAP_ATTACHED = "untap_attached"
+
+
 class VariableStatKind(str, Enum):
     CONTROLLED_NON_WALL_CREATURES = "controlled_non_wall_creatures"
     CONTROLLED_LAND_SUBTYPE = "controlled_land_subtype"
@@ -146,6 +151,62 @@ class DrawCardsEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscardCardsEffect:
+    """Make targeted players discard, optionally at random."""
+
+    amount: int = 0
+    amount_per_x: int = 0
+    random: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ShuffleHandAndGraveyardEffect:
+    """Recycle each player's hand and graveyard, then draw a new hand."""
+
+    draw_count: int = 7
+
+    def __post_init__(self) -> None:
+        if self.draw_count < 0:
+            raise ValueError("a replacement hand size cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class ExtraTurnEffect:
+    """Give the spell's caster another turn immediately after this one."""
+
+
+@dataclass(frozen=True, slots=True)
+class LandEventDamageEffect:
+    """Damage a player when they put a land in play or lose one."""
+
+    amount: int
+    land_enters: bool = False
+    land_lost: bool = False
+
+    def __post_init__(self) -> None:
+        if self.amount < 1:
+            raise ValueError("land-event damage must be positive")
+        if self.land_enters == self.land_lost:
+            raise ValueError("a land-event effect needs exactly one event")
+
+
+@dataclass(frozen=True, slots=True)
+class AttachedEventDamageEffect:
+    """Damage the attached permanent's controller after a matching event."""
+
+    amount: int = 0
+    amount_from_toughness: bool = False
+    when_tapped: bool = False
+    when_destroyed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.when_tapped == self.when_destroyed:
+            raise ValueError("an attached event needs exactly one trigger")
+        if self.amount_from_toughness == bool(self.amount):
+            raise ValueError("attached-event damage needs fixed or toughness damage")
+
+
+@dataclass(frozen=True, slots=True)
 class CounterTargetSpellEffect:
     """Counter the targeted spell during its interrupt window."""
 
@@ -179,6 +240,8 @@ class UpkeepDamageEffect:
 
     amount: int
     recipient: UpkeepDamageRecipient = UpkeepDamageRecipient.ACTIVE_PLAYER
+    controller_upkeep_only: bool = False
+    source_tapped: bool | None = None
 
     def __post_init__(self) -> None:
         if self.amount < 1:
@@ -200,7 +263,24 @@ class UpkeepCostEffect:
             raise ValueError("source-destruction upkeep cannot also deal damage")
 
 
-UpkeepEffect = UpkeepDamageEffect | UpkeepCostEffect
+@dataclass(frozen=True, slots=True)
+class OptionalUpkeepPaymentEffect:
+    """A once-per-upkeep payment that grants a benefit when it resolves."""
+
+    mana_cost: ManaCost
+    benefit: UpkeepBenefit
+    amount: int = 0
+    attached_permanent_controller: bool = False
+    require_all_matching_attachments: bool = False
+
+    def __post_init__(self) -> None:
+        if self.benefit is UpkeepBenefit.GAIN_LIFE and self.amount < 1:
+            raise ValueError("life-gain upkeep benefits must be positive")
+        if self.benefit is UpkeepBenefit.UNTAP_ATTACHED and self.amount:
+            raise ValueError("untap upkeep benefits do not use an amount")
+
+
+UpkeepEffect = UpkeepDamageEffect | UpkeepCostEffect | OptionalUpkeepPaymentEffect
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +372,9 @@ SpellEffect = (
     | RegenerateTargetsEffect
     | GainLifeEffect
     | DrawCardsEffect
+    | DiscardCardsEffect
+    | ShuffleHandAndGraveyardEffect
+    | ExtraTurnEffect
     | CounterTargetSpellEffect
     | ChangeTargetColorEffect
     | GlobalDamageEffect
@@ -324,6 +407,8 @@ class ContinuousEffect:
     controls_attached_card: bool = False
     granted_card_types: frozenset[CardType] = field(default_factory=frozenset)
     base_stats_from_mana_value: bool = False
+    base_power: int | None = None
+    base_toughness: int | None = None
     wall_can_attack: bool = False
     blocking_subtype: str | None = None
     blocking_allowed_colors: frozenset[Color] = field(default_factory=frozenset)
@@ -331,8 +416,11 @@ class ContinuousEffect:
         default_factory=frozenset
     )
     unblockable: bool = False
+    prevents_untap: bool = False
 
     def __post_init__(self) -> None:
+        if (self.base_power is None) != (self.base_toughness is None):
+            raise ValueError("base power and toughness must be supplied together")
         if (
             self.controls_attached_card
             and self.scope is not EffectScope.ATTACHED_CARD
@@ -351,6 +439,7 @@ __all__ = [
     "EffectRecipient",
     "UpkeepDamageRecipient",
     "UpkeepFailure",
+    "UpkeepBenefit",
     "VariableStatKind",
     "VariableCreatureStats",
     "LandhomeRequirement",
@@ -362,11 +451,17 @@ __all__ = [
     "RegenerateTargetsEffect",
     "GainLifeEffect",
     "DrawCardsEffect",
+    "DiscardCardsEffect",
+    "ShuffleHandAndGraveyardEffect",
+    "ExtraTurnEffect",
+    "LandEventDamageEffect",
+    "AttachedEventDamageEffect",
     "CounterTargetSpellEffect",
     "ChangeTargetColorEffect",
     "GlobalDamageEffect",
     "UpkeepDamageEffect",
     "UpkeepCostEffect",
+    "OptionalUpkeepPaymentEffect",
     "UpkeepEffect",
     "DestroyTargetsEffect",
     "MoveTargetsEffect",

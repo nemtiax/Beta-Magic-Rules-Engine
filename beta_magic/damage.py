@@ -20,6 +20,7 @@ class DamageIncidentKind(str, Enum):
     FIRST_STRIKE_COMBAT = "first_strike_combat"
     COMBAT = "combat"
     TIMED_EVENT = "timed_event"
+    RULE_EVENT = "rule_event"
 
 
 class DamageResolutionStep(str, Enum):
@@ -47,17 +48,24 @@ class DamagePacket:
     trample: bool = False
     first_strike: bool = False
     prevented: int = 0
+    redirected: int = 0
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
         if self.amount < 1:
             raise ValueError("a damage packet must contain positive damage")
-        if not 0 <= self.prevented <= self.amount:
-            raise ValueError("prevented damage must fit within the packet")
+        if (
+            self.prevented < 0
+            or self.redirected < 0
+            or self.prevented + self.redirected > self.amount
+        ):
+            raise ValueError(
+                "prevented and redirected damage must fit within the packet"
+            )
 
     @property
     def remaining(self) -> int:
-        return self.amount - self.prevented
+        return self.amount - self.prevented - self.redirected
 
 
 @dataclass(slots=True)
@@ -68,6 +76,7 @@ class DamageIncident:
     packets: list[DamagePacket] = field(default_factory=list)
     step: DamageResolutionStep = DamageResolutionStep.ACCUMULATION
     regenerated_card_ids: set[UUID] = field(default_factory=set)
+    redirected_packets: list[DamagePacket] = field(default_factory=list)
     id: UUID = field(default_factory=uuid4)
 
     @property

@@ -11,7 +11,7 @@
 - [x] Separate regeneration-only pathway for ordinary destroy effects
 - [x] Interactive damage prevention effects (Healing Salve, Samite Healer)
 - [x] All five Beta Circles of Protection
-- [ ] Interactive damage redirection
+- [x] Interactive damage redirection (Jade Monolith)
 
 # Creature Mechanics
 - [x] Walls (vanilla)

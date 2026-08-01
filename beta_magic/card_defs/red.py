@@ -5,12 +5,14 @@ from ..abilities import (
     ActivatedDestroyAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
+    ActivatedTemporaryAbility,
     ActivatedUnblockableAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
 from ..effects import (
     ContinuousEffect,
+    CounterTargetSpellEffect,
     DamageEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
@@ -30,6 +32,24 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 CHAOSLACE = lace("Chaoslace", Color.RED)
+
+RED_ELEMENTAL_BLAST = CardDefinition(
+    name="Red Elemental Blast",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{R}"),
+    rules_text=(
+        "Counters a blue spell being cast or destroys a blue card in play."
+    ),
+    colors=frozenset({Color.RED}),
+    target_requirement=TargetRequirement(
+        zone=Zone.STACK,
+        additional_zones=frozenset({Zone.BATTLEFIELD}),
+        color=Color.BLUE,
+    ),
+    spell_effects=(CounterTargetSpellEffect(), DestroyTargetsEffect()),
+    casting_modes=("Counter spell", "Destroy permanent"),
+    casting_mode_target_zones=(Zone.STACK, Zone.BATTLEFIELD),
+)
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
@@ -59,6 +79,47 @@ FIRE_ELEMENTAL = _creature(
 )
 GRAY_OGRE = _creature("Gray Ogre", "{2}{R}", "Ogre", 2, 2)
 HILL_GIANT = _creature("Hill Giant", "{3}{R}", "Giant", 3, 3)
+STONE_GIANT = CardDefinition(
+    name="Stone Giant",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{2}{R}{R}"),
+    rules_text=(
+        "Tap to make one of your own creatures flying until end of turn. "
+        "That creature must have toughness less than Stone Giant's power "
+        "and is destroyed at end of turn."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Giant",),
+    power=3,
+    toughness=4,
+    activated_abilities=(
+        ActivatedTemporaryAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.CREATURE}),
+                controller_only=True,
+            ),
+            granted_abilities=frozenset({KeywordAbility.FLYING}),
+            toughness_less_than_source_power=True,
+            destroy_at_end_of_turn=True,
+        ),
+    ),
+)
+TWO_HEADED_GIANT_OF_FORIYS = CardDefinition(
+    name="Two-Headed Giant of Foriys",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{4}{R}"),
+    rules_text=(
+        "Trample. May block two attacking creatures; divide damage between "
+        "them however its controller likes."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Giant",),
+    power=4,
+    toughness=4,
+    abilities=frozenset({KeywordAbility.TRAMPLE}),
+    maximum_attackers_blocked=2,
+)
 HURLOON_MINOTAUR = _creature(
     "Hurloon Minotaur", "{1}{R}{R}", "Minotaur", 2, 3
 )
@@ -465,11 +526,14 @@ RED_CARDS = tuple(
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,
             ROC_OF_KHER_RIDGES,
+            RED_ELEMENTAL_BLAST,
             SEDGE_TROLL,
             SHATTER,
             SHIVAN_DRAGON,
             STONE_RAIN,
+            STONE_GIANT,
             TUNNEL,
+            TWO_HEADED_GIANT_OF_FORIYS,
             UTHDEN_TROLL,
             WALL_OF_STONE,
             WALL_OF_FIRE,

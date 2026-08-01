@@ -13,14 +13,20 @@ from uuid import UUID, uuid4
 from .abilities import (
     ActivatedAbility,
     ActivatedDamageAbility,
+    ActivatedAnimationAbility,
     ActivatedDestroyAbility,
     ActivatedDrawAbility,
+    ActivatedDiscardAbility,
+    ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
     ActivatedPreventDamageAbility,
+    ActivatedRedirectDamageAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
     ActivatedTapAbility,
+    ActivatedTemporaryAbility,
+    ActivatedUntapAbility,
     ActivatedUnblockableAbility,
     BatchActivatedAbility,
     TargetedActivatedAbility,
@@ -35,6 +41,11 @@ from .effects import (
     DestroyAllEffect,
     DestroyTargetsEffect,
     DrawCardsEffect,
+    DiscardCardsEffect,
+    ShuffleHandAndGraveyardEffect,
+    ExtraTurnEffect,
+    LandEventDamageEffect,
+    AttachedEventDamageEffect,
     EffectRecipient,
     EffectScope,
     GainLifeEffect,
@@ -42,6 +53,7 @@ from .effects import (
     LandhomeRequirement,
     LandTypeEffect,
     MoveTargetsEffect,
+    OptionalUpkeepPaymentEffect,
     SetTappedEffect,
     AddManaEffect,
     CombatDestructionEffect,
@@ -53,6 +65,7 @@ from .effects import (
     UpkeepDamageRecipient,
     UpkeepEffect,
     UpkeepFailure,
+    UpkeepBenefit,
     VariableCreatureStats,
     VariableStatKind,
 )
@@ -83,10 +96,23 @@ class CardDefinition:
     target_requirement: TargetRequirement | None = None
     spell_effects: tuple[SpellEffect, ...] = ()
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
+    land_event_effects: tuple[LandEventDamageEffect, ...] = ()
+    attached_event_damage_effects: tuple[AttachedEventDamageEffect, ...] = ()
     prevention_amount: int = 0
     casting_modes: tuple[str, ...] = ()
+    casting_mode_target_zones: tuple[Zone, ...] = ()
     maximum_blocked_power: int | None = None
+    maximum_attackers_blocked: int = 1
+    must_attack_if_able: bool = False
+    cannot_be_blocked_by_subtypes: frozenset[str] = field(default_factory=frozenset)
     combat_destruction_effects: tuple[CombatDestructionEffect, ...] = ()
+    redirects_unblocked_combat_damage: bool = False
+    combat_player_damage_random_discard: int = 0
+    owner_life_loss_on_death_divisor: int | None = None
+    enters_tapped: bool = False
+    untaps_normally: bool = True
+    may_skip_turn_to_untap: bool = False
+    taps_attached_on_entry: bool = False
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -145,22 +171,53 @@ class CardDefinition:
             )
         if self.upkeep_effects and not self.is_permanent:
             raise ValueError("only permanents can supply upkeep effects")
+        if self.land_event_effects and not self.is_permanent:
+            raise ValueError("only permanents can supply land-event effects")
+        if self.attached_event_damage_effects and self.target_requirement is None:
+            raise ValueError("attached-event effects require an attachment target")
+        if self.taps_attached_on_entry and self.target_requirement is None:
+            raise ValueError("tapping an attachment target requires a target")
         if self.prevention_amount < 0:
             raise ValueError("damage prevention cannot be negative")
         if len(set(self.casting_modes)) != len(self.casting_modes):
             raise ValueError("casting modes must be unique")
         if any(not mode.strip() for mode in self.casting_modes):
             raise ValueError("casting modes cannot be empty")
+        if self.casting_mode_target_zones and len(
+            self.casting_mode_target_zones
+        ) != len(self.casting_modes):
+            raise ValueError(
+                "casting-mode target zones must align with casting modes"
+            )
         if (
             self.maximum_blocked_power is not None
             and CardType.CREATURE not in self.card_types
         ):
             raise ValueError("only creatures can restrict what they block")
+        if self.maximum_attackers_blocked < 1:
+            raise ValueError("a creature must be able to block at least one attacker")
+        if (
+            self.maximum_attackers_blocked != 1
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can block additional attackers")
+        if self.must_attack_if_able and CardType.CREATURE not in self.card_types:
+            raise ValueError("only creatures can be required to attack")
         if (
             self.combat_destruction_effects
             and CardType.CREATURE not in self.card_types
         ):
             raise ValueError("only creatures can have combat destruction effects")
+        if (
+            self.redirects_unblocked_combat_damage
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can receive redirected combat damage")
+        if (
+            self.owner_life_loss_on_death_divisor is not None
+            and self.owner_life_loss_on_death_divisor < 1
+        ):
+            raise ValueError("death life-loss divisor must be positive")
 
     @property
     def is_permanent(self) -> bool:
@@ -245,14 +302,19 @@ __all__ = [
     "CardDefinition",
     "ActivatedAbility",
     "ActivatedDamageAbility",
+    "ActivatedAnimationAbility",
     "ActivatedDestroyAbility",
     "ActivatedDrawAbility",
+    "ActivatedExtraTurnAbility",
     "ActivatedEventLifeGainAbility",
     "ActivatedManaAbility",
     "ActivatedPreventDamageAbility",
+    "ActivatedRedirectDamageAbility",
     "ActivatedPumpAbility",
     "ActivatedRegenerationAbility",
     "ActivatedTapAbility",
+    "ActivatedTemporaryAbility",
+    "ActivatedUntapAbility",
     "ActivatedUnblockableAbility",
     "BatchActivatedAbility",
     "TargetedActivatedAbility",
@@ -265,6 +327,9 @@ __all__ = [
     "DestroyAllEffect",
     "DestroyTargetsEffect",
     "DrawCardsEffect",
+    "ExtraTurnEffect",
+    "LandEventDamageEffect",
+    "AttachedEventDamageEffect",
     "EffectRecipient",
     "EffectScope",
     "GainLifeEffect",
@@ -272,6 +337,7 @@ __all__ = [
     "LandhomeRequirement",
     "LandTypeEffect",
     "MoveTargetsEffect",
+    "OptionalUpkeepPaymentEffect",
     "SetTappedEffect",
     "AddManaEffect",
     "CombatDestructionEffect",
@@ -283,6 +349,7 @@ __all__ = [
     "UpkeepDamageRecipient",
     "UpkeepEffect",
     "UpkeepFailure",
+    "UpkeepBenefit",
     "VariableCreatureStats",
     "VariableStatKind",
 ]

@@ -10,8 +10,10 @@ EXPECTED_NAMES = {
     "Animate Artifact",
     "Ancestral Recall",
     "Braingeyser",
+    "Blue Elemental Blast",
     "Control Magic",
     "Counterspell",
+    "Creature Bond",
     "Feedback",
     "Flight",
     "Jump",
@@ -25,10 +27,13 @@ EXPECTED_NAMES = {
     "Pirate Ship",
     "Prodigal Sorcerer",
     "Psionic Blast",
+    "Psychic Venom",
     "Sea Serpent",
     "Spell Blast",
     "Steal Artifact",
     "Thoughtlace",
+    "Time Walk",
+    "Timetwister",
     "Twiddle",
     "Unsummon",
     "Wall of Air",
@@ -39,7 +44,7 @@ EXPECTED_NAMES = {
 
 class BlueDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_blue_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLUE_CARDS), 28)
+        self.assertEqual(len(BLUE_CARDS), 33)
         self.assertEqual(
             {card.name for card in BLUE_CARDS}, EXPECTED_NAMES
         )

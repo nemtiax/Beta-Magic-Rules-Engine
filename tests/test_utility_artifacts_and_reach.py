@@ -2,8 +2,11 @@ import unittest
 
 from beta_magic import (
     GIANT_SPIDER,
+    DISRUPTING_SCEPTER,
     ICY_MANIPULATOR,
     JAYEMDAE_TOME,
+    JADE_MONOLITH,
+    JADE_STATUE,
     ROD_OF_RUIN,
     UTILITY_ARTIFACTS,
     WEB,
@@ -50,11 +53,18 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
     def test_definitions(self) -> None:
         self.assertEqual(
             UTILITY_ARTIFACTS,
-            (ROD_OF_RUIN, JAYEMDAE_TOME, ICY_MANIPULATOR),
+            (
+                DISRUPTING_SCEPTER,
+                ROD_OF_RUIN,
+                JAYEMDAE_TOME,
+                ICY_MANIPULATOR,
+                JADE_MONOLITH,
+                JADE_STATUE,
+            ),
         )
         self.assertEqual(
             [card.mana_cost.compact for card in UTILITY_ARTIFACTS],
-            ["4", "4", "4"],
+            ["3", "4", "4", "4", "4", "4"],
         )
         self.assertEqual(
             (GIANT_SPIDER.power, GIANT_SPIDER.toughness), (2, 4)

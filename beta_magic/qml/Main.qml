@@ -16,6 +16,40 @@ ApplicationWindow {
     property var inspectedCard: null
 
     Dialog {
+        id: timeVaultPicker
+        anchors.centerIn: parent
+        implicitWidth: 420
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.timeVaultChoice
+        title: gameState.timeVaultPlayer + "'s upcoming turn"
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label {
+                text: "Take the turn, or skip it to ready one Time Vault on your following turn."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.timeVaultChoices
+                Button {
+                    required property var modelData
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseTimeVaultTurn(modelData.id)
+                }
+            }
+            Button {
+                text: "Take the turn"
+                Layout.fillWidth: true
+                onClicked: gameBridge.chooseTimeVaultTurn("")
+            }
+        }
+    }
+
+    Dialog {
         id: xPicker
         anchors.centerIn: parent
         implicitWidth: 360
@@ -120,6 +154,52 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: redirectionAmountPicker
+        anchors.centerIn: parent
+        implicitWidth: 360
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingRedirectionAmount
+        title: "Choose damage to redirect"
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Button {
+                    text: "\u2212"
+                    enabled: gameState.redirectionAmount > 1
+                    onClicked: gameBridge.adjustRedirectionAmount(-1)
+                }
+                Label {
+                    text: gameState.redirectionAmount
+                    color: "#ffd978"
+                    font.bold: true
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: 100
+                }
+                Button {
+                    text: "+"
+                    enabled: gameState.redirectionAmount
+                             < gameState.redirectionMaximum
+                    onClicked: gameBridge.adjustRedirectionAmount(1)
+                }
+            }
+            RowLayout {
+                Button {
+                    text: "Back"
+                    onClicked: gameBridge.cancelRedirectionAmount()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Redirect"
+                    onClicked: gameBridge.confirmRedirectionAmount()
+                }
+            }
+        }
+    }
+
     Connections {
         target: gameBridge
         function onStateChanged() { window.gameState = gameBridge.state }
@@ -180,7 +260,10 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true }
                             Button { text: "Advance"; onClicked: gameBridge.advance() }
                             Button {
-                                text: "Discard selected"
+                                text: gameState.effectDiscardRequired
+                                      ? "Discard " + gameState.effectDiscardCount
+                                        + " for " + gameState.effectDiscardPlayer
+                                      : "Discard selected"
                                 onClicked: gameBridge.discardSelected()
                             }
                             Button {
@@ -205,11 +288,26 @@ ApplicationWindow {
                                 textRole: "label"
                                 valueRole: "id"
                             }
+                            CheckBox {
+                                id: blockSecondAttacker
+                                text: "Block two"
+                            }
+                            ComboBox {
+                                id: secondAttackTarget
+                                visible: blockSecondAttacker.checked
+                                Layout.preferredWidth: 230
+                                model: gameState.attackers
+                                textRole: "label"
+                                valueRole: "id"
+                            }
                             Button {
                                 text: "Declare blockers"
                                 onClicked: gameBridge.declareBlockers(
                                     attackTarget.currentIndex >= 0
-                                    ? attackTarget.currentValue : ""
+                                    ? attackTarget.currentValue : "",
+                                    blockSecondAttacker.checked
+                                    && secondAttackTarget.currentIndex >= 0
+                                    ? secondAttackTarget.currentValue : ""
                                 )
                             }
                             Button {
@@ -318,6 +416,27 @@ ApplicationWindow {
                                 text: "Cancel"
                                 visible: !gameState.preventionPaid
                                 onClicked: gameBridge.cancelPrevention()
+                            }
+                        }
+                        RowLayout {
+                            visible: gameState.choosingRedirection
+                            Label {
+                                text: "Choose creature damage to redirect:"
+                                color: "#9fd6a8"
+                                font.bold: true
+                            }
+                            Repeater {
+                                model: gameState.redirectionPacketChoices
+                                delegate: Button {
+                                    required property var modelData
+                                    text: modelData.label
+                                    onClicked: gameBridge.chooseRedirectionPacket(
+                                                   modelData.id)
+                                }
+                            }
+                            Button {
+                                text: "Cancel"
+                                onClicked: gameBridge.cancelRedirection()
                             }
                         }
                         Label {

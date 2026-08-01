@@ -1,16 +1,21 @@
 """Canonical definitions of currently supported Beta artifacts."""
 
 from ..abilities import (
+    ActivatedAnimationAbility,
     ActivatedDamageAbility,
     ActivatedDrawAbility,
+    ActivatedDiscardAbility,
+    ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
     ActivatedRegenerationAbility,
+    ActivatedRedirectDamageAbility,
     ActivatedTapAbility,
+    ActivatedUntapAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
-from ..effects import UpkeepDamageEffect
+from ..effects import LandEventDamageEffect, UpkeepDamageEffect
 from ..mana import ManaCost
 from ..types import CardType, Color, Zone
 
@@ -65,8 +70,37 @@ BLACK_LOTUS = CardDefinition(
     ),
 )
 
+MANA_VAULT = CardDefinition(
+    name="Mana Vault",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "Tap to add {C}{C}{C}. Mana Vault does not untap normally. Pay {4} "
+        "to untap it. If it remains tapped during your upkeep, it deals 1 "
+        "damage to you."
+    ),
+    activated_abilities=(
+        ActivatedManaAbility(Color.COLORLESS, amount=3),
+        ActivatedUntapAbility(ManaCost.parse("{4}")),
+    ),
+    upkeep_effects=(
+        UpkeepDamageEffect(
+            1, controller_upkeep_only=True, source_tapped=True
+        ),
+    ),
+    untaps_normally=False,
+)
+
+DISRUPTING_SCEPTER = CardDefinition(
+    name="Disrupting Scepter",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{3}"),
+    rules_text="{3}, {T}: Opponent discards one card of their choice from hand.",
+    activated_abilities=(ActivatedDiscardAbility(ManaCost.parse("{3}")),),
+)
+
 MOXEN = (MOX_PEARL, MOX_SAPPHIRE, MOX_JET, MOX_RUBY, MOX_EMERALD)
-MANA_ARTIFACTS = MOXEN + (SOL_RING, BLACK_LOTUS)
+MANA_ARTIFACTS = MOXEN + (SOL_RING, BLACK_LOTUS, MANA_VAULT)
 
 
 def _lucky_charm(name: str, color: Color) -> CardDefinition:
@@ -118,6 +152,27 @@ SOUL_NET = CardDefinition(
 
 EVENT_LIFE_ARTIFACTS = LUCKY_CHARMS + (SOUL_NET,)
 
+ANKH_OF_MISHRA = CardDefinition(
+    name="Ankh of Mishra",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{2}"),
+    rules_text="Ankh does 2 damage to anyone who puts a new land into play.",
+    land_event_effects=(LandEventDamageEffect(2, land_enters=True),),
+)
+
+DINGUS_EGG = CardDefinition(
+    name="Dingus Egg",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "Whenever anyone loses a land, Dingus Egg does 2 damage to that "
+        "player for each land lost."
+    ),
+    land_event_effects=(LandEventDamageEffect(2, land_lost=True),),
+)
+
+LAND_EVENT_ARTIFACTS = (ANKH_OF_MISHRA, DINGUS_EGG)
+
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.CREATURE}),
@@ -164,7 +219,59 @@ ICY_MANIPULATOR = CardDefinition(
     ),
 )
 
-UTILITY_ARTIFACTS = (ROD_OF_RUIN, JAYEMDAE_TOME, ICY_MANIPULATOR)
+JADE_MONOLITH = CardDefinition(
+    name="Jade Monolith",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "{1}: Redirect all damage from one source being dealt to a creature "
+        "to you."
+    ),
+    activated_abilities=(
+        ActivatedRedirectDamageAbility(ManaCost.parse("{1}")),
+    ),
+)
+
+JADE_STATUE = CardDefinition(
+    name="Jade Statue",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "{2}: Jade Statue becomes a 3/6 artifact creature for the current "
+        "attack. Use only during an attack and only once each turn."
+    ),
+    activated_abilities=(
+        ActivatedAnimationAbility(
+            ManaCost.parse("{2}"), power=3, toughness=6
+        ),
+    ),
+)
+
+TIME_VAULT = CardDefinition(
+    name="Time Vault",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{2}"),
+    rules_text=(
+        "Tap to gain an additional turn after the current one. Time Vault "
+        "doesn't untap normally; skip a turn to untap it on your following "
+        "turn. Time Vault begins tapped."
+    ),
+    activated_abilities=(ActivatedExtraTurnAbility(),),
+    enters_tapped=True,
+    untaps_normally=False,
+    may_skip_turn_to_untap=True,
+)
+
+UTILITY_ARTIFACTS = (
+    DISRUPTING_SCEPTER,
+    ROD_OF_RUIN,
+    JAYEMDAE_TOME,
+    ICY_MANIPULATOR,
+    JADE_MONOLITH,
+    JADE_STATUE,
+)
+
+TURN_ARTIFACTS = (TIME_VAULT,)
 
 COPPER_TABLET = CardDefinition(
     name="Copper Tablet",
@@ -198,14 +305,28 @@ OBSIANUS_GOLEM = CardDefinition(
     toughness=6,
 )
 
-ARTIFACT_CREATURES = (LIVING_WALL, OBSIANUS_GOLEM)
+JUGGERNAUT = CardDefinition(
+    name="Juggernaut",
+    card_types=frozenset({CardType.ARTIFACT, CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text="Must attack each turn if possible. Cannot be blocked by Walls.",
+    subtypes=("Juggernaut",),
+    power=5,
+    toughness=3,
+    must_attack_if_able=True,
+    cannot_be_blocked_by_subtypes=frozenset({"Wall"}),
+)
+
+ARTIFACT_CREATURES = (JUGGERNAUT, LIVING_WALL, OBSIANUS_GOLEM)
 
 ARTIFACT_CARDS = tuple(
     sorted(
         MANA_ARTIFACTS
         + EVENT_LIFE_ARTIFACTS
+        + LAND_EVENT_ARTIFACTS
         + UTILITY_ARTIFACTS
         + TIMED_ARTIFACTS
+        + TURN_ARTIFACTS
         + ARTIFACT_CREATURES,
         key=lambda card: card.name,
     )
@@ -220,6 +341,8 @@ __all__ = [
     "MOXEN",
     "SOL_RING",
     "BLACK_LOTUS",
+    "MANA_VAULT",
+    "DISRUPTING_SCEPTER",
     "MANA_ARTIFACTS",
     "THRONE_OF_BONE",
     "WOODEN_SPHERE",
@@ -229,13 +352,21 @@ __all__ = [
     "LUCKY_CHARMS",
     "SOUL_NET",
     "EVENT_LIFE_ARTIFACTS",
+    "ANKH_OF_MISHRA",
+    "DINGUS_EGG",
+    "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
     "JAYEMDAE_TOME",
     "ICY_MANIPULATOR",
+    "JADE_MONOLITH",
+    "JADE_STATUE",
+    "TIME_VAULT",
+    "TURN_ARTIFACTS",
     "UTILITY_ARTIFACTS",
     "COPPER_TABLET",
     "TIMED_ARTIFACTS",
     "LIVING_WALL",
+    "JUGGERNAUT",
     "OBSIANUS_GOLEM",
     "ARTIFACT_CREATURES",
     "ARTIFACT_CARDS",

@@ -8,15 +8,19 @@ from ..abilities import (
 from ..cards import CardDefinition
 from ..effects import (
     ContinuousEffect,
+    AttachedEventDamageEffect,
     AttachedLandTypeEffect,
     CounterTargetSpellEffect,
     DamageEffect,
     DrawCardsEffect,
     EffectRecipient,
     EffectScope,
+    ExtraTurnEffect,
     LandhomeRequirement,
     MoveTargetsEffect,
+    DestroyTargetsEffect,
     SetTappedEffect,
+    ShuffleHandAndGraveyardEffect,
     TemporaryPumpEffect,
     UpkeepCostEffect,
     UpkeepDamageEffect,
@@ -33,6 +37,43 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 THOUGHTLACE = lace("Thoughtlace", Color.BLUE)
+
+CREATURE_BOND = CardDefinition(
+    name="Creature Bond",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text=(
+        "Enchant creature. If enchanted creature is destroyed, Creature Bond "
+        "deals damage equal to its toughness to that creature's controller."
+    ),
+    colors=frozenset({Color.BLUE}),
+    subtypes=("Enchant Creature",),
+    target_requirement=_CREATURE_IN_PLAY,
+    attached_event_damage_effects=(
+        AttachedEventDamageEffect(
+            amount_from_toughness=True, when_destroyed=True
+        ),
+    ),
+)
+
+PSYCHIC_VENOM = CardDefinition(
+    name="Psychic Venom",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text=(
+        "Enchant land. Whenever enchanted land is tapped, Psychic Venom "
+        "deals 2 damage to that land's controller."
+    ),
+    colors=frozenset({Color.BLUE}),
+    subtypes=("Enchant Land",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+    ),
+    attached_event_damage_effects=(
+        AttachedEventDamageEffect(amount=2, when_tapped=True),
+    ),
+)
 _NONCREATURE_ARTIFACT_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.ARTIFACT}),
@@ -334,6 +375,24 @@ COUNTERSPELL = CardDefinition(
     spell_effects=(CounterTargetSpellEffect(),),
 )
 
+BLUE_ELEMENTAL_BLAST = CardDefinition(
+    name="Blue Elemental Blast",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{U}"),
+    rules_text=(
+        "Counters a red spell being cast or destroys a red card in play."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.STACK,
+        additional_zones=frozenset({Zone.BATTLEFIELD}),
+        color=Color.RED,
+    ),
+    spell_effects=(CounterTargetSpellEffect(), DestroyTargetsEffect()),
+    casting_modes=("Counter spell", "Destroy permanent"),
+    casting_mode_target_zones=(Zone.STACK, Zone.BATTLEFIELD),
+)
+
 SPELL_BLAST = CardDefinition(
     name="Spell Blast",
     card_types=frozenset({CardType.INTERRUPT}),
@@ -410,6 +469,27 @@ BRAINGEYSER = CardDefinition(
     spell_effects=(DrawCardsEffect(amount_per_x=1),),
 )
 
+TIME_WALK = CardDefinition(
+    name="Time Walk",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text="Take an extra turn after this one.",
+    colors=frozenset({Color.BLUE}),
+    spell_effects=(ExtraTurnEffect(),),
+)
+
+TIMETWISTER = CardDefinition(
+    name="Timetwister",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{2}{U}"),
+    rules_text=(
+        "Set Timetwister aside. Each player shuffles their hand, library, "
+        "and graveyard together, then draws seven cards."
+    ),
+    colors=frozenset({Color.BLUE}),
+    spell_effects=(ShuffleHandAndGraveyardEffect(7),),
+)
+
 BLUE_CARDS = tuple(
     sorted(
         (
@@ -417,8 +497,10 @@ BLUE_CARDS = tuple(
             ANIMATE_ARTIFACT,
             ANCESTRAL_RECALL,
             BRAINGEYSER,
+            BLUE_ELEMENTAL_BLAST,
             CONTROL_MAGIC,
             COUNTERSPELL,
+            CREATURE_BOND,
             FEEDBACK,
             FLIGHT,
             INVISIBILITY,
@@ -432,10 +514,13 @@ BLUE_CARDS = tuple(
             PIRATE_SHIP,
             PRODIGAL_SORCERER,
             PSIONIC_BLAST,
+            PSYCHIC_VENOM,
             SEA_SERPENT,
             SPELL_BLAST,
             STEAL_ARTIFACT,
             THOUGHTLACE,
+            TIME_WALK,
+            TIMETWISTER,
             TWIDDLE,
             UNSUMMON,
             WALL_OF_AIR,

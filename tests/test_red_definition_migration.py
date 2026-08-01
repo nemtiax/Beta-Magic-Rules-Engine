@@ -29,11 +29,14 @@ EXPECTED_NAMES = {
     "Orcish Artillery",
     "Orcish Oriflamme",
     "Roc of Kher Ridges",
+    "Red Elemental Blast",
     "Sedge Troll",
     "Shatter",
     "Shivan Dragon",
     "Stone Rain",
+    "Stone Giant",
     "Tunnel",
+    "Two-Headed Giant of Foriys",
     "Uthden Troll",
     "Wall of Stone",
     "Wall of Fire",
@@ -42,7 +45,7 @@ EXPECTED_NAMES = {
 
 class RedDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_red_cards_are_migrated(self) -> None:
-        self.assertEqual(len(RED_CARDS), 31)
+        self.assertEqual(len(RED_CARDS), 34)
         self.assertEqual(
             {card.name for card in RED_CARDS}, EXPECTED_NAMES
         )

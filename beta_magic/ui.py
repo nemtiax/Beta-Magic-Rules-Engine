@@ -17,6 +17,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from .cards import Card
+from .abilities import ActivatedRedirectDamageAbility
 from .decks import (
     AEGIS_WARDS_DECK,
     ARCANE_DEPTHS_DECK,
@@ -36,7 +37,11 @@ from .decks import (
     make_x_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
-from .effects import AttachedLandTypeEffect, UpkeepCostEffect
+from .effects import (
+    AttachedLandTypeEffect,
+    OptionalUpkeepPaymentEffect,
+    UpkeepCostEffect,
+)
 from .game import GameState, PlayerState
 from .types import BASIC_LAND_SUBTYPES, CardType, CombatStep, Zone
 
@@ -70,6 +75,9 @@ class GameViewModel(QObject):
         self._x_max = 0
         self._land_type_card_id: UUID | None = None
         self._mode_card_id: UUID | None = None
+        self._redirection_packet_id: UUID | None = None
+        self._redirection_amount = 1
+        self._redirection_maximum = 1
         self._message = "Double-click a card to play, cast, or tap it."
 
     @Property("QVariantMap", notify=stateChanged)
@@ -82,12 +90,20 @@ class GameViewModel(QObject):
         )
         upkeep_payment_required = bool(
             upkeep_event is not None
-            and isinstance(upkeep_event.effect, UpkeepCostEffect)
+            and isinstance(
+                upkeep_event.effect,
+                (UpkeepCostEffect, OptionalUpkeepPaymentEffect),
+            )
             and upkeep_event.payment_decision is None
             and self.game.upkeep_payment_required
         )
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
+        turn_choice = self.game.pending_turn_choice
+        discard_choice = (
+            self.game.pending_discard_choices[0]
+            if self.game.pending_discard_choices else None
+        )
         return {
             "turn": self.game.turn_number,
             "phase": (
@@ -100,6 +116,35 @@ class GameViewModel(QObject):
             ),
             "activePlayer": self.game.active_player.name,
             "message": self._message,
+            "timeVaultChoice": turn_choice is not None,
+            "effectDiscardRequired": discard_choice is not None,
+            "effectDiscardPlayer": (
+                self.game.player(discard_choice.player_id).name
+                if discard_choice is not None else ""
+            ),
+            "effectDiscardCount": (
+                min(
+                    discard_choice.amount,
+                    len(self.game.player(discard_choice.player_id).hand),
+                )
+                if discard_choice is not None else 0
+            ),
+            "timeVaultPlayer": (
+                turn_choice.player_name if turn_choice is not None else ""
+            ),
+            "timeVaultChoices": (
+                [
+                    {
+                        "id": str(card.id),
+                        "label": f"Skip turn for {card.name}",
+                    }
+                    for owner in self.game.players
+                    for card in owner.battlefield
+                    if card.id in turn_choice.vault_ids
+                ]
+                if turn_choice is not None
+                else []
+            ),
             "targeting": (
                 self.game.pending_cast is not None
                 or self.game.pending_activation is not None
@@ -207,6 +252,24 @@ class GameViewModel(QObject):
                 else []
             ),
             "choosingPrevention": self.game.pending_prevention is not None,
+            "choosingRedirection": self.game.pending_redirection is not None,
+            "choosingRedirectionAmount": self._redirection_packet_id is not None,
+            "redirectionAmount": self._redirection_amount,
+            "redirectionMaximum": self._redirection_maximum,
+            "redirectionPacketChoices": (
+                [
+                    {
+                        "id": str(packet.id),
+                        "label": (
+                            f"{packet.source_name}: {packet.remaining} to "
+                            f"{packet.recipient_name}"
+                        ),
+                    }
+                    for packet in self.game.legal_redirection_packets()
+                ]
+                if self.game.pending_redirection is not None
+                else []
+            ),
             "preventionRemaining": (
                 (
                     self.game.pending_prevention.remaining
@@ -405,9 +468,26 @@ class GameViewModel(QObject):
                     "index": index,
                     "label": ability.label,
                     "enabled": (
-                        card.controller_id is not None
+                        (
+                            card.owner_id
+                            if isinstance(
+                                ability, ActivatedRedirectDamageAbility
+                            )
+                            and ability.owner_activates
+                            else card.controller_id
+                        )
+                        is not None
                         and self.game.can_activate_ability(
-                            card.controller_id, card, index
+                            (
+                                card.owner_id
+                                if isinstance(
+                                    ability, ActivatedRedirectDamageAbility
+                                )
+                                and ability.owner_activates
+                                else card.controller_id
+                            ),
+                            card,
+                            index,
                         )
                     ),
                 }
@@ -781,14 +861,23 @@ class GameViewModel(QObject):
             self.stateChanged.emit()
             return
         player = self.game.players[self.perspective_index]
-        card = self._perspective_card(card_id)
-        if card is None or card not in player.battlefield:
+        card = self._perspective_card(card_id) or self._battlefield_card(card_id)
+        if card is None:
             return
         try:
             ability = self.game.activated_abilities(card)[ability_index]
         except IndexError:
             self._message = f"{card.name} has no such activated ability."
             self.stateChanged.emit()
+            return
+        if (
+            card not in player.battlefield
+            and not (
+                isinstance(ability, ActivatedRedirectDamageAbility)
+                and ability.owner_activates
+                and card.owner_id == player.id
+            )
+        ):
             return
         pending: list[object] = []
         if self._run(
@@ -801,6 +890,9 @@ class GameViewModel(QObject):
             self.stateChanged.emit()
         elif self.game.pending_prevention is not None:
             self._message = f"Choose damage for {card.name} to prevent."
+            self.stateChanged.emit()
+        elif self.game.pending_redirection is not None:
+            self._message = f"Choose creature damage for {card.name} to redirect."
             self.stateChanged.emit()
 
     @Slot(str)
@@ -836,6 +928,83 @@ class GameViewModel(QObject):
             "Cancelled damage prevention.",
         )
 
+    @Slot(str)
+    def chooseRedirectionPacket(self, packet_id: str) -> None:
+        player = self.game.players[self.perspective_index]
+        pending = self.game.pending_redirection
+        if pending is None:
+            return
+        ability = self.game.activated_abilities(pending.source)[
+            pending.ability_index
+        ]
+        assert isinstance(ability, ActivatedRedirectDamageAbility)
+        if ability.any_amount:
+            packet = next(
+                (
+                    candidate
+                    for candidate in self.game.legal_redirection_packets()
+                    if str(candidate.id) == packet_id
+                ),
+                None,
+            )
+            if packet is None:
+                return
+            self._redirection_packet_id = packet.id
+            self._redirection_amount = packet.remaining
+            self._redirection_maximum = packet.remaining
+            self.stateChanged.emit()
+            return
+        redirected: list[int] = []
+        if self._run(
+            lambda: redirected.append(
+                self.game.redirect_damage(player.id, UUID(packet_id))
+            ),
+            "Redirected damage.",
+        ):
+            self._message = f"Redirected {redirected[0]} damage to {player.name}."
+            self.stateChanged.emit()
+
+    @Slot(int)
+    def adjustRedirectionAmount(self, delta: int) -> None:
+        if self._redirection_packet_id is None:
+            return
+        self._redirection_amount = max(
+            1,
+            min(
+                self._redirection_maximum,
+                self._redirection_amount + delta,
+            ),
+        )
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmRedirectionAmount(self) -> None:
+        if self._redirection_packet_id is None:
+            return
+        player = self.game.players[self.perspective_index]
+        amount = self._redirection_amount
+        packet_id = self._redirection_packet_id
+        if self._run(
+            lambda: self.game.redirect_damage(player.id, packet_id, amount),
+            f"Redirected {amount} damage.",
+        ):
+            self._redirection_packet_id = None
+            self.stateChanged.emit()
+
+    @Slot()
+    def cancelRedirectionAmount(self) -> None:
+        self._redirection_packet_id = None
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelRedirection(self) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.cancel_redirection(player.id),
+            "Cancelled damage redirection.",
+        )
+        self._redirection_packet_id = None
+
     @Slot()
     def advance(self) -> None:
         def action() -> None:
@@ -849,6 +1018,22 @@ class GameViewModel(QObject):
                 raise RuntimeError("complete the current combat declaration first")
 
         self._run(action, "Advanced the game.")
+
+    @Slot(str)
+    def chooseTimeVaultTurn(self, vault_id: str) -> None:
+        choice = self.game.pending_turn_choice
+        if choice is None:
+            return
+        vault = self._card_by_id(UUID(vault_id)) if vault_id else None
+        action = "Skipped the turn to ready Time Vault later."
+        if vault is None:
+            action = f"{choice.player_name} takes the upcoming turn."
+        self._run(
+            lambda: self.game.choose_time_vault_skip(
+                choice.player_id, vault
+            ),
+            action,
+        )
 
     @Slot()
     def cancelTarget(self) -> None:
@@ -998,11 +1183,37 @@ class GameViewModel(QObject):
                     else 0
                     for index, blocker in enumerate(blockers)
                 }
+        defender = self.game.player(combat.defending_player_id)
+        for blocker in defender.battlefield:
+            blocked_attackers = [
+                attacker
+                for attacker in combat.attackers
+                if blocker in combat.blockers[attacker.id]
+            ]
+            if len(blocked_attackers) > 1:
+                result[blocker] = {
+                    attacker: max(0, self.game.creature_power(blocker))
+                    if index == 0
+                    else 0
+                    for index, attacker in enumerate(blocked_attackers)
+                }
         return result
 
     @Slot()
     def discardSelected(self) -> None:
         cards = self._selected_cards()
+        if self.game.pending_discard_choices:
+            choice = self.game.pending_discard_choices[0]
+            required = min(choice.amount, len(self.game.player(choice.player_id).hand))
+            if len(cards) != required:
+                self._message = f"Select exactly {required} card(s) to discard."
+                self.stateChanged.emit()
+                return
+            self._run(
+                lambda: self.game.choose_discard(choice.player_id, cards),
+                f"Discarded {required} card(s).",
+            )
+            return
         if len(cards) != 1:
             self._message = "Select exactly one card to discard."
             self.stateChanged.emit()
@@ -1024,8 +1235,10 @@ class GameViewModel(QObject):
             f"Declared {len(cards)} attacker(s). Switch to the defender.",
         )
 
-    @Slot(str)
-    def declareBlockers(self, attacker_id: str) -> None:
+    @Slot(str, str)
+    def declareBlockers(
+        self, attacker_id: str, second_attacker_id: str
+    ) -> None:
         cards = self._selected_cards()
         attacker = None
         if self.game.combat:
@@ -1037,11 +1250,30 @@ class GameViewModel(QObject):
                 ),
                 None,
             )
+            second_attacker = next(
+                (
+                    card
+                    for card in self.game.combat.attackers
+                    if str(card.id) == second_attacker_id
+                ),
+                None,
+            )
+        else:
+            second_attacker = None
         if cards and attacker is None:
             self._message = "Choose the attacker to block."
             self.stateChanged.emit()
             return
-        assignments = {card: attacker for card in cards} if attacker else {}
+        assignments = (
+            {
+                card: (attacker, second_attacker)
+                if second_attacker is not None
+                else attacker
+                for card in cards
+            }
+            if attacker
+            else {}
+        )
         self._run(
             lambda: self.game.declare_blockers(assignments),
             f"Declared {len(cards)} blocker(s).",

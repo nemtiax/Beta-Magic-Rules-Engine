@@ -14,11 +14,14 @@ from ..effects import (
     DestroyTargetsEffect,
     EffectScope,
     MoveTargetsEffect,
+    OptionalUpkeepPaymentEffect,
     TemporaryPumpEffect,
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
+    UpkeepBenefit,
     VariableCreatureStats,
     VariableStatKind,
+    DiscardCardsEffect,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
@@ -31,6 +34,31 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 DEATHLACE = lace("Deathlace", Color.BLACK)
+
+PARALYZE = CardDefinition(
+    name="Paralyze",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{B}"),
+    rules_text=(
+        "Enchant creature. Tap enchanted creature. It does not untap normally; "
+        "its controller may pay {4} during upkeep to untap it."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Enchant Creature",),
+    target_requirement=_CREATURE_IN_PLAY,
+    continuous_effects=(
+        ContinuousEffect(scope=EffectScope.ATTACHED_CARD, prevents_untap=True),
+    ),
+    upkeep_effects=(
+        OptionalUpkeepPaymentEffect(
+            ManaCost.parse("{4}"),
+            UpkeepBenefit.UNTAP_ATTACHED,
+            attached_permanent_controller=True,
+            require_all_matching_attachments=True,
+        ),
+    ),
+    taps_attached_on_entry=True,
+)
 _LAND_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
     card_types=frozenset({CardType.LAND}),
@@ -342,6 +370,32 @@ DARK_RITUAL = CardDefinition(
     spell_effects=(AddManaEffect(Color.BLACK, 3),),
 )
 
+HYPNOTIC_SPECTER = CardDefinition(
+    name="Hypnotic Specter",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{B}{B}"),
+    rules_text=(
+        "Flying. An opponent damaged by Hypnotic Specter must discard "
+        "a card at random from hand."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Specter",),
+    power=2,
+    toughness=2,
+    abilities=frozenset({KeywordAbility.FLYING}),
+    combat_player_damage_random_discard=1,
+)
+
+MIND_TWIST = CardDefinition(
+    name="Mind Twist",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{X}{B}"),
+    rules_text="Opponent discards X cards at random from hand.",
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(players=True, opponent_only=True),
+    spell_effects=(DiscardCardsEffect(amount_per_x=1, random=True),),
+)
+
 FEAR = CardDefinition(
     name="Fear",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -395,7 +449,10 @@ BLACK_CARDS = tuple(
             FEAR,
             FROZEN_SHADE,
             HOWL_FROM_BEYOND,
+            HYPNOTIC_SPECTER,
+            MIND_TWIST,
             NIGHTMARE,
+            PARALYZE,
             PLAGUE_RATS,
             RAISE_DEAD,
             ROYAL_ASSASSIN,
