@@ -6,12 +6,13 @@ Run with ``python -m beta_magic.ui``.
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 from pathlib import Path
 from typing import Any, Callable
 from uuid import UUID
 
-from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
+from PySide6.QtCore import QLoggingCategory, QObject, Property, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -27,6 +28,8 @@ from .decks import (
     MOONLIT_HORDE_DECK,
     RADIANT_CHARGE_DECK,
     SPECTRUM_ASSAULT_DECK,
+    IVORY_LAYERS_DECK,
+    SHADOW_COATS_DECK,
     STONEFIRE_DECK,
     VERDANT_TIDES_DECK,
     make_demo_game,
@@ -35,6 +38,7 @@ from .decks import (
     make_test_game,
     make_timed_event_test_game,
     make_x_test_game,
+    make_aura_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
 from .effects import (
@@ -43,7 +47,7 @@ from .effects import (
     UpkeepCostEffect,
 )
 from .game import GameState, PlayerState
-from .types import BASIC_LAND_SUBTYPES, CardType, CombatStep, Zone
+from .types import BASIC_LAND_SUBTYPES, CardType, CombatStep, TurnPhase, Zone
 
 
 
@@ -78,6 +82,7 @@ class GameViewModel(QObject):
         self._redirection_packet_id: UUID | None = None
         self._redirection_amount = 1
         self._redirection_maximum = 1
+        self._auto_pass_turns: dict[str, int] = {}
         self._message = "Double-click a card to play, cast, or tap it."
 
     @Property("QVariantMap", notify=stateChanged)
@@ -104,6 +109,74 @@ class GameViewModel(QObject):
             self.game.pending_discard_choices[0]
             if self.game.pending_discard_choices else None
         )
+        pending_priority = bool(
+            self.game.stack
+            or self.game.batch_abilities
+            or self.game.timed_events
+            or self.game.event_opportunities
+            or damage_incident is not None
+            or destruction_incident is not None
+            or self.game.pending_phase_advance is not None
+        )
+        idle = not (
+            self.game.pending_cast
+            or self.game.pending_activation
+            or self.game.pending_prevention
+            or self.game.pending_redirection
+            or self.game.pending_turn_choice
+            or self.game.pending_discard_choices
+            or pending_priority
+        )
+        perspective_is_active = self.perspective_index == self.game.active_player_index
+        can_begin_attack = bool(
+            idle
+            and perspective_is_active
+            and self.game.current_phase is TurnPhase.MAIN
+            and combat is None
+            and not self.game.attacks_this_turn
+        )
+        can_declare_attackers = bool(
+            idle
+            and perspective_is_active
+            and combat is not None
+            and combat.step is CombatStep.ATTACK_RESPONSE
+        )
+        can_declare_blockers = bool(
+            idle
+            and combat is not None
+            and combat.step is CombatStep.ATTACKER_RESPONSE
+            and combat.defending_player_id == perspective.id
+        )
+        turn_discard_required = bool(
+            idle
+            and perspective_is_active
+            and self.game.current_phase is TurnPhase.DISCARD
+            and self.game.active_player.discard_required
+        )
+        can_advance = bool(
+            idle
+            and perspective_is_active
+            and (
+                combat is None
+                or combat.step in {CombatStep.BLOCKER_RESPONSE, CombatStep.DAMAGE}
+            )
+            and not turn_discard_required
+        )
+        if combat is not None and combat.step is CombatStep.BLOCKER_RESPONSE:
+            advance_label = "Advance to damage"
+        elif combat is not None and combat.step is CombatStep.DAMAGE:
+            advance_label = "Resolve combat damage"
+        elif self.game.current_phase is TurnPhase.END:
+            advance_label = "End turn"
+        elif self.game.current_phase is not None:
+            destination = self.game.current_phase.next
+            advance_label = (
+                f"Advance to {destination.value.title()}"
+                if destination is not None
+                else "End turn"
+            )
+        else:
+            advance_label = "Advance"
         return {
             "turn": self.game.turn_number,
             "phase": (
@@ -128,6 +201,28 @@ class GameViewModel(QObject):
                     len(self.game.player(discard_choice.player_id).hand),
                 )
                 if discard_choice is not None else 0
+            ),
+            "canDiscard": (
+                turn_discard_required
+                or (
+                    discard_choice is not None
+                    and discard_choice.player_id == perspective.id
+                )
+            ),
+            "canAdvance": can_advance,
+            "advanceLabel": advance_label,
+            "canBeginAttack": can_begin_attack,
+            "canDeclareAttackers": can_declare_attackers,
+            "canDeclareBlockers": can_declare_blockers,
+            "priorityRequired": pending_priority,
+            "contextActionsVisible": bool(
+                can_begin_attack
+                or can_declare_attackers
+                or can_declare_blockers
+                or self.game.pending_cast is not None
+                or self.game.pending_activation is not None
+                or upkeep_payment_required
+                or pending_priority
             ),
             "timeVaultPlayer": (
                 turn_choice.player_name if turn_choice is not None else ""
@@ -321,6 +416,10 @@ class GameViewModel(QObject):
             "hasPriority": (
                 self.game.priority_player_index == self.perspective_index
             ),
+            "autoPassingTurn": (
+                self._auto_pass_turns.get(perspective.id)
+                == self.game.turn_number
+            ),
             "perspective": self._player_data(perspective, reveal_hand=True),
             "opponent": self._player_data(opponent, reveal_hand=False),
             "attackers": [
@@ -338,6 +437,10 @@ class GameViewModel(QObject):
             and self.game.pending_cast.spell.definition.target_requirement.zone
             is Zone.GRAVEYARD
         )
+        battlefield_roots = [
+            card for card in player.battlefield
+            if card.enchanted_card_id is None
+        ]
         return {
             "id": player.id,
             "name": player.name,
@@ -352,12 +455,12 @@ class GameViewModel(QObject):
             "battlefield": [self._card_data(card) for card in player.battlefield],
             "battlefieldNonlands": [
                 self._card_data(card)
-                for card in player.battlefield
+                for card in battlefield_roots
                 if CardType.LAND not in card.definition.card_types
             ],
             "battlefieldLands": [
                 self._card_data(card)
-                for card in player.battlefield
+                for card in battlefield_roots
                 if CardType.LAND in card.definition.card_types
             ],
             "graveyard": [
@@ -463,6 +566,12 @@ class GameViewModel(QObject):
             ),
             "rulesText": card.definition.rules_text,
             "attachedTo": enchanted_card.name if enchanted_card else "",
+            "attachments": [
+                self._card_data(attachment)
+                for owner in self.game.players
+                for attachment in owner.battlefield
+                if attachment.enchanted_card_id == card.id
+            ],
             "activatedAbilities": [
                 {
                     "index": index,
@@ -562,6 +671,7 @@ class GameViewModel(QObject):
         event_checkpoint = len(self.game.events)
         try:
             action()
+            self._apply_auto_passes()
         except (ValueError, RuntimeError) as error:
             self._message = str(error)
             self.stateChanged.emit()
@@ -571,6 +681,31 @@ class GameViewModel(QObject):
         self.selected_card_ids.clear()
         self.stateChanged.emit()
         return True
+
+    def _apply_auto_passes(self) -> None:
+        """Pass priority for opted-in players until a choice or manual pass is due."""
+
+        while self.game.priority_player_index is not None:
+            player = self.game.players[self.game.priority_player_index]
+            if self._auto_pass_turns.get(player.id) != self.game.turn_number:
+                return
+            if (
+                self.game.pending_cast is not None
+                or self.game.pending_activation is not None
+                or self.game.pending_prevention is not None
+                or self.game.pending_redirection is not None
+                or self.game.pending_turn_choice is not None
+                or self.game.pending_discard_choices
+            ):
+                return
+            if (
+                self.game.timed_events
+                and self.game.upkeep_payment_required
+                and self.game.timed_events[0].payment_decision is None
+                and self.game.timed_events[0].affected_player_id == player.id
+            ):
+                return
+            self.game.pass_priority(player.id)
 
     def _event_messages(self, events: list[GameEvent]) -> list[str]:
         messages: list[str] = []
@@ -739,6 +874,7 @@ class GameViewModel(QObject):
             except (ValueError, RuntimeError) as error:
                 self._message = str(error)
             else:
+                self._apply_auto_passes()
                 self.selected_card_ids.clear()
                 self._message = (
                     f"Choose a target in play for {card.name}."
@@ -781,6 +917,7 @@ class GameViewModel(QObject):
         except (ValueError, RuntimeError) as error:
             self._message = str(error)
         else:
+            self._apply_auto_passes()
             self._x_card_id = None
             self._message = (
                 f"Choose a target for {card.name} (X={x_value})."
@@ -810,6 +947,7 @@ class GameViewModel(QObject):
         except (ValueError, RuntimeError) as error:
             self._message = str(error)
         else:
+            self._apply_auto_passes()
             self._land_type_card_id = None
             self._message = (
                 f"Choose a target in play for {card.name} ({subtype})."
@@ -837,6 +975,7 @@ class GameViewModel(QObject):
         except (ValueError, RuntimeError) as error:
             self._message = str(error)
         else:
+            self._apply_auto_passes()
             self._mode_card_id = None
             self._message = (
                 f"Choose a target for {card.name} ({mode})."
@@ -1007,9 +1146,19 @@ class GameViewModel(QObject):
 
     @Slot()
     def advance(self) -> None:
+        immediate = bool(
+            self.game.combat is not None
+            or self.game.current_phase is TurnPhase.UNTAP
+        )
+        phase_name = (
+            self.game.current_phase.value.title()
+            if self.game.current_phase is not None
+            else "phase"
+        )
+
         def action() -> None:
             if self.game.combat is None:
-                self.game.advance_phase()
+                self.game.propose_phase_advance()
             elif self.game.combat.step is CombatStep.BLOCKER_RESPONSE:
                 self.game.advance_combat()
             elif self.game.combat.step is CombatStep.DAMAGE:
@@ -1017,7 +1166,14 @@ class GameViewModel(QObject):
             else:
                 raise RuntimeError("complete the current combat declaration first")
 
-        self._run(action, "Advanced the game.")
+        self._run(
+            action,
+            (
+                "Advanced the game."
+                if immediate
+                else f"Proposed ending {phase_name}; switch perspective to respond."
+            ),
+        )
 
     @Slot(str)
     def chooseTimeVaultTurn(self, vault_id: str) -> None:
@@ -1060,6 +1216,7 @@ class GameViewModel(QObject):
         resolved: list[tuple[Card, ...] | None] = []
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
+        closing_phase = self.game.pending_phase_advance
         batch_names = [
             *[card.name for card in self.game.stack],
             *[
@@ -1094,6 +1251,7 @@ class GameViewModel(QObject):
                 else "Resolved destruction."
             )
             self.stateChanged.emit()
+
         elif damage_incident is not None and self.game.pending_damage is None:
             summaries = []
             for packet in damage_incident.packets:
@@ -1117,6 +1275,9 @@ class GameViewModel(QObject):
         elif resolved and resolved[0] == () and timed_event:
             self._message = f"Resolved timed event: {timed_event}."
             self.stateChanged.emit()
+        elif closing_phase is not None and self.game.pending_phase_advance is None:
+            self._message = f"Advanced from {closing_phase.value.title()}."
+            self.stateChanged.emit()
         elif (
             resolved
             and resolved[0] is not None
@@ -1125,6 +1286,19 @@ class GameViewModel(QObject):
             names = ", ".join(batch_names)
             self._message = f"Resolved batch: {names}."
             self.stateChanged.emit()
+
+    @Slot()
+    def autoPassTurn(self) -> None:
+        player = self.game.players[self.perspective_index]
+        if self.game.priority_player_index != self.perspective_index:
+            self._message = f"{player.name} does not currently have priority."
+            self.stateChanged.emit()
+            return
+        self._auto_pass_turns[player.id] = self.game.turn_number
+        self._run(
+            lambda: None,
+            f"{player.name} will automatically pass priority this turn.",
+        )
 
     @Slot(bool)
     def chooseUpkeepPayment(self, pay: bool) -> None:
@@ -1295,6 +1469,7 @@ class GameViewModel(QObject):
         self.perspective_index = 0
         self.selected_card_ids.clear()
         self._x_card_id = None
+        self._auto_pass_turns.clear()
         self._message = "Started a new game."
         self.stateChanged.emit()
 
@@ -1343,16 +1518,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="use deterministic 20-card decks focused on protection",
     )
+    deck_group.add_argument(
+        "--aura-test-decks",
+        action="store_true",
+        help="use deterministic 20-card decks focused on stacked Auras",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    # Windows can temporarily lock the clipboard while another application is
+    # copying. Qt retries successfully, but its per-attempt warning is noisy.
+    QLoggingCategory.setFilterRules("qt.qpa.mime.warning=false")
     # Keep application arguments separate from our CLI so Qt does not need to
     # interpret options owned by the game.
     app = QGuiApplication([sys.argv[0]])
     app.setApplicationName("Beta Magic")
-    if args.protection_test_decks:
+    if args.aura_test_decks:
+        game_factory = make_aura_test_game
+    elif args.protection_test_decks:
         game_factory = make_protection_test_game
     elif args.x_test_decks:
         game_factory = make_x_test_game
@@ -1368,7 +1553,13 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(GameViewModel(game, game_factory=game_factory))
     if not engine.rootObjects():
         return 1
-    return app.exec()
+    previous_sigint_handler = signal.signal(
+        signal.SIGINT, lambda _signum, _frame: app.quit()
+    )
+    try:
+        return app.exec()
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint_handler)
 
 
 if __name__ == "__main__":

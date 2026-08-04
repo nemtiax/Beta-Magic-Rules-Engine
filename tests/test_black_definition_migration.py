@@ -19,6 +19,7 @@ EXPECTED_NAMES = {
     "Howl from Beyond",
     "Hypnotic Specter",
     "Mind Twist",
+    "Nettling Imp",
     "Nightmare",
     "Paralyze",
     "Plague Rats",
@@ -38,7 +39,7 @@ EXPECTED_NAMES = {
 
 class BlackDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_black_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLACK_CARDS), 27)
+        self.assertEqual(len(BLACK_CARDS), 28)
         self.assertEqual(
             {card.name for card in BLACK_CARDS}, EXPECTED_NAMES
         )

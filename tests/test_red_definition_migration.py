@@ -25,6 +25,7 @@ EXPECTED_NAMES = {
     "Ironclaw Orcs",
     "Keldon Warlord",
     "Lightning Bolt",
+    "Manabarbs",
     "Mons's Goblin Raiders",
     "Orcish Artillery",
     "Orcish Oriflamme",
@@ -45,7 +46,7 @@ EXPECTED_NAMES = {
 
 class RedDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_red_cards_are_migrated(self) -> None:
-        self.assertEqual(len(RED_CARDS), 34)
+        self.assertEqual(len(RED_CARDS), 35)
         self.assertEqual(
             {card.name for card in RED_CARDS}, EXPECTED_NAMES
         )

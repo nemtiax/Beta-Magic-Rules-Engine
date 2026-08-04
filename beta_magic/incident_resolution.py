@@ -645,6 +645,11 @@ class DamageDestructionMixin:
         incident.step = DamageResolutionStep.DEATH
         self.pending_damage = None
         self.check_state_based_actions()
+        for player in self.players:
+            for card in player.battlefield:
+                counters = incident.surviving_damage_triggers.get(card.id, 0)
+                if counters:
+                    card.plus_one_counters += counters
         incident.step = DamageResolutionStep.COMPLETE
         self.resolved_damage_incidents.append(incident)
         self.consecutive_passes = 0
@@ -660,7 +665,11 @@ class DamageDestructionMixin:
             self.deferred_damage_continuation = incident
             self.priority_player_index = self.active_player_index
             return
-        self.priority_player_index = None
+        self.priority_player_index = (
+            self.active_player_index
+            if self.pending_phase_advance is not None
+            else None
+        )
         self._continue_after_damage_incident(incident)
 
     def _redirect_unblocked_combat_damage(self) -> None:
@@ -773,6 +782,10 @@ class DamageDestructionMixin:
             if recipient is None:
                 continue
             recipient.damage += amount
+            if recipient.definition.grows_after_surviving_damage:
+                incident.surviving_damage_triggers[recipient.id] = (
+                    incident.surviving_damage_triggers.get(recipient.id, 0) + 1
+                )
             self.events.append(
                 DamageEvent(
                     amount=amount,
@@ -878,5 +891,6 @@ class DamageDestructionMixin:
             self.priority_player_index = (
                 self.active_player_index
                 if self.timed_events or self.event_opportunities
+                or self.pending_phase_advance is not None
                 else None
             )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Iterable
 
 from .abilities import (
@@ -121,7 +122,7 @@ class CharacteristicsMixin:
                 if animated is not None
                 else creature.definition.power or 0
             )
-        return base + self._creature_bonus(creature)[0]
+        return base + creature.plus_one_counters + self._creature_bonus(creature)[0]
 
     def creature_toughness(self, creature: Card) -> int:
         """Return current toughness after applying continuous bonuses."""
@@ -151,7 +152,7 @@ class CharacteristicsMixin:
                 if animated is not None
                 else creature.definition.toughness or 0
             )
-        return base + self._creature_bonus(creature)[1]
+        return base + creature.plus_one_counters + self._creature_bonus(creature)[1]
 
     def has_summoning_sickness(self, creature: Card) -> bool:
         """Whether a creature began the turn under its current controller."""
@@ -182,23 +183,26 @@ class CharacteristicsMixin:
         if CardType.LAND not in land.definition.card_types:
             return land.definition.subtypes
         subtypes = tuple(land.definition.subtypes)
-        attached_effects = sorted(
-            (
-                (source.battlefield_entry_sequence or 0, effect, source)
+        local_replacements = [
+                (
+                    source.battlefield_entry_sequence or 0,
+                    (
+                        source.chosen_land_subtype
+                        if effect.chosen_basic_subtype
+                        else effect.replacement_subtype
+                    ),
+                )
                 for player in self.players
                 for source in player.battlefield
                 if source.enchanted_card_id == land.id
                 for effect in source.definition.land_type_effects
                 if isinstance(effect, AttachedLandTypeEffect)
-            ),
-            key=lambda item: item[0],
+        ]
+        local_replacements.extend(
+            (sequence, subtype)
+            for subtype, sequence in land.land_type_marks.values()
         )
-        for _, effect, source in attached_effects:
-            replacement = (
-                source.chosen_land_subtype
-                if effect.chosen_basic_subtype
-                else effect.replacement_subtype
-            )
+        for _, replacement in sorted(local_replacements):
             if replacement is not None:
                 subtypes = (replacement,)
 
@@ -239,6 +243,15 @@ class CharacteristicsMixin:
                 CardType.LAND in permanent.definition.card_types
                 and variable.subtype in self.land_subtypes(permanent)
                 for permanent in controller.battlefield
+            )
+        if variable.kind is VariableStatKind.ATTACKING_DEFENDER_LAND_SUBTYPE:
+            counted_player = controller
+            if self.combat is not None and creature in self.combat.attackers:
+                counted_player = self.player(self.combat.defending_player_id)
+            return sum(
+                CardType.LAND in permanent.definition.card_types
+                and variable.subtype in self.land_subtypes(permanent)
+                for permanent in counted_player.battlefield
             )
         return sum(
             CardType.CREATURE in self.card_types(permanent)
@@ -293,6 +306,8 @@ class CharacteristicsMixin:
         attacking = self.combat is not None and creature in self.combat.attackers
         for player in self.players:
             for source in player.battlefield:
+                if not self.continuous_permanent_is_active(source):
+                    continue
                 for effect in source.definition.continuous_effects:
                     if (
                         effect.scope is EffectScope.ATTACHED_CARD
@@ -307,6 +322,15 @@ class CharacteristicsMixin:
                     if (
                         effect.subtype is not None
                         and effect.subtype not in creature.definition.subtypes
+                    ):
+                        continue
+                    if (
+                        effect.land_subtype is not None
+                        and (
+                            CardType.LAND not in creature.definition.card_types
+                            or effect.land_subtype
+                            not in self.land_subtypes(creature)
+                        )
                     ):
                         continue
                     if effect.exclude_source and source is creature:
@@ -335,7 +359,39 @@ class CharacteristicsMixin:
                             for permanent in controller.battlefield
                         ):
                             continue
+                    if effect.counted_controller_land_subtype is not None:
+                        controller = self.player(
+                            source.controller_id or source.owner_id
+                        )
+                        count = sum(
+                            CardType.LAND in permanent.definition.card_types
+                            and effect.counted_controller_land_subtype
+                            in self.land_subtypes(permanent)
+                            for permanent in controller.battlefield
+                        )
+                        divisor = effect.count_divisor
+                        power = count * effect.power_per_count // divisor
+                        toughness_numerator = count * effect.toughness_per_count
+                        toughness = (
+                            (toughness_numerator + divisor - 1) // divisor
+                            if effect.round_toughness_up
+                            else toughness_numerator // divisor
+                        )
+                        effect = replace(
+                            effect,
+                            power=effect.power + power,
+                            toughness=effect.toughness + toughness,
+                        )
                     yield effect
+
+    @staticmethod
+    def continuous_permanent_is_active(source: Card) -> bool:
+        """Whether a permanent may currently supply continuous effects."""
+
+        return not (
+            source.tapped
+            and CardType.ARTIFACT in source.definition.card_types
+        )
 
     def _creature_bonus(self, creature: Card) -> tuple[int, int]:
         effects = tuple(self._continuous_effects_for(creature))

@@ -12,6 +12,8 @@ from beta_magic.decks import (
     SPECTRUM_ASSAULT_DECK,
     STONEFIRE_DECK,
     VERDANT_TIDES_DECK,
+    IVORY_LAYERS_DECK,
+    SHADOW_COATS_DECK,
 )
 
 
@@ -29,6 +31,8 @@ class SeededDeckModuleTests(unittest.TestCase):
             ELEMENTAL_SURGE_DECK,
             AEGIS_WARDS_DECK,
             SPECTRUM_ASSAULT_DECK,
+            IVORY_LAYERS_DECK,
+            SHADOW_COATS_DECK,
         ):
             self.assertEqual(len(deck), 20)
             self.assertTrue(all(id(card) in canonical_ids for card in deck))

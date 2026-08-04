@@ -28,6 +28,7 @@ class RuleEventOpportunity:
     spell_colors: frozenset[Color] = field(default_factory=frozenset)
     card_id: UUID | None = None
     damage: int = 0
+    life_gain: int = 0
     source_id: UUID | None = None
     source_name: str | None = None
     source_controller_id: str | None = None

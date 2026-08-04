@@ -41,6 +41,7 @@ from beta_magic import (
     VANILLA_WALLS,
     GameStatus,
     GameState,
+    CardDefinition,
     PlayerState,
     CardType,
     KeywordAbility,
@@ -123,6 +124,9 @@ from beta_magic.decks import (
     make_x_test_game,
     AEGIS_WARDS_DECK,
     SPECTRUM_ASSAULT_DECK,
+    IVORY_LAYERS_DECK,
+    SHADOW_COATS_DECK,
+    make_aura_test_game,
 )
 from beta_magic.ui import (
     GameViewModel,
@@ -140,6 +144,121 @@ class DemoGameTests(unittest.TestCase):
                 view_model.game.priority_player_index
             )
             view_model.passPriority()
+
+    def test_command_bar_only_exposes_actions_valid_in_current_context(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+
+        self.assertTrue(view_model.state["canAdvance"])
+        self.assertEqual(view_model.state["advanceLabel"], "Advance to Upkeep")
+        self.assertFalse(view_model.state["contextActionsVisible"])
+        self.assertFalse(view_model.state["canDiscard"])
+
+        while game.current_phase is not TurnPhase.MAIN:
+            game.advance_phase()
+        self.assertEqual(view_model.state["advanceLabel"], "Advance to Discard")
+        self.assertTrue(view_model.state["canBeginAttack"])
+        self.assertTrue(view_model.state["contextActionsVisible"])
+
+        attacker = game.players[0].library.pop()
+        attacker.definition = HILL_GIANT
+        attacker.zone = Zone.BATTLEFIELD
+        game.players[0].battlefield.append(attacker)
+        game.begin_combat()
+        self.assertTrue(view_model.state["canDeclareAttackers"])
+        self.assertFalse(view_model.state["canDeclareBlockers"])
+
+        game.declare_attackers([attacker])
+        view_model.switchPerspective()
+        self.assertFalse(view_model.state["canDeclareAttackers"])
+        self.assertTrue(view_model.state["canDeclareBlockers"])
+
+    def test_auto_pass_applies_to_later_priority_windows_in_current_turn(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+        view_model.advance()  # Untap advances immediately to upkeep.
+        view_model.advance()  # Active player proposes leaving upkeep.
+        view_model.switchPerspective()
+
+        self.assertTrue(view_model.state["hasPriority"])
+        view_model.autoPassTurn()
+        self.assertEqual(game.current_phase, TurnPhase.DRAW)
+        self.assertTrue(view_model.state["autoPassingTurn"])
+
+        view_model.switchPerspective()
+        view_model.advance()
+        self.assertEqual(game.current_phase, TurnPhase.MAIN)
+        self.assertIsNone(game.priority_player_index)
+
+        game.turn_number += 1
+        view_model.switchPerspective()
+        self.assertFalse(view_model.state["autoPassingTurn"])
+
+    def test_auto_pass_responds_to_an_opponents_untargeted_spell(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+        view_model.advance()
+        view_model.advance()
+        view_model.switchPerspective()
+        view_model.autoPassTurn()
+
+        view_model.switchPerspective()
+        spell = game.players[0].hand[0]
+        spell.definition = CardDefinition(
+            name="Test Fast Effect",
+            card_types=frozenset({CardType.INSTANT}),
+        )
+        view_model.activateCard(str(spell.id))
+
+        self.assertEqual(game.priority_player_index, 0)
+        self.assertTrue(view_model.state["hasPriority"])
+        self.assertEqual(game.consecutive_passes, 1)
+
+    def test_discard_command_only_appears_for_affected_perspective(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+        game.current_phase = TurnPhase.DISCARD
+        while len(game.active_player.hand) <= 7:
+            game.active_player.draw()
+
+        self.assertTrue(view_model.state["canDiscard"])
+        view_model.switchPerspective()
+        self.assertFalse(view_model.state["canDiscard"])
+
+    def test_battlefield_view_groups_attachments_behind_their_host(self) -> None:
+        game = make_test_game()
+        host = game.players[0].library.pop()
+        host.definition = HILL_GIANT
+        host.zone = Zone.BATTLEFIELD
+        game.players[0].battlefield.append(host)
+        aura = game.players[0].library.pop()
+        aura.definition = HOLY_STRENGTH
+        aura.zone = Zone.BATTLEFIELD
+        aura.enchanted_card_id = host.id
+        game.players[0].battlefield.append(aura)
+        second_aura = game.players[0].library.pop()
+        second_aura.definition = FLIGHT
+        second_aura.zone = Zone.BATTLEFIELD
+        second_aura.enchanted_card_id = host.id
+        game.players[0].battlefield.append(second_aura)
+        view_model = GameViewModel(game)
+
+        nonlands = view_model.state["perspective"]["battlefieldNonlands"]
+        self.assertEqual(
+            [card["id"] for card in nonlands].count(str(aura.id)), 0
+        )
+        host_data = next(card for card in nonlands if card["id"] == str(host.id))
+        self.assertEqual(
+            [card["id"] for card in host_data["attachments"]],
+            [str(aura.id), str(second_aura.id)],
+        )
+        self.assertEqual(host_data["attachments"][0]["attachedTo"], host.name)
+        view_model.toggleCard(str(aura.id))
+        view_model.toggleCard(str(second_aura.id))
+        self.assertEqual(
+            view_model.selected_card_ids,
+            {aura.id, second_aura.id},
+        )
 
     def test_demo_game_has_two_started_supported_card_decks(self) -> None:
         game = make_demo_game()
@@ -373,6 +492,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertFalse(parse_args([]).timed_event_test_decks)
         self.assertFalse(parse_args([]).x_test_decks)
         self.assertFalse(parse_args([]).protection_test_decks)
+        self.assertFalse(parse_args([]).aura_test_decks)
         self.assertTrue(parse_args(["--test-decks"]).test_decks)
         self.assertTrue(
             parse_args(["--enchantment-test-decks"]).enchantment_test_decks
@@ -384,6 +504,23 @@ class DemoGameTests(unittest.TestCase):
         self.assertTrue(
             parse_args(["--protection-test-decks"]).protection_test_decks
         )
+        self.assertTrue(parse_args(["--aura-test-decks"]).aura_test_decks)
+
+    def test_aura_test_decks_open_with_creatures_mana_and_auras(self) -> None:
+        game = make_aura_test_game()
+
+        self.assertEqual(len(IVORY_LAYERS_DECK), 20)
+        self.assertEqual(len(SHADOW_COATS_DECK), 20)
+        for player in game.players:
+            self.assertTrue(any(CardType.LAND in card.definition.card_types
+                                for card in player.hand))
+            self.assertTrue(any(CardType.CREATURE in card.definition.card_types
+                                for card in player.hand))
+            self.assertGreaterEqual(
+                sum("Enchant Creature" in card.definition.subtypes
+                    for card in player.hand),
+                3,
+            )
 
     def test_protection_test_decks_are_small_repeatable_and_focused(self) -> None:
         first = make_protection_test_game()

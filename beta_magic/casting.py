@@ -12,13 +12,21 @@ from .abilities import (
     ActivatedTapAbility,
     ActivatedTemporaryAbility,
     ActivatedDiscardAbility,
+    ActivatedAttackRequirementAbility,
+    ActivatedLandTypeAbility,
     ActivatedUnblockableAbility,
+    ActivatedInterruptUntapAbility,
     BatchActivatedAbility,
     TargetRequirement,
 )
 from .cards import Card
 from .events import SpellCastEvent
-from .effects import AddManaEffect, AttachedLandTypeEffect, CounterTargetSpellEffect
+from .effects import (
+    AddManaEffect,
+    AttachedLandTypeEffect,
+    CounterTargetSpellEffect,
+    SirensCallEffect,
+)
 from .types import (
     BASIC_LAND_SUBTYPES,
     CardType,
@@ -193,6 +201,17 @@ class TargetingCastingMixin:
             card.definition.mana_cost.with_x(x_value)
         ):
             raise RuntimeError(f"not enough mana to cast {card.name}")
+        if any(
+            isinstance(effect, SirensCallEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            caster is self.active_player
+            or self.attacks_this_turn
+            or self.combat is not None
+        ):
+            raise RuntimeError(
+                f"{card.name} can only be cast during an opponent's turn before the attack"
+            )
         return caster
 
     def _validate_cast(self, card: Card, x_value: int = 0) -> PlayerState:
@@ -373,6 +392,11 @@ class TargetingCastingMixin:
             pending_effect = self.activated_abilities(
                 pending_ability.source
             )[pending_ability.ability_index]
+            if isinstance(pending_effect, ActivatedAttackRequirementAbility):
+                legal = [
+                    candidate for candidate in legal
+                    if candidate.summoned_turn != self.turn_number
+                ]
             if (
                 isinstance(pending_effect, ActivatedTemporaryAbility)
                 and pending_effect.toughness_less_than_source_power
@@ -434,6 +458,11 @@ class TargetingCastingMixin:
         if requirement.owner_only and card.owner_id != caster_id:
             return False
         if requirement.controller_only and card.controller_id != caster_id:
+            return False
+        if (
+            requirement.active_player_only
+            and card.controller_id != self.active_player.id
+        ):
             return False
         if (
             requirement.maximum_power is not None
@@ -509,6 +538,9 @@ class TargetingCastingMixin:
                     ActivatedUnblockableAbility,
                     ActivatedTemporaryAbility,
                     ActivatedDiscardAbility,
+                    ActivatedAttackRequirementAbility,
+                    ActivatedLandTypeAbility,
+                    ActivatedInterruptUntapAbility,
                 ),
             )
             else None
@@ -532,6 +564,9 @@ class TargetingCastingMixin:
                 ActivatedUnblockableAbility,
                 ActivatedTemporaryAbility,
                 ActivatedDiscardAbility,
+                ActivatedAttackRequirementAbility,
+                ActivatedLandTypeAbility,
+                ActivatedInterruptUntapAbility,
             ),
         )
         chosen = tuple(targets)
@@ -569,9 +604,22 @@ class TargetingCastingMixin:
                 ActivatedUnblockableAbility,
                 ActivatedTemporaryAbility,
                 ActivatedDiscardAbility,
+                ActivatedAttackRequirementAbility,
+                ActivatedLandTypeAbility,
+                ActivatedInterruptUntapAbility,
             ),
         ):
             player.mana_pool.pay(ability.mana_cost)
+        if isinstance(ability, ActivatedInterruptUntapAbility):
+            for target in chosen:
+                if isinstance(target, Card):
+                    target.tapped = False
+            # Interrupt-speed permanent abilities resolve immediately. Taking
+            # the action invalidates earlier passes without closing or
+            # replacing the current spell's interrupt window.
+            self.consecutive_passes = 0
+            self.check_state_based_actions()
+            return
         self.batch_abilities.append(
             AbilityOnStack(
                 pending.source,

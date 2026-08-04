@@ -70,6 +70,7 @@ The following mutually exclusive command-line options load deterministic
 | `--timed-event-test-decks` | Upkeep events, Copper Tablet, and timed Auras |
 | `--x-test-decks` | Variable `{X}` costs and scalable effects |
 | `--protection-test-decks` | Protection, Wards, Circles of Protection, and colored effects |
+| `--aura-test-decks` | Cheap Auras and creatures for testing stacked attachments |
 
 For example:
 

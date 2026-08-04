@@ -18,9 +18,11 @@ from ..effects import (
     ExtraTurnEffect,
     LandhomeRequirement,
     MoveTargetsEffect,
+    PermanentTappedEffect,
     DestroyTargetsEffect,
     SetTappedEffect,
     ShuffleHandAndGraveyardEffect,
+    SirensCallEffect,
     TemporaryPumpEffect,
     UpkeepCostEffect,
     UpkeepDamageEffect,
@@ -37,6 +39,24 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 THOUGHTLACE = lace("Thoughtlace", Color.BLUE)
+
+LIFETAP = CardDefinition(
+    name="Lifetap",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{U}{U}"),
+    rules_text=(
+        "You gain 1 life whenever a Forest controlled by an opponent "
+        "becomes tapped."
+    ),
+    colors=frozenset({Color.BLUE}),
+    permanent_tapped_effects=(
+        PermanentTappedEffect(
+            life_gain=1,
+            land_subtype="Forest",
+            opponent_controlled_only=True,
+        ),
+    ),
+)
 
 CREATURE_BOND = CardDefinition(
     name="Creature Bond",
@@ -490,6 +510,19 @@ TIMETWISTER = CardDefinition(
     spell_effects=(ShuffleHandAndGraveyardEffect(7),),
 )
 
+SIRENS_CALL = CardDefinition(
+    name="Siren's Call",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{U}"),
+    rules_text=(
+        "Cast only during an opponent's turn before the attack. Their "
+        "creatures must attack if able; destroy affected non-Walls that "
+        "do not attack at end of turn. Creatures summoned this turn are unaffected."
+    ),
+    colors=frozenset({Color.BLUE}),
+    spell_effects=(SirensCallEffect(),),
+)
+
 BLUE_CARDS = tuple(
     sorted(
         (
@@ -505,6 +538,7 @@ BLUE_CARDS = tuple(
             FLIGHT,
             INVISIBILITY,
             JUMP,
+            LIFETAP,
             LORD_OF_ATLANTIS,
             MAHAMOTI_DJINN,
             MERFOLK_OF_THE_PEARL_TRIDENT,
@@ -516,6 +550,7 @@ BLUE_CARDS = tuple(
             PSIONIC_BLAST,
             PSYCHIC_VENOM,
             SEA_SERPENT,
+            SIRENS_CALL,
             SPELL_BLAST,
             STEAL_ARTIFACT,
             THOUGHTLACE,

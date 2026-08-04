@@ -12,6 +12,10 @@ from beta_magic import (
 
 
 FOREST = CardDefinition(name="Forest", card_types=frozenset({CardType.LAND}))
+ZERO_INSTANT = CardDefinition(
+    name="Test Instant",
+    card_types=frozenset({CardType.INSTANT}),
+)
 
 
 def player(player_id: str, card_count: int = 12) -> PlayerState:
@@ -30,6 +34,48 @@ class TurnPhaseTests(unittest.TestCase):
     def test_game_starts_in_untap(self) -> None:
         self.assertEqual(self.game.current_phase, TurnPhase.UNTAP)
         self.assertEqual(self.game.turn_number, 1)
+
+    def test_untap_advances_immediately_without_a_response_window(self) -> None:
+        self.assertEqual(self.game.propose_phase_advance(), TurnPhase.UPKEEP)
+        self.assertIsNone(self.game.pending_phase_advance)
+        self.assertIsNone(self.game.priority_player_index)
+
+    def test_phase_only_ends_after_opponent_passes(self) -> None:
+        self.game.advance_phase()
+        self.alice.mana_pool.green = 2
+
+        self.game.propose_phase_advance()
+
+        self.assertEqual(self.game.current_phase, TurnPhase.UPKEEP)
+        self.assertEqual(self.game.pending_phase_advance, TurnPhase.UPKEEP)
+        self.assertEqual(self.game.priority_player_index, 1)
+        self.assertEqual(self.alice.mana_pool.total, 2)
+
+        self.game.pass_priority(self.bob.id)
+        self.assertEqual(self.game.current_phase, TurnPhase.DRAW)
+        self.assertIsNone(self.game.pending_phase_advance)
+        self.assertEqual(self.alice.mana_pool.total, 0)
+        self.assertEqual(self.alice.life, 18)
+
+    def test_action_during_phase_close_requires_both_players_to_pass_again(self) -> None:
+        self.game.advance_phase()
+        spell = Card(ZERO_INSTANT, self.bob.id, zone=Zone.HAND)
+        self.bob.hand.append(spell)
+        self.game.propose_phase_advance()
+
+        self.game.begin_cast(spell)
+        self.assertEqual(self.game.consecutive_passes, 0)
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+
+        self.assertEqual(spell.zone, Zone.GRAVEYARD)
+        self.assertEqual(self.game.current_phase, TurnPhase.UPKEEP)
+        self.assertEqual(self.game.priority_player_index, 0)
+
+        self.game.pass_priority(self.alice.id)
+        self.assertEqual(self.game.current_phase, TurnPhase.UPKEEP)
+        self.game.pass_priority(self.bob.id)
+        self.assertEqual(self.game.current_phase, TurnPhase.DRAW)
 
     def test_turn_follows_beta_phase_order_and_draws_on_entry(self) -> None:
         library_size = len(self.alice.library)

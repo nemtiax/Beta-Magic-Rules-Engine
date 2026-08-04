@@ -59,7 +59,7 @@
  - [x] Flight
  - [x] Invisibility
  - [x] Jump
- - [ ] Lifetap
+ - [x] Lifetap
  - [x] Lord of Atlantis
  - [ ] Magical Hack
  - [x] Mahamoti Djinn
@@ -75,7 +75,7 @@
  - [x] Psionic Blast
  - [x] Psychic Venom
  - [x] Sea Serpent
- - [ ] Siren's Call
+ - [x] Siren's Call
  - [ ] Sleight of Mind
  - [x] Spell Blast
  - [ ] Stasis
@@ -115,7 +115,7 @@
  - [ ] Lord of the Pit
  - [x] Mind Twist
  - [ ] Nether Shadow
- - [ ] Nettling Imp
+ - [x] Nettling Imp
  - [x] Nightmare
  - [x] Paralyze
  - [ ] Pestilence
@@ -161,7 +161,7 @@
  - [x] Keldon Warlord
  - [x] Lightning Bolt
  - [ ] Mana Flare
- - [ ] Manabarbs
+ - [x] Manabarbs
  - [x] Mons's Goblin Raiders
  - [x] Orcish Artillery
  - [x] Orcish Oriflamme
@@ -182,7 +182,7 @@
  - [x] Wall of Fire
  - [x] Wall of Stone
  - [ ] Wheel of Fortune
- - [ ] Aspect of Wolf
+ - [x] Aspect of Wolf
  - [ ] Berserk
  - [x] Birds of Paradise
  - [ ] Camouflage
@@ -193,8 +193,8 @@
  - [ ] Fastbond
  - [ ] Fog
  - [x] Force of Nature
- - [ ] Fungusaur
- - [ ] Gaea's Liege
+ - [x] Fungusaur
+ - [x] Gaea's Liege
  - [x] Giant Growth
  - [x] Giant Spider
  - [x] Grizzly Bears
@@ -203,11 +203,11 @@
  - [ ] Instill Energy
  - [x] Ironroot Treefolk
  - [ ] Kudzu
- - [ ] Ley Druid
+ - [x] Ley Druid
  - [ ] Lifeforce
  - [x] Lifelace
  - [ ] Living Artifact
- - [ ] Living Lands
+ - [x] Living Lands
  - [x] Llanowar Elves
  - [ ] Lure
  - [ ] Natural Selection
@@ -245,7 +245,7 @@
  - [ ] Gauntlet of Might
  - [ ] Glasses of Urza
  - [ ] Helm of Chatzuk
- - [ ] Howling Mine
+ - [x] Howling Mine
  - [x] Icy Manipulator
  - [ ] Illusionary Mask
  - [x] Iron Star
@@ -254,7 +254,7 @@
  - [x] Jade Statue
  - [x] Jayemdae Tome
  - [x] Juggernaut
- - [ ] Kormus Bell
+ - [x] Kormus Bell
  - [ ] Library of Leng
  - [x] Living Wall
  - [x] Mana Vault
@@ -264,7 +264,7 @@
  - [x] Mox Pearl
  - [x] Mox Ruby
  - [x] Mox Sapphire
- - [ ] Nevinyrral's Disk
+ - [x] Nevinyrral's Disk
  - [x] Obsianus Golem
  - [x] Rod of Ruin
  - [x] Sol Ring

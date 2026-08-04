@@ -2,6 +2,7 @@
 
 from ..abilities import (
     ActivatedDestroyAbility,
+    ActivatedAttackRequirementAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
     TargetRequirement,
@@ -265,6 +266,30 @@ ROYAL_ASSASSIN = CardDefinition(
     ),
 )
 
+NETTLING_IMP = CardDefinition(
+    name="Nettling Imp",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{2}{B}"),
+    rules_text=(
+        "Tap during an opponent's turn before the attack: target opposing "
+        "non-Wall creature must attack this turn or be destroyed at end of turn."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Imp",),
+    power=1,
+    toughness=1,
+    activated_abilities=(
+        ActivatedAttackRequirementAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.CREATURE}),
+                excluded_subtypes=frozenset({"Wall"}),
+                active_player_only=True,
+            )
+        ),
+    ),
+)
+
 BAD_MOON = CardDefinition(
     name="Bad Moon",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -451,6 +476,7 @@ BLACK_CARDS = tuple(
             HOWL_FROM_BEYOND,
             HYPNOTIC_SPECTER,
             MIND_TWIST,
+            NETTLING_IMP,
             NIGHTMARE,
             PARALYZE,
             PLAGUE_RATS,

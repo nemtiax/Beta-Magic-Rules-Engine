@@ -76,6 +76,7 @@ class DamageIncident:
     packets: list[DamagePacket] = field(default_factory=list)
     step: DamageResolutionStep = DamageResolutionStep.ACCUMULATION
     regenerated_card_ids: set[UUID] = field(default_factory=set)
+    surviving_damage_triggers: dict[UUID, int] = field(default_factory=dict)
     redirected_packets: list[DamagePacket] = field(default_factory=list)
     id: UUID = field(default_factory=uuid4)
 

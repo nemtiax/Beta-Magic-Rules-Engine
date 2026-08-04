@@ -80,6 +80,16 @@ class LandEventArtifactTests(unittest.TestCase):
         self.pass_current_window()
         self.assertEqual(self.alice.life, 16)
 
+    def test_tapped_continuous_artifact_has_no_land_event_effect(self):
+        ankh = self.card(self.bob, ANKH_OF_MISHRA, Zone.BATTLEFIELD)
+        ankh.tapped = True
+        land = self.card(self.alice, PLAINS, Zone.HAND)
+
+        self.game.play_land(land)
+
+        self.assertEqual(self.game.event_opportunities, [])
+        self.assertEqual(self.alice.life, 20)
+
     def test_dingus_egg_triggers_after_land_destruction_resolves(self):
         self.card(self.bob, DINGUS_EGG, Zone.BATTLEFIELD)
         land = self.card(self.bob, PLAINS, Zone.BATTLEFIELD)

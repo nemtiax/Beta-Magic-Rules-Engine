@@ -13,9 +13,12 @@ from .abilities import (
     ActivatedDamageAbility,
     ActivatedDrawAbility,
     ActivatedDiscardAbility,
+    ActivatedAttackRequirementAbility,
+    ActivatedLandTypeAbility,
     ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
     ActivatedDestroyAbility,
+    ActivatedDestroyAllAbility,
     ActivatedManaAbility,
     ActivatedPumpAbility,
     ActivatedPreventDamageAbility,
@@ -24,6 +27,7 @@ from .abilities import (
     ActivatedTapAbility,
     ActivatedTemporaryAbility,
     ActivatedUntapAbility,
+    ActivatedInterruptUntapAbility,
     ActivatedUnblockableAbility,
 )
 from .cards import Card, CardDefinition
@@ -35,7 +39,7 @@ from .casting import (
     TargetingCastingMixin,
 )
 from .characteristics import CharacteristicsMixin
-from .combat import CombatMixin, CombatState
+from .combat import AttackRequirement, CombatMixin, CombatState
 from .incident_resolution import (
     DamageDestructionMixin,
     PendingPrevention,
@@ -54,6 +58,7 @@ from .effects import (
     DrawCardsEffect,
     DiscardCardsEffect,
     ShuffleHandAndGraveyardEffect,
+    SirensCallEffect,
     ExtraTurnEffect,
     GainLifeEffect,
     GlobalDamageEffect,
@@ -159,7 +164,9 @@ class PlayerState:
         if destination is not Zone.BATTLEFIELD:
             card.tapped = False
             card.damage = 0
+            card.plus_one_counters = 0
             card.controller_id = card.owner_id
+            card.summoned_turn = None
             card.enchanted_card_id = None
         target.append(card)
 
@@ -209,6 +216,8 @@ class GameState(
     current_phase: TurnPhase | None = None
     lands_played_this_turn: int = 0
     attacks_this_turn: int = 0
+    attack_requirements: dict[UUID, AttackRequirement] = field(default_factory=dict)
+    attacked_this_turn: set[UUID] = field(default_factory=set)
     combat: CombatState | None = None
     pending_cast: PendingCast | None = None
     pending_activation: PendingActivation | None = None
@@ -242,6 +251,7 @@ class GameState(
     upcoming_turns: list[str] = field(default_factory=list)
     next_natural_player_index: int = 1
     pending_turn_choice: PendingTurnChoice | None = None
+    pending_phase_advance: TurnPhase | None = None
     vaults_untapping_next_turn: dict[str, set[UUID]] = field(
         default_factory=dict
     )
@@ -387,6 +397,9 @@ class GameState(
             card.enchanted_card_id = None
             card.chosen_land_subtype = None
             card.color_override = None
+            card.plus_one_counters = 0
+            card.summoned_turn = None
+            card.land_type_marks.clear()
         target.append(card)
         if destination is Zone.BATTLEFIELD and card.definition.enters_tapped:
             card.tapped = True
@@ -425,6 +438,9 @@ class GameState(
             )
 
         if source_zone is Zone.BATTLEFIELD:
+            for player in self.players:
+                for permanent in player.battlefield:
+                    permanent.land_type_marks.pop(card.id, None)
             self.temporary_creature_effects.pop(card.id, None)
             self.combat_creature_effects.pop(card.id, None)
             self.ability_activations_this_turn.pop(card.id, None)
@@ -468,6 +484,8 @@ class GameState(
             key=lambda source: source.battlefield_entry_sequence or 0,
         )
         for aura in control_auras:
+            if not self.continuous_permanent_is_active(aura):
+                continue
             if aura.enchanted_card_id in desired_controllers:
                 desired_controllers[aura.enchanted_card_id] = (
                     aura.controller_id or aura.owner_id
@@ -509,6 +527,13 @@ class GameState(
             raise RuntimeError("lands can only be played during the Main phase")
         if self.combat is not None:
             raise RuntimeError("lands cannot be played during an attack")
+        if (
+            self.priority_player_index is not None
+            and self.priority_player_index != self.active_player_index
+        ):
+            raise RuntimeError(
+                f"{self.players[self.priority_player_index].name} has priority"
+            )
         if self.lands_played_this_turn:
             raise RuntimeError("the active player has already played a land this turn")
         if card not in self.active_player.hand:
@@ -620,11 +645,12 @@ class GameState(
             self.consecutive_passes = 0
 
     def _tap_permanent(self, permanent: Card) -> bool:
-        """Tap once and expose any attached tap-triggered damage effects."""
+        """Tap once and expose matching attached and global event effects."""
 
         if permanent.tapped:
             return False
         permanent.tapped = True
+        permanent_controller_id = permanent.controller_id or permanent.owner_id
         for player in self.players:
             for source in player.battlefield:
                 if source.enchanted_card_id != permanent.id:
@@ -647,6 +673,42 @@ class GameState(
                             damage_colors=self.card_colors(source),
                         )
                     )
+        if CardType.LAND in permanent.definition.card_types:
+            for player in self.players:
+                for source in player.battlefield:
+                    if not self.continuous_permanent_is_active(source):
+                        continue
+                    source_controller_id = source.controller_id or source.owner_id
+                    for effect in source.definition.permanent_tapped_effects:
+                        if (
+                            effect.land_subtype is not None
+                            and effect.land_subtype
+                            not in self.land_subtypes(permanent)
+                        ):
+                            continue
+                        if (
+                            effect.opponent_controlled_only
+                            and permanent_controller_id == source_controller_id
+                        ):
+                            continue
+                        self.event_opportunities.append(
+                            RuleEventOpportunity(
+                                RuleEventKind.PERMANENT_TAPPED,
+                                f"{source.name}: {permanent.name} was tapped",
+                                card_id=permanent.id,
+                                damage=effect.damage,
+                                life_gain=effect.life_gain,
+                                source_id=source.id,
+                                source_name=source.name,
+                                source_controller_id=source_controller_id,
+                                affected_player_id=(
+                                    permanent_controller_id
+                                    if effect.damage
+                                    else source_controller_id
+                                ),
+                                damage_colors=self.card_colors(source),
+                            )
+                        )
         if self.event_opportunities and self.priority_player_index is None:
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
@@ -659,6 +721,7 @@ class GameState(
             (permanent, effect)
             for player in self.players
             for permanent in player.battlefield
+            if self.continuous_permanent_is_active(permanent)
             for effect in permanent.definition.land_event_effects
             if effect.land_enters is land_enters
             and effect.land_lost is land_lost
@@ -722,6 +785,11 @@ class GameState(
             for event in self.event_opportunities
             if event.id in closing and event.damage
         ]
+        life_gaining = [
+            event
+            for event in self.event_opportunities
+            if event.id in closing and event.life_gain
+        ]
         discarding = [
             event for event in self.event_opportunities
             if event.id in closing and event.random_discard
@@ -735,6 +803,9 @@ class GameState(
         self.event_ability_uses = {
             use for use in self.event_ability_uses if use[1] not in closing
         }
+        for event in life_gaining:
+            assert event.affected_player_id is not None
+            self.player(event.affected_player_id).life += event.life_gain
         if damaging:
             self._begin_damage_incident(DamageIncidentKind.RULE_EVENT)
             for event in damaging:
@@ -819,6 +890,9 @@ class GameState(
                 ActivatedUnblockableAbility,
                 ActivatedTemporaryAbility,
                 ActivatedDiscardAbility,
+                ActivatedAttackRequirementAbility,
+                ActivatedLandTypeAbility,
+                ActivatedInterruptUntapAbility,
             ),
         ):
             pending = PendingActivation(card, player.id, ability_index)
@@ -857,6 +931,19 @@ class GameState(
                     ability,
                     (),
                 )
+            )
+            self.interruptible_spell_id = None
+            self.priority_player_index = (
+                self.players.index(player) + 1
+            ) % len(self.players)
+            self.consecutive_passes = 0
+            return None
+        if isinstance(ability, ActivatedDestroyAllAbility):
+            player.mana_pool.pay(ability.mana_cost)
+            if ability.tap_cost:
+                self._tap_permanent(card)
+            self.batch_abilities.append(
+                AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
             self.priority_player_index = (
@@ -980,13 +1067,17 @@ class GameState(
                 ActivatedPumpAbility,
                 ActivatedDamageAbility,
                 ActivatedDestroyAbility,
+                ActivatedDestroyAllAbility,
                 ActivatedTapAbility,
                 ActivatedUnblockableAbility,
                 ActivatedTemporaryAbility,
                 ActivatedDiscardAbility,
+                ActivatedAttackRequirementAbility,
+                ActivatedLandTypeAbility,
                 ActivatedDrawAbility,
                 ActivatedExtraTurnAbility,
                 ActivatedUntapAbility,
+                ActivatedInterruptUntapAbility,
                 ActivatedEventLifeGainAbility,
                 ActivatedPreventDamageAbility,
                 ActivatedRedirectDamageAbility,
@@ -1023,6 +1114,14 @@ class GameState(
                 raise RuntimeError(
                     f"{card.name} has already been activated this turn"
                 )
+        if isinstance(ability, ActivatedAttackRequirementAbility) and (
+            player is self.active_player
+            or self.attacks_this_turn
+            or self.combat is not None
+        ):
+            raise RuntimeError(
+                f"{card.name} can only be activated during an opponent's turn before the attack"
+            )
         if (
             isinstance(ability, ActivatedPumpAbility)
             and ability.affects_attached_creature
@@ -1035,13 +1134,17 @@ class GameState(
                     ActivatedPumpAbility,
                     ActivatedDamageAbility,
                     ActivatedDestroyAbility,
+                    ActivatedDestroyAllAbility,
                     ActivatedTapAbility,
                     ActivatedUnblockableAbility,
                     ActivatedTemporaryAbility,
                     ActivatedDiscardAbility,
+                    ActivatedAttackRequirementAbility,
+                    ActivatedLandTypeAbility,
                     ActivatedDrawAbility,
                     ActivatedExtraTurnAbility,
                     ActivatedUntapAbility,
+                    ActivatedInterruptUntapAbility,
                     ActivatedEventLifeGainAbility,
                     ActivatedAnimationAbility,
                 ),
@@ -1065,6 +1168,9 @@ class GameState(
         ) or (
             isinstance(ability, ActivatedDestroyAbility) and ability.tap_cost
         ) or (
+            isinstance(ability, ActivatedDestroyAllAbility)
+            and ability.tap_cost
+        ) or (
             isinstance(ability, ActivatedTapAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedUnblockableAbility)
@@ -1076,6 +1182,15 @@ class GameState(
             isinstance(ability, ActivatedDrawAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedExtraTurnAbility) and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedAttackRequirementAbility)
+            and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedLandTypeAbility)
+            and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedInterruptUntapAbility)
+            and ability.tap_cost
         )
         if has_tap_cost and card.tapped:
             raise RuntimeError(f"{card.name} is already tapped")
@@ -1141,6 +1256,7 @@ class GameState(
             and not self.batch_abilities
             and not self.timed_events
             and not self.event_opportunities
+            and self.pending_phase_advance is None
             or self.priority_player_index is None
         ):
             raise RuntimeError(
@@ -1183,6 +1299,7 @@ class GameState(
                 self.priority_player_index = (
                     self.active_player_index
                     if self.timed_events or self.event_opportunities
+                    or self.pending_phase_advance is not None
                     else None
                 )
             return resolved
@@ -1197,8 +1314,16 @@ class GameState(
                 self.priority_player_index = (
                     self.active_player_index
                     if self.timed_events or self.event_opportunities
+                    or self.pending_phase_advance is not None
                     else None
                 )
+            return ()
+
+        if self.pending_phase_advance is not None:
+            self.pending_phase_advance = None
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+            self.advance_phase()
             return ()
 
         self._resolve_timed_event()
@@ -1210,6 +1335,7 @@ class GameState(
             self.priority_player_index = (
                 self.active_player_index
                 if self.timed_events or self.event_opportunities
+                or self.pending_phase_advance is not None
                 else None
             )
         return ()
@@ -1242,6 +1368,7 @@ class GameState(
             self.priority_player_index = (
                 self.active_player_index
                 if self.timed_events or self.event_opportunities
+                or self.pending_phase_advance is not None
                 else None
             )
             self.consecutive_passes = 0
@@ -1403,7 +1530,11 @@ class GameState(
             self.priority_player_index = self.players.index(
                 self.player(underlying.caster_id)
             )
-        elif self.batch_abilities or self.event_opportunities:
+        elif (
+            self.batch_abilities
+            or self.event_opportunities
+            or self.pending_phase_advance is not None
+        ):
             self.priority_player_index = self.active_player_index
         else:
             self.priority_player_index = None
@@ -1445,7 +1576,11 @@ class GameState(
                 True
                 if isinstance(
                     ability.ability,
-                    (ActivatedEventLifeGainAbility, ActivatedUntapAbility),
+                    (
+                        ActivatedDestroyAllAbility,
+                        ActivatedEventLifeGainAbility,
+                        ActivatedUntapAbility,
+                    ),
                 )
                 else ability.source.zone is Zone.BATTLEFIELD
                 if isinstance(ability.ability, ActivatedAnimationAbility)
@@ -1492,6 +1627,11 @@ class GameState(
                     and isinstance(spell.targets[0], Card)
                 ):
                     self._tap_permanent(spell.targets[0])
+                if (
+                    CardType.CREATURE in card.definition.card_types
+                    and CardType.ARTIFACT not in card.definition.card_types
+                ):
+                    card.summoned_turn = self.turn_number
 
         pending_destruction: list[tuple[Card, bool]] = []
         pending_regeneration: list[Card] = []
@@ -1567,6 +1707,17 @@ class GameState(
                         player.shuffle_library(self.random)
                     for player in self.players:
                         player.draw(effect.draw_count)
+                elif isinstance(effect, SirensCallEffect):
+                    for creature in tuple(self.active_player.battlefield):
+                        if (
+                            CardType.CREATURE not in self.card_types(creature)
+                            or creature.summoned_turn == self.turn_number
+                        ):
+                            continue
+                        is_wall = "Wall" in creature.definition.subtypes
+                        self.attack_requirements[creature.id] = AttackRequirement(
+                            creature.id, destroy_if_no_attack=not is_wall
+                        )
                 elif isinstance(effect, ExtraTurnEffect):
                     self.schedule_extra_turn(spell.caster_id)
                 elif isinstance(effect, GlobalDamageEffect):
@@ -1667,6 +1818,13 @@ class GameState(
                     for target in declared.targets
                     if isinstance(target, Card)
                 )
+            elif isinstance(declared.ability, ActivatedDestroyAllAbility):
+                pending_destruction.extend(
+                    (permanent, declared.ability.regeneration_allowed)
+                    for player in self.players
+                    for permanent in tuple(player.battlefield)
+                    if self.card_types(permanent) & declared.ability.card_types
+                )
             elif isinstance(declared.ability, ActivatedTapAbility):
                 for target in declared.targets:
                     if isinstance(target, Card):
@@ -1701,6 +1859,20 @@ class GameState(
                             PendingDiscardChoice(
                                 target.id, declared.ability.amount, declared.source_name
                             )
+                        )
+            elif isinstance(declared.ability, ActivatedAttackRequirementAbility):
+                for target in declared.targets:
+                    if isinstance(target, Card):
+                        self.attack_requirements[target.id] = AttackRequirement(target.id)
+            elif isinstance(declared.ability, ActivatedLandTypeAbility):
+                if declared.source.zone is not Zone.BATTLEFIELD:
+                    continue
+                for target in declared.targets:
+                    if isinstance(target, Card):
+                        self.battlefield_entry_sequence += 1
+                        target.land_type_marks[declared.source.id] = (
+                            declared.ability.replacement_subtype,
+                            self.battlefield_entry_sequence,
                         )
             elif isinstance(declared.ability, ActivatedExtraTurnAbility):
                 self.schedule_extra_turn(declared.controller_id)

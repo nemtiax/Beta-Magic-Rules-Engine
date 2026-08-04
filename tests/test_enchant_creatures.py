@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     ABILITY_ENCHANT_CREATURES,
+    ASPECT_OF_WOLF,
     BLACK_WARD,
     BLUE_WARD,
     CONTROL_MAGIC,
@@ -66,7 +67,7 @@ class EnchantCreatureTests(unittest.TestCase):
     def test_card_definitions(self) -> None:
         self.assertEqual(
             SIMPLE_ENCHANT_CREATURES,
-            (HOLY_STRENGTH, UNHOLY_STRENGTH, WEAKNESS),
+            (HOLY_STRENGTH, UNHOLY_STRENGTH, WEAKNESS, ASPECT_OF_WOLF),
         )
         self.assertEqual(HOLY_STRENGTH.mana_cost.compact, "W")
         self.assertEqual(UNHOLY_STRENGTH.mana_cost.compact, "B")

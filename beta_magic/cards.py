@@ -15,8 +15,11 @@ from .abilities import (
     ActivatedDamageAbility,
     ActivatedAnimationAbility,
     ActivatedDestroyAbility,
+    ActivatedDestroyAllAbility,
     ActivatedDrawAbility,
     ActivatedDiscardAbility,
+    ActivatedAttackRequirementAbility,
+    ActivatedLandTypeAbility,
     ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
@@ -27,6 +30,7 @@ from .abilities import (
     ActivatedTapAbility,
     ActivatedTemporaryAbility,
     ActivatedUntapAbility,
+    ActivatedInterruptUntapAbility,
     ActivatedUnblockableAbility,
     BatchActivatedAbility,
     TargetedActivatedAbility,
@@ -41,8 +45,10 @@ from .effects import (
     DestroyAllEffect,
     DestroyTargetsEffect,
     DrawCardsEffect,
+    DrawPhaseEffect,
     DiscardCardsEffect,
     ShuffleHandAndGraveyardEffect,
+    SirensCallEffect,
     ExtraTurnEffect,
     LandEventDamageEffect,
     AttachedEventDamageEffect,
@@ -53,6 +59,7 @@ from .effects import (
     LandhomeRequirement,
     LandTypeEffect,
     MoveTargetsEffect,
+    PermanentTappedEffect,
     OptionalUpkeepPaymentEffect,
     SetTappedEffect,
     AddManaEffect,
@@ -96,8 +103,10 @@ class CardDefinition:
     target_requirement: TargetRequirement | None = None
     spell_effects: tuple[SpellEffect, ...] = ()
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
+    draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
     land_event_effects: tuple[LandEventDamageEffect, ...] = ()
     attached_event_damage_effects: tuple[AttachedEventDamageEffect, ...] = ()
+    permanent_tapped_effects: tuple[PermanentTappedEffect, ...] = ()
     prevention_amount: int = 0
     casting_modes: tuple[str, ...] = ()
     casting_mode_target_zones: tuple[Zone, ...] = ()
@@ -108,6 +117,7 @@ class CardDefinition:
     combat_destruction_effects: tuple[CombatDestructionEffect, ...] = ()
     redirects_unblocked_combat_damage: bool = False
     combat_player_damage_random_discard: int = 0
+    grows_after_surviving_damage: bool = False
     owner_life_loss_on_death_divisor: int | None = None
     enters_tapped: bool = False
     untaps_normally: bool = True
@@ -171,6 +181,8 @@ class CardDefinition:
             )
         if self.upkeep_effects and not self.is_permanent:
             raise ValueError("only permanents can supply upkeep effects")
+        if self.draw_phase_effects and not self.is_permanent:
+            raise ValueError("only permanents can supply draw-phase effects")
         if self.land_event_effects and not self.is_permanent:
             raise ValueError("only permanents can supply land-event effects")
         if self.attached_event_damage_effects and self.target_requirement is None:
@@ -278,6 +290,9 @@ class Card:
     enchanted_card_id: UUID | None = None
     chosen_land_subtype: str | None = None
     color_override: Color | None = None
+    plus_one_counters: int = 0
+    summoned_turn: int | None = None
+    land_type_marks: dict[UUID, tuple[str, int]] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
@@ -289,6 +304,8 @@ class Card:
             self.base_controller_id = self.controller_id
         if self.damage < 0:
             raise ValueError("damage cannot be negative")
+        if self.plus_one_counters < 0:
+            raise ValueError("+1/+1 counters cannot be negative")
         if self.zone is not Zone.BATTLEFIELD and self.tapped:
             raise ValueError("only a permanent on the battlefield can be tapped")
 
@@ -304,6 +321,7 @@ __all__ = [
     "ActivatedDamageAbility",
     "ActivatedAnimationAbility",
     "ActivatedDestroyAbility",
+    "ActivatedDestroyAllAbility",
     "ActivatedDrawAbility",
     "ActivatedExtraTurnAbility",
     "ActivatedEventLifeGainAbility",
@@ -315,6 +333,7 @@ __all__ = [
     "ActivatedTapAbility",
     "ActivatedTemporaryAbility",
     "ActivatedUntapAbility",
+    "ActivatedInterruptUntapAbility",
     "ActivatedUnblockableAbility",
     "BatchActivatedAbility",
     "TargetedActivatedAbility",
@@ -327,6 +346,7 @@ __all__ = [
     "DestroyAllEffect",
     "DestroyTargetsEffect",
     "DrawCardsEffect",
+    "DrawPhaseEffect",
     "ExtraTurnEffect",
     "LandEventDamageEffect",
     "AttachedEventDamageEffect",

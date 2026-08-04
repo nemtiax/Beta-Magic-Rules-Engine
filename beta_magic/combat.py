@@ -29,10 +29,33 @@ class CombatState:
     end_of_combat_destruction_ids: set[UUID] = field(default_factory=set)
 
 
+@dataclass(slots=True)
+class AttackRequirement:
+    card_id: UUID
+    destroy_if_no_attack: bool = True
+
+
 class CombatMixin:
     """Combat façade methods operating on state owned by ``GameState``."""
 
     __slots__ = ()
+
+    def _can_attack(self, card: Card) -> bool:
+        if card not in self.active_player.battlefield:
+            return False
+        if CardType.CREATURE not in self.card_types(card):
+            return False
+        if card.tapped or self.has_summoning_sickness(card):
+            return False
+        if "Wall" in card.definition.subtypes and not self.wall_can_attack(card):
+            return False
+        return bool(
+            card.definition.landhome is None
+            or self.player_controls_land_subtype(
+                self.combat.defending_player_id,
+                card.definition.landhome.land_subtype,
+            )
+        )
     def begin_combat(self) -> CombatStep:
         """Begin the turn's single optional attack during the Main phase."""
 
@@ -91,7 +114,7 @@ class CombatMixin:
         required_attackers = [
             card
             for card in self.active_player.battlefield
-            if card.definition.must_attack_if_able
+            if (card.definition.must_attack_if_able or card.id in self.attack_requirements)
             and card.id not in chosen_ids
             and CardType.CREATURE in self.card_types(card)
             and not card.tapped
@@ -122,6 +145,7 @@ class CombatMixin:
                 not in self.creature_abilities(card)
             ):
                 self._tap_permanent(card)
+            self.attacked_this_turn.add(card.id)
         self.combat.attackers = chosen
         self.combat.blockers = {card.id: [] for card in chosen}
         self.combat.step = CombatStep.ATTACKER_RESPONSE
@@ -331,6 +355,10 @@ class CombatMixin:
         if targets:
             self.pending_destruction = DestructionIncident(targets)
             self._open_destruction_incident()
+        else:
+            # Ending combat can itself change characteristics, notably
+            # Gaea's Liege returning to its defending Forest count.
+            self.check_state_based_actions()
 
     def _validate_damage_assignments(
         self, assignments: dict[Card, dict[Card, int]]

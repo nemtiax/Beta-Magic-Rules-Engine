@@ -8,6 +8,7 @@ from uuid import UUID
 
 from .cards import Card
 from .damage import DamageIncidentKind
+from .destruction import DestructionIncident, DestructionTarget
 from .effects import (
     OptionalUpkeepPaymentEffect,
     UpkeepBenefit,
@@ -78,6 +79,33 @@ class TurnFlowMixin:
 
     __slots__ = ()
 
+    def propose_phase_advance(self) -> TurnPhase:
+        """Declare the active player done and give the opponent a response."""
+
+        self._require_no_pending_action()
+        if self.status is not GameStatus.IN_PROGRESS or self.current_phase is None:
+            raise RuntimeError("phases can only advance during a game")
+        if self.combat is not None:
+            raise RuntimeError("finish the current attack before leaving the Main phase")
+        if self.current_phase is TurnPhase.UNTAP:
+            return self.advance_phase()
+        if (
+            self.current_phase is TurnPhase.DISCARD
+            and self.active_player.discard_required
+        ):
+            raise RuntimeError(
+                f"{self.active_player.name} must discard "
+                f"{self.active_player.discard_required} card(s)"
+            )
+        self.pending_phase_advance = self.current_phase
+        self.priority_player_index = (
+            self.active_player_index + 1
+        ) % len(self.players)
+        # Clicking Advance is the active player's first pass. If the opponent
+        # acts, ordinary spell/ability declaration resets this count to zero.
+        self.consecutive_passes = 1
+        return self.current_phase
+
     def start(self, *, opening_hand_size: int = 7, shuffle: bool = True) -> None:
         if self.status is not GameStatus.NOT_STARTED:
             raise RuntimeError("the game has already started")
@@ -95,6 +123,8 @@ class TurnFlowMixin:
         self.status = GameStatus.IN_PROGRESS
         self.lands_played_this_turn = 0
         self.attacks_this_turn = 0
+        self.attack_requirements.clear()
+        self.attacked_this_turn.clear()
         self._enter_phase(TurnPhase.UNTAP)
 
     def next_turn(self) -> PlayerState:
@@ -105,6 +135,8 @@ class TurnFlowMixin:
             raise RuntimeError("a new turn can only begin after the End phase")
         self._empty_mana_pools()
         self._finish_turn_effects()
+        if self.pending_destruction is not None:
+            return self.active_player
         self._clear_creature_damage()
         self.temporary_creature_effects.clear()
         self.ability_activations_this_turn.clear()
@@ -189,6 +221,8 @@ class TurnFlowMixin:
         self.turn_number += 1
         self.lands_played_this_turn = 0
         self.attacks_this_turn = 0
+        self.attack_requirements.clear()
+        self.attacked_this_turn.clear()
         self._enter_phase(TurnPhase.UNTAP)
 
     def _finish_turn_effects(self) -> None:
@@ -203,6 +237,24 @@ class TurnFlowMixin:
         )
         self._destroy_permanents(doomed)
         self.destroy_at_end_of_turn.clear()
+        failed_ids = {
+            card_id
+            for card_id, requirement in self.attack_requirements.items()
+            if requirement.destroy_if_no_attack
+            and card_id not in self.attacked_this_turn
+        }
+        self.attack_requirements.clear()
+        failed = [
+            card
+            for player in self.players
+            for card in player.battlefield
+            if card.id in failed_ids
+        ]
+        if failed:
+            self.pending_destruction = DestructionIncident(
+                [DestructionTarget(card.id, card.name, True) for card in failed]
+            )
+            self._open_destruction_incident()
 
     def can_pay_upkeep_cost(self, player_id: str) -> bool:
         """Whether the current event offers an affordable upkeep payment."""
@@ -459,10 +511,20 @@ class TurnFlowMixin:
                 for permanent in owner.battlefield:
                     if permanent.id in owed_vaults:
                         permanent.tapped = False
+            # Untapping a continuous artifact can immediately change current
+            # characteristics (Kormus Bell is the first such case). Stabilize
+            # the battlefield before upkeep begins.
+            self.check_state_based_actions()
         elif phase is TurnPhase.UPKEEP:
             self._queue_upkeep_events()
         elif phase is TurnPhase.DRAW:
             self.active_player.draw()
+            for owner in self.players:
+                for source in tuple(owner.battlefield):
+                    if not self.continuous_permanent_is_active(source):
+                        continue
+                    for effect in source.definition.draw_phase_effects:
+                        self.active_player.draw(effect.amount)
 
     def _queue_upkeep_events(self) -> None:
         """Collect mandatory upkeep events and open the first response window."""

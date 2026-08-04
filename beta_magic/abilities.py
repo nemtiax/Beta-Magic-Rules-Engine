@@ -28,6 +28,8 @@ class TargetRequirement:
     color: Color | None = None
     excluded_colors: frozenset[Color] = field(default_factory=frozenset)
     subtypes: frozenset[str] = field(default_factory=frozenset)
+    excluded_subtypes: frozenset[str] = field(default_factory=frozenset)
+    active_player_only: bool = False
     owner_only: bool = False
     controller_only: bool = False
     maximum_power: int | None = None
@@ -94,6 +96,7 @@ class TargetRequirement:
                 not self.subtypes
                 or bool(self.subtypes & set(card.definition.subtypes))
             )
+            and not (self.excluded_subtypes & set(card.definition.subtypes))
             and (
                 not self.any_card_types
                 or bool(
@@ -204,6 +207,33 @@ class ActivatedDestroyAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedDestroyAllAbility:
+    """A fast effect that destroys every permanent of the listed types."""
+
+    card_types: frozenset[CardType]
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+    tap_cost: bool = True
+    regeneration_allowed: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.card_types:
+            raise ValueError("a mass-destruction ability must name a card type")
+
+    @property
+    def label(self) -> str:
+        types = ", ".join(
+            card_type.value.lower()
+            for card_type in sorted(self.card_types, key=lambda item: item.value)
+        )
+        cost = (
+            f"Pay {self.mana_cost.compact} and tap"
+            if self.mana_cost.mana_value
+            else "Tap"
+        )
+        return f"{cost}: Destroy all {types} permanents"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedTapAbility:
     target_requirement: TargetRequirement
     mana_cost: ManaCost = field(default_factory=ManaCost)
@@ -212,6 +242,19 @@ class ActivatedTapAbility:
     @property
     def label(self) -> str:
         return f"Pay {self.mana_cost.compact} and tap: Tap target permanent"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedInterruptUntapAbility:
+    """Tap the source to untap a targeted land at interrupt speed."""
+
+    target_requirement: TargetRequirement
+    tap_cost: bool = True
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    @property
+    def label(self) -> str:
+        return "Tap: Untap target land (interrupt)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +314,35 @@ class ActivatedDiscardAbility:
     @property
     def label(self) -> str:
         return f"Pay {self.mana_cost.compact} and tap: Opponent discards a card"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedAttackRequirementAbility:
+    target_requirement: TargetRequirement
+    tap_cost: bool = True
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    @property
+    def label(self) -> str:
+        return "Tap: Target opposing non-Wall creature must attack or be destroyed"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedLandTypeAbility:
+    """Replace a land's type while this ability's source remains in play."""
+
+    target_requirement: TargetRequirement
+    replacement_subtype: str
+    tap_cost: bool = True
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    def __post_init__(self) -> None:
+        if not self.replacement_subtype.strip():
+            raise ValueError("a land-type ability needs a replacement subtype")
+
+    @property
+    def label(self) -> str:
+        return f"Tap: Target land becomes a {self.replacement_subtype}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,14 +486,21 @@ TargetedActivatedAbility = (
     | ActivatedUnblockableAbility
     | ActivatedTemporaryAbility
     | ActivatedDiscardAbility
+    | ActivatedAttackRequirementAbility
+    | ActivatedLandTypeAbility
+    | ActivatedInterruptUntapAbility
 )
 BatchActivatedAbility = (
     TargetedActivatedAbility
+    | ActivatedDestroyAllAbility
     | ActivatedPumpAbility
     | ActivatedDrawAbility
     | ActivatedDiscardAbility
+    | ActivatedAttackRequirementAbility
+    | ActivatedLandTypeAbility
     | ActivatedExtraTurnAbility
     | ActivatedUntapAbility
+    | ActivatedInterruptUntapAbility
     | ActivatedEventLifeGainAbility
     | ActivatedAnimationAbility
 )
@@ -430,6 +509,7 @@ ActivatedAbility = (
     | ActivatedPumpAbility
     | ActivatedDamageAbility
     | ActivatedDestroyAbility
+    | ActivatedDestroyAllAbility
     | ActivatedTapAbility
     | ActivatedUnblockableAbility
     | ActivatedTemporaryAbility
@@ -441,6 +521,7 @@ ActivatedAbility = (
     | ActivatedPreventDamageAbility
     | ActivatedRedirectDamageAbility
     | ActivatedRegenerationAbility
+    | ActivatedLandTypeAbility
 )
 
 
@@ -450,13 +531,17 @@ __all__ = [
     "ActivatedPumpAbility",
     "ActivatedDamageAbility",
     "ActivatedDestroyAbility",
+    "ActivatedDestroyAllAbility",
     "ActivatedTapAbility",
     "ActivatedUnblockableAbility",
     "ActivatedTemporaryAbility",
     "ActivatedDrawAbility",
     "ActivatedDiscardAbility",
+    "ActivatedAttackRequirementAbility",
+    "ActivatedLandTypeAbility",
     "ActivatedExtraTurnAbility",
     "ActivatedUntapAbility",
+    "ActivatedInterruptUntapAbility",
     "ActivatedEventLifeGainAbility",
     "ActivatedAnimationAbility",
     "ActivatedPreventDamageAbility",

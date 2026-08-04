@@ -99,6 +99,25 @@ SPECTRUM_ASSAULT_DECK = _cards(
     "Tropical Island", "Badlands",
 )
 
+# These decks deliberately repeat one-mana Auras.  Their last seven cards put
+# a creature, both colors of mana, and several Auras in each opening hand so a
+# stacked attachment can be assembled within the first few turns.
+IVORY_LAYERS_DECK = _cards(
+    "Island", "Holy Armor", "Plains", "Flight", "Savannah Lions",
+    "Blue Ward", "Island", "Lance", "Holy Strength", "Plains",
+    "Phantom Monster", "Flight", "Tundra",
+    "Plains", "Island", "Savannah Lions", "Holy Strength", "Lance",
+    "Flight", "Plains",
+)
+
+SHADOW_COATS_DECK = _cards(
+    "Mountain", "Burrowing", "Swamp", "Unholy Strength", "Ironclaw Orcs",
+    "Firebreathing", "Mountain", "Weakness", "Drudge Skeletons", "Swamp",
+    "Evil Presence", "Burrowing", "Badlands",
+    "Swamp", "Mountain", "Ironclaw Orcs", "Unholy Strength", "Weakness",
+    "Firebreathing", "Swamp",
+)
+
 
 def _make_game(
     first_id: str,
@@ -182,6 +201,16 @@ def make_protection_test_game() -> GameState:
     )
 
 
+def make_aura_test_game() -> GameState:
+    """Create compact decks for visually testing stacked attachments."""
+
+    return _make_game(
+        "ivory-layers", "Ivory Layers (W/U)", IVORY_LAYERS_DECK,
+        "shadow-coats", "Shadow Coats (B/R)", SHADOW_COATS_DECK,
+        shuffle=False,
+    )
+
+
 __all__ = [
     "VERDANT_TIDES_DECK",
     "STONEFIRE_DECK",
@@ -193,10 +222,13 @@ __all__ = [
     "ELEMENTAL_SURGE_DECK",
     "AEGIS_WARDS_DECK",
     "SPECTRUM_ASSAULT_DECK",
+    "IVORY_LAYERS_DECK",
+    "SHADOW_COATS_DECK",
     "make_demo_game",
     "make_test_game",
     "make_enchantment_test_game",
     "make_timed_event_test_game",
     "make_x_test_game",
     "make_protection_test_game",
+    "make_aura_test_game",
 ]

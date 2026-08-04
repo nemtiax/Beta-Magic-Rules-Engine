@@ -6,13 +6,14 @@ Rectangle {
     required property var cardData
     property bool interactive: true
     property bool targetable: false
+    property bool tabMode: false
     signal selected(string cardId)
     signal activated(string cardId)
     signal abilityActivated(string cardId, int abilityIndex)
     signal inspected(var cardData)
 
-    width: 126
-    height: 82
+    width: 108
+    height: tabMode ? 30 : 68
     radius: 7
     color: cardData.background
     border.color: cardData.selected ? "#ffd54a" : "#262626"
@@ -26,7 +27,7 @@ Rectangle {
 
     Rectangle {
         anchors.fill: parent
-        anchors.margins: 7
+        anchors.margins: card.tabMode ? 3 : 5
         radius: 4
         color: "transparent"
         border.color: cardData.foreground
@@ -36,44 +37,45 @@ Rectangle {
 
     Text {
         anchors.top: parent.top
-        anchors.topMargin: 14
+        anchors.topMargin: card.tabMode ? 5 : 11
         anchors.left: parent.left
-        anchors.leftMargin: 9
-        width: parent.width - 45
+        anchors.leftMargin: card.tabMode ? 5 : 7
+        width: parent.width - (card.tabMode ? 34 : 39)
         text: cardData.name
         color: cardData.foreground
         font.bold: true
-        font.pixelSize: 13
+        font.pixelSize: card.tabMode ? 10 : 12
         horizontalAlignment: Text.AlignLeft
-        wrapMode: Text.WordWrap
+        wrapMode: card.tabMode ? Text.NoWrap : Text.WordWrap
+        elide: card.tabMode ? Text.ElideRight : Text.ElideNone
     }
 
     Text {
         anchors.top: parent.top
         anchors.right: parent.right
-        anchors.margins: 9
+        anchors.margins: card.tabMode ? 5 : 7
         text: cardData.manaCost
         color: cardData.foreground
         font.bold: true
-        font.pixelSize: 13
+        font.pixelSize: card.tabMode ? 10 : 12
     }
 
     Text {
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 10
+        anchors.bottomMargin: 7
         anchors.horizontalCenter: parent.horizontalCenter
-        visible: cardData.isCreature
+        visible: !card.tabMode && cardData.isCreature
         text: cardData.power + "/" + cardData.toughness
               + (cardData.damage ? "  · " + cardData.damage + " damage" : "")
         color: cardData.foreground
-        font.pixelSize: 12
+        font.pixelSize: 11
     }
 
     Text {
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: 7
-        visible: cardData.tapped
+        anchors.margins: 5
+        visible: !card.tabMode && cardData.tapped
         text: "T"
         color: cardData.foreground
         font.bold: true

@@ -34,6 +34,8 @@ Frame {
             CardFlow {
                 Layout.row: zone.frontAtBottom ? 4 : 1
                 Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: implicitHeight
                 cards: playerData.battlefieldNonlands
                 interactive: zone.interactive
                 targetable: zone.targeting
@@ -59,6 +61,8 @@ Frame {
             CardFlow {
                 Layout.row: zone.frontAtBottom ? 1 : 4
                 Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: implicitHeight
                 cards: playerData.battlefieldLands
                 interactive: zone.interactive
                 onSelected: function(cardId) { zone.selected(cardId) }

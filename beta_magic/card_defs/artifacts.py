@@ -3,6 +3,7 @@
 from ..abilities import (
     ActivatedAnimationAbility,
     ActivatedDamageAbility,
+    ActivatedDestroyAllAbility,
     ActivatedDrawAbility,
     ActivatedDiscardAbility,
     ActivatedExtraTurnAbility,
@@ -15,7 +16,12 @@ from ..abilities import (
     TargetRequirement,
 )
 from ..cards import CardDefinition
-from ..effects import LandEventDamageEffect, UpkeepDamageEffect
+from ..effects import (
+    ContinuousEffect,
+    DrawPhaseEffect,
+    LandEventDamageEffect,
+    UpkeepDamageEffect,
+)
 from ..mana import ManaCost
 from ..types import CardType, Color, Zone
 
@@ -171,6 +177,33 @@ DINGUS_EGG = CardDefinition(
     land_event_effects=(LandEventDamageEffect(2, land_lost=True),),
 )
 
+HOWLING_MINE = CardDefinition(
+    name="Howling Mine",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{2}"),
+    rules_text=(
+        "Each player draws one extra card during the draw phase of each turn."
+    ),
+    draw_phase_effects=(DrawPhaseEffect(),),
+)
+
+KORMUS_BELL = CardDefinition(
+    name="Kormus Bell",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "All Swamps in play are 1/1 colorless creatures as well as lands."
+    ),
+    continuous_effects=(
+        ContinuousEffect(
+            land_subtype="Swamp",
+            granted_card_types=frozenset({CardType.CREATURE}),
+            base_power=1,
+            base_toughness=1,
+        ),
+    ),
+)
+
 LAND_EVENT_ARTIFACTS = (ANKH_OF_MISHRA, DINGUS_EGG)
 
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
@@ -217,6 +250,25 @@ ICY_MANIPULATOR = CardDefinition(
             mana_cost=ManaCost.parse("{1}"),
         ),
     ),
+)
+
+NEVINYRRALS_DISK = CardDefinition(
+    name="Nevinyrral's Disk",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "Nevinyrral's Disk begins tapped. {1}, {T}: Destroy all artifacts, "
+        "creatures, and enchantments."
+    ),
+    activated_abilities=(
+        ActivatedDestroyAllAbility(
+            frozenset(
+                {CardType.ARTIFACT, CardType.CREATURE, CardType.ENCHANTMENT}
+            ),
+            mana_cost=ManaCost.parse("{1}"),
+        ),
+    ),
+    enters_tapped=True,
 )
 
 JADE_MONOLITH = CardDefinition(
@@ -267,8 +319,11 @@ UTILITY_ARTIFACTS = (
     ROD_OF_RUIN,
     JAYEMDAE_TOME,
     ICY_MANIPULATOR,
+    NEVINYRRALS_DISK,
     JADE_MONOLITH,
     JADE_STATUE,
+    HOWLING_MINE,
+    KORMUS_BELL,
 )
 
 TURN_ARTIFACTS = (TIME_VAULT,)
@@ -354,10 +409,13 @@ __all__ = [
     "EVENT_LIFE_ARTIFACTS",
     "ANKH_OF_MISHRA",
     "DINGUS_EGG",
+    "HOWLING_MINE",
+    "KORMUS_BELL",
     "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
     "JAYEMDAE_TOME",
     "ICY_MANIPULATOR",
+    "NEVINYRRALS_DISK",
     "JADE_MONOLITH",
     "JADE_STATUE",
     "TIME_VAULT",

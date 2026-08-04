@@ -210,6 +210,28 @@ ApplicationWindow {
         anchors.margins: 12
         spacing: 12
 
+        ColumnLayout {
+            Layout.preferredWidth: 170
+            Layout.minimumWidth: 150
+            Layout.fillHeight: true
+            spacing: 12
+
+            PlayerStatus {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                playerData: gameState.opponent
+                ownView: false
+                onTargeted: function(playerId) { gameBridge.targetPlayer(playerId) }
+            }
+            PlayerStatus {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                playerData: gameState.perspective
+                ownView: true
+                onTargeted: function(playerId) { gameBridge.targetPlayer(playerId) }
+            }
+        }
+
         ScrollView {
             id: gameScroll
             Layout.fillWidth: true
@@ -218,18 +240,17 @@ ApplicationWindow {
 
             ColumnLayout {
                 width: gameScroll.availableWidth
+                // Fill the viewport when there is spare room, but retain the
+                // natural content height (and therefore scrolling) in a short
+                // window or when contextual controls make the command bar tall.
+                height: Math.max(implicitHeight, gameScroll.availableHeight)
                 spacing: 9
 
-                PlayerPanel {
-                    Layout.fillWidth: true
-                    playerData: gameState.opponent
-                    ownView: false
-                    onTargeted: function(playerId) { gameBridge.targetPlayer(playerId) }
-                    onInspected: function(cardData) { window.inspectedCard = cardData }
-                }
                 ZonePanel {
                     Layout.fillWidth: true
-                    Layout.minimumHeight: 245
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 190
+                    Layout.preferredHeight: 200
                     playerData: gameState.opponent
                     interactive: false
                     targeting: gameState.targeting
@@ -258,8 +279,19 @@ ApplicationWindow {
                                 font.pixelSize: 17
                             }
                             Item { Layout.fillWidth: true }
-                            Button { text: "Advance"; onClicked: gameBridge.advance() }
+                            Label {
+                                text: gameState.message
+                                color: "#ffd978"
+                                wrapMode: Text.WordWrap
+                                Layout.maximumWidth: 430
+                            }
                             Button {
+                                visible: gameState.canAdvance
+                                text: gameState.advanceLabel
+                                onClicked: gameBridge.advance()
+                            }
+                            Button {
+                                visible: gameState.canDiscard
                                 text: gameState.effectDiscardRequired
                                       ? "Discard " + gameState.effectDiscardCount
                                         + " for " + gameState.effectDiscardPlayer
@@ -273,16 +305,20 @@ ApplicationWindow {
                             Button { text: "New game"; onClicked: gameBridge.newGame() }
                         }
                         RowLayout {
+                            visible: gameState.contextActionsVisible
                             Button {
+                                visible: gameState.canBeginAttack
                                 text: "Begin attack"
                                 onClicked: gameBridge.beginCombat()
                             }
                             Button {
+                                visible: gameState.canDeclareAttackers
                                 text: "Declare attackers"
                                 onClicked: gameBridge.declareAttackers()
                             }
                             ComboBox {
                                 id: attackTarget
+                                visible: gameState.canDeclareBlockers
                                 Layout.preferredWidth: 230
                                 model: gameState.attackers
                                 textRole: "label"
@@ -290,17 +326,20 @@ ApplicationWindow {
                             }
                             CheckBox {
                                 id: blockSecondAttacker
+                                visible: gameState.canDeclareBlockers
                                 text: "Block two"
                             }
                             ComboBox {
                                 id: secondAttackTarget
-                                visible: blockSecondAttacker.checked
+                                visible: gameState.canDeclareBlockers
+                                         && blockSecondAttacker.checked
                                 Layout.preferredWidth: 230
                                 model: gameState.attackers
                                 textRole: "label"
                                 valueRole: "id"
                             }
                             Button {
+                                visible: gameState.canDeclareBlockers
                                 text: "Declare blockers"
                                 onClicked: gameBridge.declareBlockers(
                                     attackTarget.currentIndex >= 0
@@ -331,30 +370,25 @@ ApplicationWindow {
                                 onClicked: gameBridge.chooseUpkeepPayment(false)
                             }
                             Button {
-                                visible: gameState.stack.length > 0
-                                         || gameState.timedEvent
-                                         || gameState.damageWindow
-                                         || gameState.destructionWindow
+                                visible: gameState.priorityRequired
                                 enabled: gameState.hasPriority
                                 text: "Pass priority"
                                 onClicked: gameBridge.passPriority()
                             }
+                            Button {
+                                visible: gameState.priorityRequired
+                                enabled: gameState.hasPriority
+                                         && !gameState.autoPassingTurn
+                                text: "Auto-pass turn"
+                                onClicked: gameBridge.autoPassTurn()
+                            }
                             Label {
-                                visible: gameState.stack.length > 0
-                                         || gameState.timedEvent
-                                         || gameState.damageWindow
-                                         || gameState.destructionWindow
+                                visible: gameState.priorityRequired
                                 text: "Priority: " + gameState.priorityPlayer
                                 color: "#cbd2da"
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
-                            Label {
-                                text: gameState.message
-                                color: "#ffd978"
-                                wrapMode: Text.WordWrap
-                                Layout.maximumWidth: 600
-                            }
                         }
                         Label {
                             visible: gameState.timedEvent
@@ -472,7 +506,9 @@ ApplicationWindow {
 
                 ZonePanel {
                     Layout.fillWidth: true
-                    Layout.minimumHeight: 245
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 190
+                    Layout.preferredHeight: 200
                     playerData: gameState.perspective
                     interactive: true
                     targeting: gameState.targeting
@@ -484,11 +520,10 @@ ApplicationWindow {
                     }
                     onInspected: function(cardData) { window.inspectedCard = cardData }
                 }
-                PlayerPanel {
+                HandPanel {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 88
                     playerData: gameState.perspective
-                    ownView: true
-                    onTargeted: function(playerId) { gameBridge.targetPlayer(playerId) }
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }
                     onActivated: function(cardId) { gameBridge.activateCard(cardId) }
                     onAbilityActivated: function(cardId, abilityIndex) {

@@ -4,9 +4,12 @@ from beta_magic import (
     GIANT_SPIDER,
     DISRUPTING_SCEPTER,
     ICY_MANIPULATOR,
+    HOWLING_MINE,
     JAYEMDAE_TOME,
     JADE_MONOLITH,
     JADE_STATUE,
+    KORMUS_BELL,
+    NEVINYRRALS_DISK,
     ROD_OF_RUIN,
     UTILITY_ARTIFACTS,
     WEB,
@@ -58,13 +61,16 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
                 ROD_OF_RUIN,
                 JAYEMDAE_TOME,
                 ICY_MANIPULATOR,
+                NEVINYRRALS_DISK,
                 JADE_MONOLITH,
                 JADE_STATUE,
+                HOWLING_MINE,
+                KORMUS_BELL,
             ),
         )
         self.assertEqual(
             [card.mana_cost.compact for card in UTILITY_ARTIFACTS],
-            ["3", "4", "4", "4", "4", "4"],
+            ["3", "4", "4", "4", "4", "4", "4", "2", "4"],
         )
         self.assertEqual(
             (GIANT_SPIDER.power, GIANT_SPIDER.toughness), (2, 4)

@@ -37,11 +37,15 @@ PROTECTION_CREATURES = _cards("White Knight", "Black Knight")
 PREVENTION_CARDS = _cards("Healing Salve", "Samite Healer")
 TRAMPLE_CREATURES = _cards("War Mammoth")
 GLOBAL_ENCHANTMENTS = _cards(
-    "Crusade", "Bad Moon", "Orcish Oriflamme", "Castle"
+    "Crusade", "Bad Moon", "Orcish Oriflamme", "Castle", "Living Lands"
 )
 
+LAND_ANIMATION_CARDS = _cards("Living Lands", "Kormus Bell")
+LAND_TAP_EVENT_ENCHANTMENTS = _cards("Lifetap", "Manabarbs")
+LAND_TYPE_CREATURES = _cards("Gaea's Liege")
+
 SIMPLE_ENCHANT_CREATURES = _cards(
-    "Holy Strength", "Unholy Strength", "Weakness"
+    "Holy Strength", "Unholy Strength", "Weakness", "Aspect of Wolf"
 )
 ABILITY_ENCHANT_CREATURES = _cards(
     "Lance", "Flight", "Burrowing", "Fear", "Regeneration", "Web"

@@ -6,11 +6,14 @@ from beta_magic.types import Color
 
 
 EXPECTED_NAMES = {
+    "Aspect of Wolf",
     "Birds of Paradise",
     "Cockatrice",
     "Craw Wurm",
     "Elvish Archers",
     "Force of Nature",
+    "Fungusaur",
+    "Gaea's Liege",
     "Giant Growth",
     "Giant Spider",
     "Grizzly Bears",
@@ -19,6 +22,8 @@ EXPECTED_NAMES = {
     "Ironroot Treefolk",
     "Llanowar Elves",
     "Lifelace",
+    "Living Lands",
+    "Ley Druid",
     "Regeneration",
     "Regrowth",
     "Scryb Sprites",
@@ -38,7 +43,7 @@ EXPECTED_NAMES = {
 
 class GreenDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_green_cards_are_migrated(self) -> None:
-        self.assertEqual(len(GREEN_CARDS), 27)
+        self.assertEqual(len(GREEN_CARDS), 32)
         self.assertEqual(
             {card.name for card in GREEN_CARDS}, EXPECTED_NAMES
         )

@@ -18,6 +18,7 @@ from ..effects import (
     DestroyTargetsEffect,
     EffectScope,
     GlobalDamageEffect,
+    PermanentTappedEffect,
     VariableCreatureStats,
     VariableStatKind,
 )
@@ -32,6 +33,18 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 CHAOSLACE = lace("Chaoslace", Color.RED)
+
+MANABARBS = CardDefinition(
+    name="Manabarbs",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{3}{R}"),
+    rules_text=(
+        "Whenever any land becomes tapped, Manabarbs deals 1 damage to "
+        "that land's controller."
+    ),
+    colors=frozenset({Color.RED}),
+    permanent_tapped_effects=(PermanentTappedEffect(damage=1),),
+)
 
 RED_ELEMENTAL_BLAST = CardDefinition(
     name="Red Elemental Blast",
@@ -522,6 +535,7 @@ RED_CARDS = tuple(
             IRONCLAW_ORCS,
             KELDON_WARLORD,
             LIGHTNING_BOLT,
+            MANABARBS,
             MONSS_GOBLIN_RAIDERS,
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,

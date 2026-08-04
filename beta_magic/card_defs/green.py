@@ -3,6 +3,8 @@
 from ..abilities import (
     ActivatedManaAbility,
     ActivatedRegenerationAbility,
+    ActivatedInterruptUntapAbility,
+    ActivatedLandTypeAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
@@ -20,6 +22,8 @@ from ..effects import (
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
     UpkeepFailure,
+    VariableCreatureStats,
+    VariableStatKind,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
@@ -32,6 +36,74 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 LIFELACE = lace("Lifelace", Color.GREEN)
+
+LIVING_LANDS = CardDefinition(
+    name="Living Lands",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{3}{G}"),
+    rules_text=(
+        "All Forests in play are 1/1 colorless creatures as well as lands."
+    ),
+    colors=frozenset({Color.GREEN}),
+    continuous_effects=(
+        ContinuousEffect(
+            land_subtype="Forest",
+            granted_card_types=frozenset({CardType.CREATURE}),
+            base_power=1,
+            base_toughness=1,
+        ),
+    ),
+)
+
+GAEAS_LIEGE = CardDefinition(
+    name="Gaea's Liege",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{G}{G}{G}"),
+    rules_text=(
+        "While defending, power and toughness equal the number of Forests "
+        "you control; while attacking, they equal the number the defender "
+        "controls. Tap: Target land becomes a Forest until Gaea's Liege "
+        "leaves play."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Avatar",),
+    variable_stats=VariableCreatureStats(
+        VariableStatKind.ATTACKING_DEFENDER_LAND_SUBTYPE,
+        "Forest",
+    ),
+    activated_abilities=(
+        ActivatedLandTypeAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.LAND}),
+            ),
+            "Forest",
+        ),
+    ),
+)
+
+ASPECT_OF_WOLF = CardDefinition(
+    name="Aspect of Wolf",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{G}"),
+    rules_text=(
+        "Enchanted creature gets +1/+1 for every two Forests you control. "
+        "If you control an odd number of Forests, it gets an additional +0/+1."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Creature",),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            counted_controller_land_subtype="Forest",
+            power_per_count=1,
+            toughness_per_count=1,
+            count_divisor=2,
+            round_toughness_up=True,
+        ),
+    ),
+    target_requirement=_CREATURE_IN_PLAY,
+)
 
 
 def _creature(
@@ -50,6 +122,20 @@ def _creature(
 
 CRAW_WURM = _creature("Craw Wurm", "{4}{G}{G}", "Wurm", 6, 4)
 GRIZZLY_BEARS = _creature("Grizzly Bears", "{1}{G}", "Bears", 2, 2)
+FUNGUSAUR = CardDefinition(
+    name="Fungusaur",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{G}"),
+    rules_text=(
+        "Each time Fungusaur is damaged but not destroyed, put a +1/+1 "
+        "counter on it."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Fungusaur",),
+    power=2,
+    toughness=2,
+    grows_after_surviving_damage=True,
+)
 IRONROOT_TREEFOLK = _creature(
     "Ironroot Treefolk", "{4}{G}", "Treefolk", 3, 5
 )
@@ -157,6 +243,29 @@ LLANOWAR_ELVES = CardDefinition(
     power=1,
     toughness=1,
     activated_abilities=(ActivatedManaAbility(Color.GREEN),),
+)
+
+LEY_DRUID = CardDefinition(
+    name="Ley Druid",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{2}{G}"),
+    rules_text=(
+        "Tap Ley Druid to untap a land of your choice. "
+        "This action can be played as an interrupt."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Human", "Druid"),
+    power=1,
+    toughness=1,
+    activated_abilities=(
+        ActivatedInterruptUntapAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.LAND}),
+                tapped_only=True,
+            )
+        ),
+    ),
 )
 
 BIRDS_OF_PARADISE = CardDefinition(
@@ -354,11 +463,14 @@ TSUNAMI = CardDefinition(
 GREEN_CARDS = tuple(
     sorted(
         (
+            ASPECT_OF_WOLF,
             BIRDS_OF_PARADISE,
             COCKATRICE,
             CRAW_WURM,
             ELVISH_ARCHERS,
             FORCE_OF_NATURE,
+            FUNGUSAUR,
+            GAEAS_LIEGE,
             GIANT_GROWTH,
             GIANT_SPIDER,
             GRIZZLY_BEARS,
@@ -366,7 +478,9 @@ GREEN_CARDS = tuple(
             ICE_STORM,
             IRONROOT_TREEFOLK,
             LLANOWAR_ELVES,
+            LEY_DRUID,
             LIFELACE,
+            LIVING_LANDS,
             REGENERATION,
             REGROWTH,
             SCRYB_SPRITES,
