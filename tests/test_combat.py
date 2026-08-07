@@ -110,13 +110,24 @@ class CombatTests(unittest.TestCase):
     def test_combat_exposes_all_three_fast_effect_windows(self) -> None:
         bear = self.put_in_play(self.alice, GRIZZLY_BEARS)
         self.assertEqual(self.game.begin_combat(), CombatStep.ATTACK_RESPONSE)
+        self.assertEqual(self.game.priority_player_index, 1)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+        self.assertEqual(self.game.combat.step, CombatStep.DECLARE_ATTACKERS)
+        self.assertIsNone(self.game.priority_player_index)
         self.assertEqual(
             self.game.declare_attackers([bear]), CombatStep.ATTACKER_RESPONSE
         )
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+        self.assertEqual(self.game.combat.step, CombatStep.DECLARE_BLOCKERS)
+        self.assertIsNone(self.game.priority_player_index)
         self.assertEqual(
             self.game.declare_blockers({}), CombatStep.BLOCKER_RESPONSE
         )
-        self.assertEqual(self.game.advance_combat(), CombatStep.DAMAGE)
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+        self.assertEqual(self.game.combat.step, CombatStep.DAMAGE)
 
 
 if __name__ == "__main__":

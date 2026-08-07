@@ -56,22 +56,22 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.NoAutoClose
         visible: gameState.choosingX
-        title: "Choose X for " + gameState.xCardName
+        title: (gameState.xIsAbility ? "Choose damage for " : "Choose X for ") + gameState.xCardName
 
         contentItem: ColumnLayout {
             spacing: 12
             Label {
-                text: "Affordable range: 0\u2013" + gameState.xMaximum
+                text: "Affordable range: " + gameState.xMinimum + "\u2013" + gameState.xMaximum
                 color: "#ffffff"
             }
             RowLayout {
                 Button {
                     text: "\u2212"
-                    enabled: gameState.xValue > 0
+                    enabled: gameState.xValue > gameState.xMinimum
                     onClicked: gameBridge.adjustX(-1)
                 }
                 Label {
-                    text: "X = " + gameState.xValue
+                    text: (gameState.xIsAbility ? "Damage = " : "X = ") + gameState.xValue
                     color: "#ffd978"
                     font.bold: true
                     font.pixelSize: 22
@@ -91,7 +91,7 @@ ApplicationWindow {
                 }
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "Cast"
+                    text: gameState.xIsAbility ? "Activate" : "Cast"
                     onClicked: gameBridge.confirmXCast()
                 }
             }
@@ -155,6 +155,34 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: damageSourcePicker
+        anchors.centerIn: parent
+        implicitWidth: 400
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingDamageSource
+        title: "Choose a source for " + gameState.damageSourceCardName
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Repeater {
+                model: gameState.damageSourceChoices
+                Button {
+                    required property var modelData
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseDamageSource(modelData.key)
+                }
+            }
+            Button {
+                text: "Cancel"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.cancelDamageSourceChoice()
+            }
+        }
+    }
+
+    Dialog {
         id: redirectionAmountPicker
         anchors.centerIn: parent
         implicitWidth: 360
@@ -195,6 +223,137 @@ ApplicationWindow {
                 Button {
                     text: "Redirect"
                     onClicked: gameBridge.confirmRedirectionAmount()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: combatDamagePicker
+        anchors.centerIn: parent
+        width: Math.min(620, window.width - 48)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingCombatDamage
+        title: "Assign combat damage"
+
+        contentItem: ScrollView {
+            implicitHeight: Math.min(damageAssignmentColumn.implicitHeight,
+                                     window.height * 0.65)
+            clip: true
+
+            ColumnLayout {
+                id: damageAssignmentColumn
+                width: combatDamagePicker.availableWidth
+                spacing: 14
+
+                Label {
+                    text: "Divide each creature's full power among its combat opponents."
+                    color: "#ffffff"
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Label {
+                    visible: !gameState.combatDamageCanAssign
+                    text: "Waiting for " + gameState.combatDamageWaitingFor
+                          + " to assign combat damage."
+                    color: "#ffd978"
+                    Layout.fillWidth: true
+                }
+                Button {
+                    visible: !gameState.combatDamageCanAssign
+                    text: "Switch to " + gameState.combatDamageWaitingFor
+                    Layout.alignment: Qt.AlignRight
+                    onClicked: gameBridge.switchPerspective()
+                }
+
+                Repeater {
+                    model: gameState.combatDamageAssignments
+                    delegate: Frame {
+                        id: assignmentGroup
+                        required property var modelData
+                        property string damageSourceId: modelData.sourceId
+                        Layout.fillWidth: true
+                        background: Rectangle {
+                            color: "#202832"
+                            border.color: assignmentGroup.modelData.valid
+                                          ? "#536171" : "#d39155"
+                            radius: 7
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            Label {
+                                id: damageSourceLabel
+                                text: assignmentGroup.modelData.sourceName
+                                      + " assigns "
+                                      + assignmentGroup.modelData.assigned
+                                      + " of " + assignmentGroup.modelData.power
+                                color: assignmentGroup.modelData.valid
+                                       ? "#ffffff" : "#ffd978"
+                                font.bold: true
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                    onEntered: window.inspectedCard =
+                                               assignmentGroup.modelData.sourceCard
+                                }
+                            }
+                            Repeater {
+                                model: assignmentGroup.modelData.recipients
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Label {
+                                        id: damageRecipientLabel
+                                        text: modelData.name
+                                        color: "#dce3ea"
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.NoButton
+                                            onEntered: window.inspectedCard =
+                                                       modelData.cardData
+                                        }
+                                    }
+                                    Button {
+                                        text: "\u2212"
+                                        enabled: modelData.amount > 0
+                                        Layout.preferredWidth: 42
+                                        onClicked: gameBridge.adjustCombatDamage(
+                                            assignmentGroup.damageSourceId,
+                                            modelData.id, -1)
+                                    }
+                                    Label {
+                                        text: modelData.amount
+                                        color: "#ffd978"
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        Layout.preferredWidth: 36
+                                    }
+                                    Button {
+                                        text: "+"
+                                        enabled: assignmentGroup.modelData.assigned
+                                                 < assignmentGroup.modelData.power
+                                        Layout.preferredWidth: 42
+                                        onClicked: gameBridge.adjustCombatDamage(
+                                            assignmentGroup.damageSourceId,
+                                            modelData.id, 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    text: "Confirm assignments"
+                    enabled: gameState.combatDamageValid
+                    Layout.alignment: Qt.AlignRight
+                    onClicked: gameBridge.confirmCombatDamage()
                 }
             }
         }
@@ -252,7 +411,8 @@ ApplicationWindow {
                     Layout.minimumHeight: 190
                     Layout.preferredHeight: 200
                     playerData: gameState.opponent
-                    interactive: false
+                    interactive: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
+                    selectionOnly: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
                     targeting: gameState.targeting
                     frontAtBottom: true
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }
@@ -279,12 +439,6 @@ ApplicationWindow {
                                 font.pixelSize: 17
                             }
                             Item { Layout.fillWidth: true }
-                            Label {
-                                text: gameState.message
-                                color: "#ffd978"
-                                wrapMode: Text.WordWrap
-                                Layout.maximumWidth: 430
-                            }
                             Button {
                                 visible: gameState.canAdvance
                                 text: gameState.advanceLabel
@@ -297,6 +451,47 @@ ApplicationWindow {
                                         + " for " + gameState.effectDiscardPlayer
                                       : "Discard selected"
                                 onClicked: gameBridge.discardSelected()
+                            }
+                            Button {
+                                visible: gameState.canChooseBalance
+                                text: "Choose " + gameState.balanceCount + " "
+                                      + gameState.balanceCategory
+                                      + (gameState.balanceCount === 1 ? "" : "s")
+                                onClicked: gameBridge.chooseBalanceSelected()
+                            }
+                            Button {
+                                visible: gameState.canChooseUntap
+                                text: "Untap " + gameState.untapChoiceCount + " "
+                                      + gameState.untapChoiceType
+                                      + (gameState.untapChoiceCount === 1 ? "" : "s")
+                                onClicked: gameBridge.chooseUntapSelected()
+                            }
+                            Button {
+                                visible: gameState.canChooseUpkeepLand
+                                text: "Choose land"
+                                onClicked: gameBridge.chooseUpkeepLand()
+                            }
+                            Label {
+                                visible: gameState.upkeepLandChoiceRequired
+                                text: gameState.upkeepLandChoicePlayer
+                                      + " chooses a land for "
+                                      + gameState.upkeepLandChoiceSource
+                                color: "#ffd978"
+                            }
+                            Label {
+                                visible: gameState.untapChoiceRequired
+                                text: "Choose permanents to untap ("
+                                      + gameState.untapChoiceType + " limit)"
+                                color: "#ffd978"
+                            }
+                            Label {
+                                visible: gameState.balanceRequired
+                                text: gameState.balanceProgress + ": "
+                                      + gameState.balancePlayer + " chooses "
+                                      + gameState.balanceCount + " "
+                                      + gameState.balanceCategory
+                                      + (gameState.balanceCount === 1 ? "" : "s")
+                                color: "#ffd978"
                             }
                             Button {
                                 text: "Switch perspective"
@@ -313,41 +508,25 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: gameState.canDeclareAttackers
+                                enabled: gameState.canSetAttackingBand
+                                text: gameState.attackingBandActionLabel
+                                onClicked: gameBridge.setAttackingBand()
+                            }
+                            Button {
+                                visible: gameState.canDeclareAttackers
                                 text: "Declare attackers"
                                 onClicked: gameBridge.declareAttackers()
                             }
-                            ComboBox {
-                                id: attackTarget
+                            Button {
                                 visible: gameState.canDeclareBlockers
-                                Layout.preferredWidth: 230
-                                model: gameState.attackers
-                                textRole: "label"
-                                valueRole: "id"
-                            }
-                            CheckBox {
-                                id: blockSecondAttacker
-                                visible: gameState.canDeclareBlockers
-                                text: "Block two"
-                            }
-                            ComboBox {
-                                id: secondAttackTarget
-                                visible: gameState.canDeclareBlockers
-                                         && blockSecondAttacker.checked
-                                Layout.preferredWidth: 230
-                                model: gameState.attackers
-                                textRole: "label"
-                                valueRole: "id"
+                                enabled: gameState.canSetBlocks
+                                text: gameState.blockAssignmentLabel
+                                onClicked: gameBridge.setBlocks()
                             }
                             Button {
                                 visible: gameState.canDeclareBlockers
                                 text: "Declare blockers"
-                                onClicked: gameBridge.declareBlockers(
-                                    attackTarget.currentIndex >= 0
-                                    ? attackTarget.currentValue : "",
-                                    blockSecondAttacker.checked
-                                    && secondAttackTarget.currentIndex >= 0
-                                    ? secondAttackTarget.currentValue : ""
-                                )
+                                onClicked: gameBridge.declareBlockers()
                             }
                             Button {
                                 visible: gameState.targeting
@@ -370,6 +549,13 @@ ApplicationWindow {
                                 onClicked: gameBridge.chooseUpkeepPayment(false)
                             }
                             Button {
+                                visible: gameState.upkeepSacrificeRequired
+                                         && gameState.upkeepSacrificePlayer
+                                            === gameState.perspective.id
+                                text: "Sacrifice selected"
+                                onClicked: gameBridge.chooseUpkeepSacrifice()
+                            }
+                            Button {
                                 visible: gameState.priorityRequired
                                 enabled: gameState.hasPriority
                                 text: "Pass priority"
@@ -389,6 +575,13 @@ ApplicationWindow {
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
+                        }
+                        Label {
+                            visible: !!gameState.message
+                            text: gameState.message
+                            color: "#ffd978"
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
                         Label {
                             visible: gameState.timedEvent
@@ -511,6 +704,7 @@ ApplicationWindow {
                     Layout.preferredHeight: 200
                     playerData: gameState.perspective
                     interactive: true
+                    selectionOnly: gameState.settingBlockers
                     targeting: gameState.targeting
                     frontAtBottom: false
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }

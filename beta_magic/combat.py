@@ -23,10 +23,12 @@ class CombatState:
     defending_player_id: str
     step: CombatStep = CombatStep.ATTACK_RESPONSE
     attackers: list[Card] = field(default_factory=list)
+    attacking_bands: list[tuple[Card, ...]] = field(default_factory=list)
     blockers: dict[UUID, list[Card]] = field(default_factory=dict)
     damage_allocations: dict[Card, dict[Card, int]] = field(default_factory=dict)
     regenerated_card_ids: set[UUID] = field(default_factory=set)
     end_of_combat_destruction_ids: set[UUID] = field(default_factory=set)
+    blaze_of_glory_blocker_ids: set[UUID] = field(default_factory=set)
 
 
 @dataclass(slots=True)
@@ -56,6 +58,129 @@ class CombatMixin:
                 card.definition.landhome.land_subtype,
             )
         )
+
+    def _individual_blocking_error(
+        self, blocker: Card, attacker: Card, defender: PlayerState
+    ) -> str | None:
+        power_limit = blocker.definition.maximum_blocked_power
+        if power_limit is not None and self.creature_power(attacker) > power_limit:
+            return f"{blocker.name} cannot block a creature with power greater than {power_limit}"
+        if self.creature_is_unblockable(attacker):
+            return f"{attacker.name} cannot be blocked"
+        if attacker.definition.cannot_be_blocked_by_subtypes & set(blocker.definition.subtypes):
+            return f"{attacker.name} cannot be blocked by {blocker.name}"
+        required_subtype = self.blocking_subtype_requirement(attacker)
+        if required_subtype is not None and required_subtype not in blocker.definition.subtypes:
+            return f"only a {required_subtype} can block {attacker.name}"
+        blocking_exceptions = self.blocking_exceptions(attacker)
+        if blocking_exceptions is not None:
+            allowed_colors, allowed_types = blocking_exceptions
+            if not (allowed_colors & self.card_colors(blocker)
+                    or allowed_types & self.card_types(blocker)):
+                return f"{blocker.name} cannot block {attacker.name}"
+        landwalk_subtypes = {
+            ability.landwalk_subtype
+            for ability in self.creature_abilities(attacker)
+            if ability.landwalk_subtype is not None
+        }
+        defending_land_subtypes = {
+            subtype
+            for permanent in defender.battlefield
+            if CardType.LAND in permanent.definition.card_types
+            for subtype in self.land_subtypes(permanent)
+        }
+        active_landwalk = landwalk_subtypes & defending_land_subtypes
+        if active_landwalk:
+            land_type = sorted(active_landwalk)[0]
+            return (f"{attacker.name} has {land_type.lower()}walk and cannot "
+                    f"be blocked while the defender controls a {land_type}")
+        if (KeywordAbility.FLYING in self.creature_abilities(attacker)
+                and KeywordAbility.FLYING not in self.creature_abilities(blocker)
+                and KeywordAbility.CAN_BLOCK_FLYING not in self.creature_abilities(blocker)):
+            return f"{blocker.name} cannot block a creature with Flying"
+        if self._is_protected_from(attacker, self.card_colors(blocker)):
+            protected_color = next(
+                color.value
+                for color in self.card_colors(blocker)
+                if color in {
+                    ability.protection_color
+                    for ability in self.creature_abilities(attacker)
+                }
+            )
+            return (f"{attacker.name} has protection from {protected_color} "
+                    f"and cannot be blocked by {blocker.name}")
+        return None
+
+    def required_blaze_blocks(self, blocker: Card) -> tuple[Card, ...]:
+        """Representatives of all attacking groups Blaze requires it to block."""
+
+        if self.combat is None:
+            return ()
+        defender = self.player(self.combat.defending_player_id)
+        if (
+            blocker not in defender.battlefield
+            or blocker.tapped
+            or CardType.CREATURE not in self.card_types(blocker)
+        ):
+            return ()
+        band_by_member = {
+            member.id: band
+            for band in self.combat.attacking_bands
+            for member in band
+        }
+        groups: dict[tuple[UUID, ...], Card] = {}
+        for attacker in self.combat.attackers:
+            group = band_by_member.get(attacker.id, (attacker,))
+            representative = next(
+                (
+                    member
+                    for member in group
+                    if self._individual_blocking_error(blocker, member, defender)
+                    is None
+                ),
+                None,
+            )
+            if representative is not None:
+                groups.setdefault(
+                    tuple(member.id for member in group), representative
+                )
+        return tuple(groups.values())
+
+    def lured_attackers(self) -> tuple[Card, ...]:
+        """Attacking creatures currently carrying at least one Lure effect."""
+
+        if self.combat is None:
+            return ()
+        lured_ids = {
+            permanent.enchanted_card_id
+            for player in self.players
+            for permanent in player.battlefield
+            if permanent.definition.lures_blockers
+        }
+        return tuple(
+            attacker
+            for attacker in self.combat.attackers
+            if attacker.zone is Zone.BATTLEFIELD and attacker.id in lured_ids
+        )
+
+    def lure_block_options(self, blocker: Card) -> tuple[Card, ...]:
+        """Lured attackers this particular defender can legally block."""
+
+        if self.combat is None:
+            return ()
+        defender = self.player(self.combat.defending_player_id)
+        if (
+            blocker not in defender.battlefield
+            or blocker.tapped
+            or CardType.CREATURE not in self.card_types(blocker)
+        ):
+            return ()
+        return tuple(
+            attacker
+            for attacker in self.lured_attackers()
+            if self._individual_blocking_error(blocker, attacker, defender) is None
+        )
+
     def begin_combat(self) -> CombatStep:
         """Begin the turn's single optional attack during the Main phase."""
 
@@ -74,11 +199,25 @@ class CombatMixin:
             attacking_player_id=self.active_player.id,
             defending_player_id=self.players[defender_index].id,
         )
+        self.priority_player_index = defender_index
+        self.consecutive_passes = 0
         return self.combat.step
 
-    def declare_attackers(self, attackers: Iterable[Card]) -> CombatStep:
+    def declare_attackers(
+        self,
+        attackers: Iterable[Card],
+        bands: Iterable[Iterable[Card]] = (),
+    ) -> CombatStep:
         self._require_no_pending_action()
-        if self.combat is None or self.combat.step is not CombatStep.ATTACK_RESPONSE:
+        # Retain the direct engine API as a convenience for simulations and
+        # older callers. The UI exposes this method only after priority has
+        # closed the response window and entered DECLARE_ATTACKERS.
+        if self.combat is not None and self.combat.step is CombatStep.ATTACK_RESPONSE:
+            self._empty_mana_pools()
+            self.combat.step = CombatStep.DECLARE_ATTACKERS
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+        if self.combat is None or self.combat.step is not CombatStep.DECLARE_ATTACKERS:
             raise RuntimeError("the game is not waiting for attackers")
         chosen = list(attackers)
         if len({card.id for card in chosen}) != len(chosen):
@@ -110,6 +249,28 @@ class CombatMixin:
                     f"controls an {subtype}"
                 )
 
+        declared_bands = [tuple(band) for band in bands]
+        banded_ids: set[UUID] = set()
+        for band in declared_bands:
+            if len(band) < 2:
+                raise ValueError("an attacking band must contain at least two creatures")
+            if len({card.id for card in band}) != len(band):
+                raise ValueError("a creature may only appear once in an attacking band")
+            if any(card not in chosen for card in band):
+                raise ValueError("every member of a band must be a declared attacker")
+            if banded_ids & {card.id for card in band}:
+                raise ValueError("an attacker may belong to only one band")
+            without_banding = [
+                card
+                for card in band
+                if KeywordAbility.BANDING not in self.creature_abilities(card)
+            ]
+            if len(without_banding) > 1:
+                raise ValueError(
+                    "all but at most one creature in an attacking band must have Banding"
+                )
+            banded_ids.update(card.id for card in band)
+
         chosen_ids = {card.id for card in chosen}
         required_attackers = [
             card
@@ -136,9 +297,6 @@ class CombatMixin:
                 f"{required_attackers[0].name} must attack if possible"
             )
 
-        # The pre-attack response window has closed. Mana burn happens before
-        # the atomic declaration, during which no actions can be taken.
-        self._empty_mana_pools()
         for card in chosen:
             if (
                 KeywordAbility.DOES_NOT_TAP_TO_ATTACK
@@ -147,8 +305,11 @@ class CombatMixin:
                 self._tap_permanent(card)
             self.attacked_this_turn.add(card.id)
         self.combat.attackers = chosen
+        self.combat.attacking_bands = declared_bands
         self.combat.blockers = {card.id: [] for card in chosen}
         self.combat.step = CombatStep.ATTACKER_RESPONSE
+        self.priority_player_index = self.active_player_index
+        self.consecutive_passes = 0
         self.attacks_this_turn += 1
         self.check_state_based_actions()
         return self.combat.step
@@ -163,17 +324,41 @@ class CombatMixin:
         """
 
         self._require_no_pending_action()
-        if self.combat is None or self.combat.step is not CombatStep.ATTACKER_RESPONSE:
+        # See the matching compatibility path in declare_attackers().
+        if self.combat is not None and self.combat.step is CombatStep.ATTACKER_RESPONSE:
+            self.combat.step = CombatStep.DECLARE_BLOCKERS
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+        if self.combat is None or self.combat.step is not CombatStep.DECLARE_BLOCKERS:
             raise RuntimeError("the game is not waiting for blockers")
         defender = self.player(self.combat.defending_player_id)
         attackers = {card.id: card for card in self.combat.attackers}
-        assigned_attackers = {
-            blocker: (
-                (assigned,) if isinstance(assigned, Card) else tuple(assigned)
-            )
-            for blocker, assigned in assignments.items()
+        band_by_member = {
+            member.id: band
+            for band in self.combat.attacking_bands
+            for member in band
         }
-        normalized = [
+        assigned_attackers: dict[Card, tuple[Card, ...]] = {}
+        for blocker, assigned in assignments.items():
+            requested = (assigned,) if isinstance(assigned, Card) else tuple(assigned)
+            distinct_groups: dict[tuple[UUID, ...], Card] = {}
+            for attacker in requested:
+                group = band_by_member.get(attacker.id, (attacker,))
+                representative = next(
+                    (
+                        member
+                        for member in group
+                        if self._individual_blocking_error(
+                            blocker, member, defender
+                        ) is None
+                    ),
+                    attacker,
+                )
+                distinct_groups.setdefault(
+                    tuple(card.id for card in group), representative
+                )
+            assigned_attackers[blocker] = tuple(distinct_groups.values())
+        declared_blocks = [
             (blocker, attacker)
             for blocker, assigned in assigned_attackers.items()
             for attacker in assigned
@@ -183,11 +368,58 @@ class CombatMixin:
                 raise ValueError(
                     f"{blocker.name} cannot block the same attacker twice"
                 )
-            if len(assigned) > blocker.definition.maximum_attackers_blocked:
+            if (
+                blocker.id not in self.combat.blaze_of_glory_blocker_ids
+                and len(assigned) > blocker.definition.maximum_attackers_blocked
+            ):
                 raise ValueError(
                     f"{blocker.name} cannot block {len(assigned)} attackers"
                 )
-        for blocker, attacker in normalized:
+        for blocker_id in self.combat.blaze_of_glory_blocker_ids:
+            blocker = next(
+                (card for card in defender.battlefield if card.id == blocker_id),
+                None,
+            )
+            if (
+                blocker is None
+                or blocker.tapped
+                or CardType.CREATURE not in self.card_types(blocker)
+            ):
+                continue
+            required = {
+                tuple(
+                    member.id
+                    for member in band_by_member.get(attacker.id, (attacker,))
+                )
+                for attacker in self.required_blaze_blocks(blocker)
+            }
+            actual = {
+                tuple(
+                    member.id
+                    for member in band_by_member.get(attacker.id, (attacker,))
+                )
+                for attacker in assigned_attackers.get(blocker, ())
+            }
+            if actual != required:
+                raise ValueError(
+                    f"{blocker.name} must block every attacker it can legally block"
+                )
+        for blocker in defender.battlefield:
+            if blocker.tapped or CardType.CREATURE not in self.card_types(blocker):
+                continue
+            options = self.lure_block_options(blocker)
+            if not options:
+                continue
+            actual_member_ids = {
+                member.id
+                for attacker in assigned_attackers.get(blocker, ())
+                for member in band_by_member.get(attacker.id, (attacker,))
+            }
+            if not any(attacker.id in actual_member_ids for attacker in options):
+                raise ValueError(
+                    f"{blocker.name} must block a Lured attacker if able"
+                )
+        for blocker, attacker in declared_blocks:
             if blocker not in defender.battlefield:
                 raise ValueError(f"{blocker.name} is not controlled by the defender")
             if CardType.CREATURE not in self.card_types(blocker):
@@ -205,6 +437,11 @@ class CombatMixin:
                     f"{blocker.name} cannot block a creature with power "
                     f"greater than {power_limit}"
                 )
+
+        normalized: list[tuple[Card, Card]] = []
+        for blocker, attacker in declared_blocks:
+            group = band_by_member.get(attacker.id, (attacker,))
+            normalized.extend((blocker, member) for member in group)
             if self.creature_is_unblockable(attacker):
                 raise ValueError(f"{attacker.name} cannot be blocked")
             if (
@@ -289,6 +526,8 @@ class CombatMixin:
                 # Basilisk/Cockatrice, not to an attacker they block.
                 self.combat.end_of_combat_destruction_ids.add(attacker.id)
         self.combat.step = CombatStep.BLOCKER_RESPONSE
+        self.priority_player_index = self.active_player_index
+        self.consecutive_passes = 0
         return self.combat.step
 
     def advance_combat(self) -> CombatStep:

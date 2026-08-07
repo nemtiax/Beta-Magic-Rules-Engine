@@ -16,6 +16,7 @@ from .abilities import (
     ActivatedLandTypeAbility,
     ActivatedUnblockableAbility,
     ActivatedInterruptUntapAbility,
+    ActivatedCounterSpellAbility,
     BatchActivatedAbility,
     TargetRequirement,
 )
@@ -26,6 +27,9 @@ from .effects import (
     AttachedLandTypeEffect,
     CounterTargetSpellEffect,
     SirensCallEffect,
+    BlazeOfGloryEffect,
+    ReverseDamageEffect,
+    RetroactiveDamageTransferEffect,
 )
 from .types import (
     BASIC_LAND_SUBTYPES,
@@ -36,6 +40,7 @@ from .types import (
     TurnPhase,
     Zone,
 )
+from .damage import DamageResolutionStep
 
 if TYPE_CHECKING:
     from .game import PlayerState
@@ -50,6 +55,7 @@ class PendingCast:
     x_value: int = 0
     chosen_land_subtype: str | None = None
     chosen_mode: str | None = None
+    damage_source_key: str | None = None
 
 
 @dataclass(slots=True)
@@ -70,6 +76,7 @@ class AbilityOnStack:
     controller_id: str
     ability: BatchActivatedAbility
     targets: tuple[Card | PlayerState, ...]
+    amount: int = 1
 
 
 @dataclass(slots=True)
@@ -81,6 +88,7 @@ class SpellOnStack:
     targets: tuple[Card | PlayerState, ...] = ()
     x_value: int = 0
     chosen_mode: str | None = None
+    damage_source_key: str | None = None
 
 
 class TargetingCastingMixin:
@@ -116,7 +124,7 @@ class TargetingCastingMixin:
             raise ValueError(f"{card.name} is not a {expected_type.value.lower()}")
         if not card.definition.is_permanent or CardType.LAND in card.definition.card_types:
             raise ValueError(f"{card.name} is not a permanent spell")
-        if not player.mana_pool.can_pay(
+        if not self.can_pay_mana(player,
             card.definition.mana_cost.with_x(x_value)
         ):
             raise RuntimeError(f"not enough mana to cast {card.name}")
@@ -197,7 +205,7 @@ class TargetingCastingMixin:
             and self.combat.step is CombatStep.DAMAGE
         ):
             raise RuntimeError("instants cannot be cast during combat damage")
-        if not caster.mana_pool.can_pay(
+        if not self.can_pay_mana(caster,
             card.definition.mana_cost.with_x(x_value)
         ):
             raise RuntimeError(f"not enough mana to cast {card.name}")
@@ -212,9 +220,24 @@ class TargetingCastingMixin:
             raise RuntimeError(
                 f"{card.name} can only be cast during an opponent's turn before the attack"
             )
+        if any(
+            isinstance(effect, BlazeOfGloryEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            self.combat is None
+            or self.combat.step is not CombatStep.ATTACKER_RESPONSE
+        ):
+            raise RuntimeError(
+                f"{card.name} can only be cast after attackers and before blockers"
+            )
         return caster
 
     def _validate_cast(self, card: Card, x_value: int = 0) -> PlayerState:
+        if self.combat is not None and self.combat.step in {
+            CombatStep.DECLARE_ATTACKERS,
+            CombatStep.DECLARE_BLOCKERS,
+        }:
+            raise RuntimeError("spells cannot be cast during a combat declaration")
         if x_value < 0:
             raise ValueError("X cannot be negative")
         if not card.definition.mana_cost.x_symbols and x_value:
@@ -239,7 +262,7 @@ class TargetingCastingMixin:
         cost = card.definition.mana_cost
         if not cost.x_symbols:
             raise ValueError(f"{card.name} has no X in its mana cost")
-        if not caster.mana_pool.can_pay(cost.with_x(0)):
+        if not self.can_pay_mana(caster, cost.with_x(0)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
         remaining = caster.mana_pool.total - cost.with_x(0).mana_value
         return remaining // cost.x_symbols
@@ -251,13 +274,42 @@ class TargetingCastingMixin:
         *,
         land_subtype: str | None = None,
         mode: str | None = None,
+        damage_source_key: str | None = None,
     ) -> PendingCast | None:
         """Cast an untargeted spell or wait for the spell's targets."""
 
-        self._require_no_pending_action(allow_stack=True)
+        damage_window_effect = any(
+            isinstance(
+                effect,
+                (ReverseDamageEffect, RetroactiveDamageTransferEffect),
+            )
+            for effect in card.definition.spell_effects
+        )
+        self._require_no_pending_action(
+            allow_stack=True, allow_damage=damage_window_effect
+        )
+        if self.pending_damage is not None and (
+            not damage_window_effect
+            or self.pending_damage.step is not DamageResolutionStep.PREVENTION
+        ):
+            raise RuntimeError(
+                "this spell can only be cast during the damage-prevention window"
+            )
         caster = self._validate_cast(card, x_value)
         self._validate_land_type_choice(card, land_subtype)
         self._validate_casting_mode(card, mode)
+        reverse_damage = any(
+            isinstance(effect, ReverseDamageEffect)
+            for effect in card.definition.spell_effects
+        )
+        if reverse_damage:
+            legal_sources = {
+                choice[0] for choice in self.damage_source_choices(caster.id)
+            }
+            if damage_source_key not in legal_sources:
+                raise ValueError(f"{card.name} requires a damage source choice")
+        elif damage_source_key is not None:
+            raise ValueError(f"{card.name} does not choose a damage source")
 
         if card.definition.target_requirement is not None:
             if not self.legal_targets_for(
@@ -265,12 +317,16 @@ class TargetingCastingMixin:
             ) and not self.legal_player_targets_for(card):
                 raise RuntimeError(f"there are no legal targets for {card.name}")
             self.pending_cast = PendingCast(
-                card, caster.id, x_value, land_subtype, mode
+                card, caster.id, x_value, land_subtype, mode, damage_source_key
             )
             return self.pending_cast
+        if self.pending_damage is not None and reverse_damage:
+            self.cast_reverse_damage_in_prevention(card, damage_source_key)
+            return None
         self._cast_spell(
             card, (), caster, x_value, chosen_land_subtype=land_subtype,
             chosen_mode=mode,
+            damage_source_key=damage_source_key,
         )
         return None
 
@@ -353,7 +409,17 @@ class TargetingCastingMixin:
                 ),
                 len(self.stack),
             )
-            if CardType.INTERRUPT in spell.definition.card_types:
+            pending_effect = (
+                self.activated_abilities(pending_ability.source)[
+                    pending_ability.ability_index
+                ]
+                if pending_ability is not None
+                else None
+            )
+            if (
+                spell is not None
+                and CardType.INTERRUPT in spell.definition.card_types
+            ) or isinstance(pending_effect, ActivatedCounterSpellAbility):
                 stack_candidates = (
                     self.stack[interrupt_root_index:]
                     if interrupt_root_index < len(self.stack)
@@ -459,6 +525,11 @@ class TargetingCastingMixin:
             return False
         if requirement.controller_only and card.controller_id != caster_id:
             return False
+        if requirement.defending_player_only and (
+            self.combat is None
+            or card.controller_id != self.combat.defending_player_id
+        ):
+            return False
         if (
             requirement.active_player_only
             and card.controller_id != self.active_player.id
@@ -541,6 +612,7 @@ class TargetingCastingMixin:
                     ActivatedAttackRequirementAbility,
                     ActivatedLandTypeAbility,
                     ActivatedInterruptUntapAbility,
+                    ActivatedCounterSpellAbility,
                 ),
             )
             else None
@@ -567,6 +639,7 @@ class TargetingCastingMixin:
                 ActivatedAttackRequirementAbility,
                 ActivatedLandTypeAbility,
                 ActivatedInterruptUntapAbility,
+                ActivatedCounterSpellAbility,
             ),
         )
         chosen = tuple(targets)
@@ -607,9 +680,10 @@ class TargetingCastingMixin:
                 ActivatedAttackRequirementAbility,
                 ActivatedLandTypeAbility,
                 ActivatedInterruptUntapAbility,
+                ActivatedCounterSpellAbility,
             ),
         ):
-            player.mana_pool.pay(ability.mana_cost)
+            self.pay_mana(player, ability.mana_cost)
         if isinstance(ability, ActivatedInterruptUntapAbility):
             for target in chosen:
                 if isinstance(target, Card):
@@ -619,6 +693,20 @@ class TargetingCastingMixin:
             # replacing the current spell's interrupt window.
             self.consecutive_passes = 0
             self.check_state_based_actions()
+            return
+        if isinstance(ability, ActivatedCounterSpellAbility):
+            self.interrupt_abilities.append(
+                AbilityOnStack(
+                    pending.source,
+                    pending.source.name,
+                    player.id,
+                    ability,
+                    chosen,
+                )
+            )
+            # It belongs to the current spell's interrupt sequence. It does
+            # not replace the root spell or surrender priority.
+            self.consecutive_passes = 0
             return
         self.batch_abilities.append(
             AbilityOnStack(
@@ -701,6 +789,16 @@ class TargetingCastingMixin:
         if caster is not validated_caster:
             raise RuntimeError("the pending spell's caster has changed")
         self.pending_cast = None
+        if self.pending_damage is not None and any(
+            isinstance(effect, RetroactiveDamageTransferEffect)
+            for effect in pending.spell.definition.spell_effects
+        ):
+            target = next(
+                (item for item in chosen if isinstance(item, Card)), None
+            )
+            assert target is not None
+            self.cast_simulacrum_in_prevention(pending.spell, target)
+            return
         self._cast_spell(
             pending.spell,
             chosen,
@@ -708,6 +806,7 @@ class TargetingCastingMixin:
             pending.x_value,
             chosen_land_subtype=pending.chosen_land_subtype,
             chosen_mode=pending.chosen_mode,
+            damage_source_key=pending.damage_source_key,
         )
 
     def cancel_pending_cast(self) -> None:
@@ -723,7 +822,7 @@ class TargetingCastingMixin:
         chosen_land_subtype: str | None = None,
     ) -> None:
         player = self.active_player
-        player.mana_pool.pay(card.definition.mana_cost)
+        self.pay_mana(player, card.definition.mana_cost)
         card.controller_id = player.id
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
@@ -753,10 +852,11 @@ class TargetingCastingMixin:
         *,
         chosen_land_subtype: str | None = None,
         chosen_mode: str | None = None,
+        damage_source_key: str | None = None,
     ) -> None:
         """Pay for a spell and add it to the current response batch."""
 
-        caster.mana_pool.pay(card.definition.mana_cost.with_x(x_value))
+        self.pay_mana(caster, card.definition.mana_cost.with_x(x_value))
         card.controller_id = caster.id
         self._move_card(card, Zone.STACK)
         card.chosen_land_subtype = chosen_land_subtype
@@ -766,7 +866,7 @@ class TargetingCastingMixin:
         ):
             self.interruptible_spell_id = card.id
         self.stack_spells[card.id] = SpellOnStack(
-            card, caster.id, targets, x_value, chosen_mode
+            card, caster.id, targets, x_value, chosen_mode, damage_source_key
         )
         self.events.append(
             SpellCastEvent(

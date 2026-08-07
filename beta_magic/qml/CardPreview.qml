@@ -90,17 +90,45 @@ Frame {
                     color: "#25ffffff"
                     border.color: "#45ffffff"
 
-                    Label {
+                    ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 12
-                        text: preview.cardData
-                              ? (preview.cardData.rulesText
-                                 || preview.cardData.abilities)
-                              : "The last card you mouse over will remain here."
-                        color: preview.cardData ? preview.cardData.foreground : "#aeb7c2"
-                        font.pixelSize: 16
-                        wrapMode: Text.WordWrap
-                        verticalAlignment: Text.AlignTop
+                        spacing: 10
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: preview.cardData
+                                  ? (preview.cardData.rulesText
+                                     || preview.cardData.abilities)
+                                  : "The last card you mouse over will remain here."
+                            color: preview.cardData
+                                   ? preview.cardData.foreground : "#aeb7c2"
+                            font.pixelSize: 16
+                            wrapMode: Text.WordWrap
+                            verticalAlignment: Text.AlignTop
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 1
+                            visible: preview.cardData && !!preview.cardData.combatDetail
+                            color: preview.cardData
+                                   ? preview.cardData.foreground : "#536171"
+                            opacity: 0.4
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            visible: preview.cardData && !!preview.cardData.combatDetail
+                            text: preview.cardData ? preview.cardData.combatDetail : ""
+                            color: preview.cardData
+                                   ? preview.cardData.foreground : "#aeb7c2"
+                            font.pixelSize: 14
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Item { Layout.fillHeight: true }
                     }
                 }
 

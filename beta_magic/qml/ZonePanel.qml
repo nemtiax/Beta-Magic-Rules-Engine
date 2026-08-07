@@ -6,6 +6,7 @@ Frame {
     id: zone
     required property var playerData
     property bool interactive: false
+    property bool selectionOnly: false
     property bool frontAtBottom: false
     property bool targeting: false
     signal selected(string cardId)
@@ -38,6 +39,7 @@ Frame {
                 Layout.minimumHeight: implicitHeight
                 cards: playerData.battlefieldNonlands
                 interactive: zone.interactive
+                selectionOnly: zone.selectionOnly
                 targetable: zone.targeting
                 onSelected: function(cardId) { zone.selected(cardId) }
                 onActivated: function(cardId) { zone.activated(cardId) }
@@ -65,6 +67,7 @@ Frame {
                 Layout.minimumHeight: implicitHeight
                 cards: playerData.battlefieldLands
                 interactive: zone.interactive
+                selectionOnly: zone.selectionOnly
                 onSelected: function(cardId) { zone.selected(cardId) }
                 onActivated: function(cardId) { zone.activated(cardId) }
                 onAbilityActivated: function(cardId, abilityIndex) {

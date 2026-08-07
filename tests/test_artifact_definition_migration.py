@@ -12,6 +12,7 @@ from beta_magic.card_defs.artifacts import (
     OBSIANUS_GOLEM,
     TIMED_ARTIFACTS,
     TURN_ARTIFACTS,
+    UNTAP_ARTIFACTS,
     UTILITY_ARTIFACTS,
 )
 
@@ -23,7 +24,7 @@ class ArtifactDefinitionMigrationTests(unittest.TestCase):
         )
 
     def test_catalog_uses_all_artifact_definitions(self) -> None:
-        self.assertEqual(len(ARTIFACT_CARDS), 30)
+        self.assertEqual(len(ARTIFACT_CARDS), 36)
         for artifact in ARTIFACT_CARDS:
             self.assertIs(CARDS_BY_NAME[artifact.name], artifact)
 
@@ -35,6 +36,7 @@ class ArtifactDefinitionMigrationTests(unittest.TestCase):
             + UTILITY_ARTIFACTS
             + TIMED_ARTIFACTS
             + TURN_ARTIFACTS
+            + UNTAP_ARTIFACTS
             + ARTIFACT_CREATURES
         )
         self.assertEqual(len(grouped), len(set(grouped)))

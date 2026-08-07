@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     BRAINGEYSER,
+    DISINTEGRATE,
     EARTHQUAKE,
     HOWL_FROM_BEYOND,
     HURRICANE,
@@ -69,11 +70,11 @@ class VariableSpellTests(unittest.TestCase):
     def test_definitions(self) -> None:
         self.assertEqual(
             VARIABLE_SPELLS,
-            (BRAINGEYSER, HOWL_FROM_BEYOND, EARTHQUAKE, HURRICANE),
+            (BRAINGEYSER, HOWL_FROM_BEYOND, DISINTEGRATE, EARTHQUAKE, HURRICANE),
         )
         self.assertEqual(
             [card.mana_cost.compact for card in VARIABLE_SPELLS],
-            ["XUU", "XB", "XR", "XG"],
+            ["XUU", "XB", "XR", "XR", "XG"],
         )
 
     def test_braingeyser_makes_either_player_draw_x(self) -> None:

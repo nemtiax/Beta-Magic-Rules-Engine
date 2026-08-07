@@ -54,9 +54,8 @@ LIFO-like resolution sequence. The interface therefore asks both players to
 pass at several points where a modern Magic client might behave differently.
 
 The UI is intentionally a rules-development tool rather than a polished game
-client. In particular, combat damage against multiple blockers currently uses
-an automatic UI assignment; support for choosing that assignment is tracked
-as deferred work in `NOTES.md`.
+client. When a creature has multiple combat opponents, a dedicated picker
+allows players to divide combat damage before the damage step resolves.
 
 ## Seeded playtest decks
 
@@ -71,6 +70,7 @@ The following mutually exclusive command-line options load deterministic
 | `--x-test-decks` | Variable `{X}` costs and scalable effects |
 | `--protection-test-decks` | Protection, Wards, Circles of Protection, and colored effects |
 | `--aura-test-decks` | Cheap Auras and creatures for testing stacked attachments |
+| `--banding-test-decks` | Attacking bands, defensive Banding, and mixed evasion |
 
 For example:
 
@@ -127,7 +127,9 @@ responsibility:
 beta_magic/
   game.py                 shared state and cross-system coordination
   turn_flow.py            phases, turns, cleanup, and timed events
-  casting.py              casting, targeting, and activated-effect declarations
+  casting.py              casting, targeting, and stack/batch declarations
+  ability_activation.py   activated-ability validation and declaration
+  priority_resolution.py  priority, interrupts, and fast-effect batches
   combat.py               attackers, blockers, and combat damage
   incident_resolution.py  damage and destruction resolution windows
   characteristics.py      current types, colors, abilities, power, and toughness
@@ -136,6 +138,10 @@ beta_magic/
   effects.py              spell, continuous, upkeep, and combat effects
   decks.py                deterministic UI deck lists
   ui.py                    Qt-facing view model and command-line entry point
+  ui_choices.py            transient picker and dialog state
+  ui_combat.py             transient combat selection and assignment coordination
+  ui_messages.py           per-player UI notifications and prompts
+  ui_presentation.py       read-only QML state and card/player presentation
   qml/                     Qt Quick interface
   card_defs/               canonical card definitions and catalog
 ```

@@ -85,7 +85,7 @@ class LandhomeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "defender controls an Island"):
             self.game.declare_attackers([serpent])
 
-        self.assertIs(self.game.combat.step, CombatStep.ATTACK_RESPONSE)
+        self.assertIs(self.game.combat.step, CombatStep.DECLARE_ATTACKERS)
 
     def test_defending_dual_land_allows_attack(self) -> None:
         self.put_in_play(self.alice, ISLAND)

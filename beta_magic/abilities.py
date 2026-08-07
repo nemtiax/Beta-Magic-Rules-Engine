@@ -25,6 +25,7 @@ class TargetRequirement:
     opponent_only: bool = False
     blocking_only: bool = False
     tapped_only: bool = False
+    untapped_only: bool = False
     color: Color | None = None
     excluded_colors: frozenset[Color] = field(default_factory=frozenset)
     subtypes: frozenset[str] = field(default_factory=frozenset)
@@ -32,6 +33,7 @@ class TargetRequirement:
     active_player_only: bool = False
     owner_only: bool = False
     controller_only: bool = False
+    defending_player_only: bool = False
     maximum_power: int | None = None
     count: int = 1
 
@@ -42,6 +44,8 @@ class TargetRequirement:
             raise ValueError("a target requirement must accept cards or players")
         if self.blocking_only and self.zone is not Zone.BATTLEFIELD:
             raise ValueError("a blocking target must be on the battlefield")
+        if self.tapped_only and self.untapped_only:
+            raise ValueError("a target cannot require tapped and untapped cards")
         if self.owner_only and self.controller_only:
             raise ValueError("a target cannot require both owner and controller")
         if self.opponent_only and not self.players:
@@ -75,6 +79,7 @@ class TargetRequirement:
                 )
             )
             and (not check_tapped or not self.tapped_only or card.tapped)
+            and (not check_tapped or not self.untapped_only or not card.tapped)
             and (
                 self.color is None
                 or self.color
@@ -190,6 +195,28 @@ class ActivatedDamageAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedGlobalDamageAbility:
+    """A scalable fast effect damaging every creature and player."""
+
+    mana_cost_per_damage: ManaCost
+    damage_per_payment: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.mana_cost_per_damage.mana_value:
+            raise ValueError("global damage activation must have a mana cost")
+        if self.damage_per_payment < 1:
+            raise ValueError("global damage must be positive")
+
+    @property
+    def label(self) -> str:
+        return (
+            f"Pay {self.mana_cost_per_damage.compact} one or more times: "
+            f"Deal {self.damage_per_payment} damage per payment to each "
+            "creature and player"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedDestroyAbility:
     target_requirement: TargetRequirement
     mana_cost: ManaCost = field(default_factory=ManaCost)
@@ -255,6 +282,32 @@ class ActivatedInterruptUntapAbility:
     @property
     def label(self) -> str:
         return "Tap: Untap target land (interrupt)"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedCounterSpellAbility:
+    """Counter a spell of one color as an activated interrupt."""
+
+    mana_cost: ManaCost
+    spell_color: Color
+    tap_cost: bool = False
+    target_requirement: TargetRequirement = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.spell_color is Color.COLORLESS:
+            raise ValueError("a color-counter ability must name a color")
+        object.__setattr__(
+            self,
+            "target_requirement",
+            TargetRequirement(zone=Zone.STACK, color=self.spell_color),
+        )
+
+    @property
+    def label(self) -> str:
+        return (
+            f"Pay {self.mana_cost.compact}: Counter target "
+            f"{self.spell_color.name.lower()} spell (interrupt)"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +542,7 @@ TargetedActivatedAbility = (
     | ActivatedAttackRequirementAbility
     | ActivatedLandTypeAbility
     | ActivatedInterruptUntapAbility
+    | ActivatedCounterSpellAbility
 )
 BatchActivatedAbility = (
     TargetedActivatedAbility
@@ -503,11 +557,13 @@ BatchActivatedAbility = (
     | ActivatedInterruptUntapAbility
     | ActivatedEventLifeGainAbility
     | ActivatedAnimationAbility
+    | ActivatedGlobalDamageAbility
 )
 ActivatedAbility = (
     ActivatedManaAbility
     | ActivatedPumpAbility
     | ActivatedDamageAbility
+    | ActivatedGlobalDamageAbility
     | ActivatedDestroyAbility
     | ActivatedDestroyAllAbility
     | ActivatedTapAbility
@@ -522,6 +578,7 @@ ActivatedAbility = (
     | ActivatedRedirectDamageAbility
     | ActivatedRegenerationAbility
     | ActivatedLandTypeAbility
+    | ActivatedCounterSpellAbility
 )
 
 
@@ -530,6 +587,7 @@ __all__ = [
     "ActivatedManaAbility",
     "ActivatedPumpAbility",
     "ActivatedDamageAbility",
+    "ActivatedGlobalDamageAbility",
     "ActivatedDestroyAbility",
     "ActivatedDestroyAllAbility",
     "ActivatedTapAbility",
@@ -542,6 +600,7 @@ __all__ = [
     "ActivatedExtraTurnAbility",
     "ActivatedUntapAbility",
     "ActivatedInterruptUntapAbility",
+    "ActivatedCounterSpellAbility",
     "ActivatedEventLifeGainAbility",
     "ActivatedAnimationAbility",
     "ActivatedPreventDamageAbility",

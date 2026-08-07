@@ -103,6 +103,13 @@ class ManaCost:
             green=self.green,
         )
 
+    def scaled(self, multiplier: int) -> ManaCost:
+        """Repeat every symbol in this cost a fixed number of times."""
+
+        if multiplier < 0:
+            raise ValueError("mana-cost multiplier cannot be negative")
+        return ManaCost(*(amount * multiplier for amount in self.amounts))
+
     @classmethod
     def from_symbols(cls, symbols: Iterable[str]) -> ManaCost:
         return cls.parse("".join(f"{{{symbol}}}" for symbol in symbols))
@@ -177,36 +184,37 @@ class ManaPool:
         field_name = _POOL_FIELDS[color]
         setattr(self, field_name, getattr(self, field_name) + amount)
 
-    def can_pay(self, cost: ManaCost) -> bool:
-        """Whether this pool can satisfy all colored and generic requirements."""
+    def _payment_plan(
+        self,
+        cost: ManaCost,
+        substitutions: tuple[tuple[Color, Color], ...] = (),
+    ) -> dict[Color, int] | None:
+        """Return mana spent by source color, including allowed substitutions."""
 
-        colored_requirements = (
-            (Color.WHITE, cost.white),
-            (Color.BLUE, cost.blue),
-            (Color.BLACK, cost.black),
-            (Color.RED, cost.red),
-            (Color.GREEN, cost.green),
-        )
-        if any(self.amount(color) < required for color, required in colored_requirements):
-            return False
-        return self.total >= cost.mana_value
-
-    def pay(self, cost: ManaCost) -> None:
-        """Pay a cost atomically, using colorless mana for generic mana first."""
-
-        if not self.can_pay(cost):
-            raise ValueError(f"mana pool cannot pay {cost}")
-
-        for color, required in (
-            (Color.WHITE, cost.white),
-            (Color.BLUE, cost.blue),
-            (Color.BLACK, cost.black),
-            (Color.RED, cost.red),
-            (Color.GREEN, cost.green),
-        ):
-            field_name = _POOL_FIELDS[color]
-            setattr(self, field_name, getattr(self, field_name) - required)
-
+        available = {color: self.amount(color) for color in Color}
+        spent = {color: 0 for color in Color}
+        requirements = {
+            Color.WHITE: cost.white,
+            Color.BLUE: cost.blue,
+            Color.BLACK: cost.black,
+            Color.RED: cost.red,
+            Color.GREEN: cost.green,
+        }
+        for color, required in requirements.items():
+            exact = min(required, available[color])
+            available[color] -= exact
+            spent[color] += exact
+            requirements[color] -= exact
+        for paid_as, required in requirements.items():
+            for source, accepted_as in substitutions:
+                if accepted_as is not paid_as or not required:
+                    continue
+                substituted = min(required, available[source])
+                available[source] -= substituted
+                spent[source] += substituted
+                required -= substituted
+            if required:
+                return None
         remaining = cost.generic
         for color in (
             Color.COLORLESS,
@@ -216,12 +224,36 @@ class ManaPool:
             Color.RED,
             Color.GREEN,
         ):
-            field_name = _POOL_FIELDS[color]
-            spent = min(remaining, getattr(self, field_name))
-            setattr(self, field_name, getattr(self, field_name) - spent)
-            remaining -= spent
+            generic = min(remaining, available[color])
+            available[color] -= generic
+            spent[color] += generic
+            remaining -= generic
             if not remaining:
                 break
+        return None if remaining else spent
+
+    def can_pay(
+        self,
+        cost: ManaCost,
+        substitutions: tuple[tuple[Color, Color], ...] = (),
+    ) -> bool:
+        """Whether this pool can satisfy all colored and generic requirements."""
+
+        return self._payment_plan(cost, substitutions) is not None
+
+    def pay(
+        self,
+        cost: ManaCost,
+        substitutions: tuple[tuple[Color, Color], ...] = (),
+    ) -> None:
+        """Pay a cost atomically, using colorless mana for generic mana first."""
+
+        plan = self._payment_plan(cost, substitutions)
+        if plan is None:
+            raise ValueError(f"mana pool cannot pay {cost}")
+        for color, amount in plan.items():
+            field_name = _POOL_FIELDS[color]
+            setattr(self, field_name, getattr(self, field_name) - amount)
 
     def empty(self) -> int:
         """Remove and return the number of unspent mana."""

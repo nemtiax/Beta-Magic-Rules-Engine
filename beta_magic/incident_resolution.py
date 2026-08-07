@@ -18,6 +18,7 @@ from .damage import (
     DamagePacket,
     DamageRecipientKind,
     DamageResolutionStep,
+    PlayerDamageRecord,
 )
 from .destruction import DestructionResolutionStep
 from .events import DamageEvent
@@ -56,6 +57,122 @@ class DamageDestructionMixin:
 
     __slots__ = ()
 
+    def _validate_damage_window_spell(self, card: Card) -> PlayerState:
+        incident = self.pending_damage
+        if (
+            incident is None
+            or incident.step is not DamageResolutionStep.PREVENTION
+        ):
+            raise RuntimeError(
+                "this spell can only be cast during the prevention window"
+            )
+        caster = self._caster_for(card)
+        if (
+            self.priority_player_index is None
+            or caster is not self.players[self.priority_player_index]
+        ):
+            raise RuntimeError(
+                f"{self.players[self.priority_player_index].name} has priority"
+            )
+        if not self.can_pay_mana(caster, card.definition.mana_cost):
+            raise RuntimeError(f"not enough mana to cast {card.name}")
+        return caster
+
+    def cast_reverse_damage_in_prevention(
+        self, card: Card, source_key: str | None
+    ) -> int:
+        """Use Reverse Damage on prior and currently pending damage."""
+
+        caster = self._validate_damage_window_spell(card)
+        if source_key is None:
+            raise ValueError("Reverse Damage requires a damage source choice")
+        prior = sum(
+            amount
+            for _, amount in self._consume_player_damage(
+                caster.id, source_key=source_key
+            )
+        )
+        pending = 0
+        assert self.pending_damage is not None
+        for packet in self.pending_damage.packets:
+            if (
+                packet.recipient_kind is DamageRecipientKind.PLAYER
+                and packet.recipient_id == caster.id
+                and self._damage_source_key(packet.source_id, packet.source_name)
+                == source_key
+            ):
+                amount = packet.remaining
+                packet.prevented += amount
+                pending += amount
+        self.pay_mana(caster, card.definition.mana_cost)
+        self._move_card(card, Zone.GRAVEYARD)
+        caster.life += prior * 2 + pending
+        if caster.life > 0:
+            caster.has_lost = False
+        self.priority_player_index = (
+            self.players.index(caster) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
+        return prior + pending
+
+    def cast_simulacrum_in_prevention(self, card: Card, target: Card) -> int:
+        """Move prior and currently pending player damage onto a creature."""
+
+        caster = self._validate_damage_window_spell(card)
+        incident = self.pending_damage
+        assert incident is not None
+        consumed = self._consume_player_damage(caster.id)
+        caster.life += sum(amount for _, amount in consumed)
+        if caster.life > 0:
+            caster.has_lost = False
+        for record, amount in consumed:
+            incident.redirected_packets.append(
+                DamagePacket(
+                    amount=amount,
+                    recipient_kind=DamageRecipientKind.CREATURE,
+                    recipient_id=target.id,
+                    recipient_name=target.name,
+                    source_name=record.source_name,
+                    source_id=record.source_id,
+                    source_controller_id=record.source_controller_id,
+                    colors=record.colors,
+                    combat=record.combat,
+                )
+            )
+        transferred = sum(amount for _, amount in consumed)
+        for packet in incident.packets:
+            if (
+                packet.recipient_kind is not DamageRecipientKind.PLAYER
+                or packet.recipient_id != caster.id
+            ):
+                continue
+            amount = packet.remaining
+            if amount <= 0:
+                continue
+            packet.redirected += amount
+            transferred += amount
+            incident.redirected_packets.append(
+                DamagePacket(
+                    amount=amount,
+                    recipient_kind=DamageRecipientKind.CREATURE,
+                    recipient_id=target.id,
+                    recipient_name=target.name,
+                    source_name=packet.source_name,
+                    source_id=packet.source_id,
+                    source_controller_id=packet.source_controller_id,
+                    colors=packet.colors,
+                    combat=packet.combat,
+                    first_strike=packet.first_strike,
+                )
+            )
+        self.pay_mana(caster, card.definition.mana_cost)
+        self._move_card(card, Zone.GRAVEYARD)
+        self.priority_player_index = (
+            self.players.index(caster) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
+        return transferred
+
     def _validate_redirection_activation(
         self, player_id: str, card: Card, ability_index: int
     ) -> tuple[PlayerState, ActivatedRedirectDamageAbility]:
@@ -82,7 +199,7 @@ class DamageDestructionMixin:
         authorized_id = card.owner_id if ability.owner_activates else card.controller_id
         if not in_play or authorized_id != player_id:
             raise ValueError("that player cannot activate this redirection ability")
-        if not player.mana_pool.can_pay(ability.mana_cost):
+        if not self.can_pay_mana(player, ability.mana_cost):
             raise RuntimeError(f"not enough mana to activate {card.name}")
         if not self._legal_redirection_packets(card, player, ability):
             raise RuntimeError("there is no eligible damage to redirect")
@@ -155,7 +272,7 @@ class DamageDestructionMixin:
         ]
         assert isinstance(ability, ActivatedRedirectDamageAbility)
         player = self.player(player_id)
-        player.mana_pool.pay(ability.mana_cost)
+        self.pay_mana(player, ability.mana_cost)
         if amount is None:
             amount = packet.remaining
         if amount < 1 or amount > packet.remaining:
@@ -240,7 +357,7 @@ class DamageDestructionMixin:
             raise RuntimeError(
                 f"{card.name} did not begin the turn under its controller's control"
             )
-        if not player.mana_pool.can_pay(ability.mana_cost):
+        if not self.can_pay_mana(player, ability.mana_cost):
             raise RuntimeError(f"not enough mana to activate {card.name}")
         return player, ability
 
@@ -266,7 +383,7 @@ class DamageDestructionMixin:
             )
         if card.definition.prevention_amount < 1:
             raise ValueError(f"{card.name} has no damage-prevention mode")
-        if not caster.mana_pool.can_pay(card.definition.mana_cost):
+        if not self.can_pay_mana(caster, card.definition.mana_cost):
             raise RuntimeError(f"not enough mana to cast {card.name}")
         self.pending_prevention = PendingPrevention(
             card, caster.id, card.definition.prevention_amount
@@ -311,15 +428,15 @@ class DamageDestructionMixin:
         if not pending.paid:
             if pending.ability_index is None:
                 caster = self.player(pending.controller_id)
-                caster.mana_pool.pay(pending.source.definition.mana_cost)
+                self.pay_mana(caster, pending.source.definition.mana_cost)
                 self._move_card(pending.source, Zone.GRAVEYARD)
             else:
                 ability = self.activated_abilities(pending.source)[
                     pending.ability_index
                 ]
                 assert isinstance(ability, ActivatedPreventDamageAbility)
-                self.player(pending.controller_id).mana_pool.pay(
-                    ability.mana_cost
+                self.pay_mana(
+                    self.player(pending.controller_id), ability.mana_cost
                 )
                 if ability.tap_cost:
                     self._tap_permanent(pending.source)
@@ -438,6 +555,10 @@ class DamageDestructionMixin:
         )
         if in_damage_window and self.creature_toughness(affected_card) <= 0:
             raise RuntimeError("regeneration cannot save a creature with zero toughness")
+        if affected_card.id in self.disintegrated_this_turn:
+            raise RuntimeError(
+                f"{affected_card.name} cannot regenerate this turn"
+            )
         if (
             in_damage_window
             and affected_card.damage < self.creature_toughness(affected_card)
@@ -458,7 +579,7 @@ class DamageDestructionMixin:
                 raise RuntimeError(
                     f"{affected_card.name} cannot regenerate from this destruction"
                 )
-        if not player.mana_pool.can_pay(ability.mana_cost):
+        if not self.can_pay_mana(player, ability.mana_cost):
             raise RuntimeError(f"not enough mana to regenerate {card.name}")
         return player, ability, affected_card
 
@@ -519,6 +640,7 @@ class DamageDestructionMixin:
         source: str,
         *,
         source_card: Card | None = None,
+        source_id: UUID | None = None,
         source_controller_id: str | None = None,
         source_colors: frozenset[Color] | None = None,
         combat: bool = False,
@@ -544,7 +666,9 @@ class DamageDestructionMixin:
                 recipient_id=recipient.id,
                 recipient_name=recipient.name,
                 source_name=source_card.name if source_card is not None else source,
-                source_id=source_card.id if source_card is not None else None,
+                source_id=(
+                    source_card.id if source_card is not None else source_id
+                ),
                 source_controller_id=(
                     source_controller_id
                     if source_controller_id is not None
@@ -617,6 +741,7 @@ class DamageDestructionMixin:
                 isinstance(ability, ActivatedRegenerationAbility)
                 for ability in self.activated_abilities(card)
             )
+            and card.id not in self.disintegrated_this_turn
             for player in self.players
             for card in player.battlefield
         )
@@ -733,6 +858,20 @@ class DamageDestructionMixin:
             if packet.recipient_kind is DamageRecipientKind.PLAYER:
                 recipient = self.player(str(packet.recipient_id))
                 recipient.life -= amount
+                self.player_damage_history.append(
+                    PlayerDamageRecord(
+                        player_id=recipient.id,
+                        amount=amount,
+                        source_key=self._damage_source_key(
+                            packet.source_id, packet.source_name
+                        ),
+                        source_name=packet.source_name,
+                        source_id=packet.source_id,
+                        source_controller_id=packet.source_controller_id,
+                        colors=packet.colors,
+                        combat=packet.combat,
+                    )
+                )
                 self.events.append(
                     DamageEvent(
                         amount=amount,
@@ -782,6 +921,22 @@ class DamageDestructionMixin:
             if recipient is None:
                 continue
             recipient.damage += amount
+            source = next(
+                (
+                    card
+                    for player in self.players
+                    for card in player.battlefield
+                    if card.id == packet.source_id
+                ),
+                None,
+            )
+            if (
+                source is not None
+                and source.definition.grows_when_damaged_creature_dies
+            ):
+                self.vampire_damage_marks.setdefault(recipient.id, set()).add(
+                    source.id
+                )
             if recipient.definition.grows_after_surviving_damage:
                 incident.surviving_damage_triggers[recipient.id] = (
                     incident.surviving_damage_triggers.get(recipient.id, 0) + 1
@@ -830,6 +985,9 @@ class DamageDestructionMixin:
             or incident.step is not DestructionResolutionStep.WAITING
         ):
             return
+        for target in incident.targets:
+            if target.card_id in self.disintegrated_this_turn:
+                target.regeneration_allowed = False
         incident.step = DestructionResolutionStep.REGENERATION
         has_regenerable_target = any(
             target.regeneration_allowed for target in incident.targets

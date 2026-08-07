@@ -9,17 +9,22 @@ from ..abilities import (
 )
 from ..cards import CardDefinition
 from ..effects import (
+    BalanceEffect,
+    BlazeOfGloryEffect,
     ContinuousEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
     EffectScope,
+    ExileTargetsEffect,
     GainLifeEffect,
     MoveTargetsEffect,
     OptionalUpkeepPaymentEffect,
     RegenerateTargetsEffect,
+    ReverseDamageEffect,
     TemporaryPumpEffect,
     GlobalLandTypeConversion,
     UpkeepCostEffect,
+    UpkeepDamageEffect,
     UpkeepBenefit,
 )
 from ..mana import ManaCost
@@ -38,6 +43,65 @@ _WALL_IN_PLAY = TargetRequirement(
 )
 
 PURELACE = lace("Purelace", Color.WHITE)
+
+BENALISH_HERO = CardDefinition(
+    name="Benalish Hero",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{W}"),
+    rules_text="Bands.",
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Hero",),
+    power=1,
+    toughness=1,
+    abilities=frozenset({KeywordAbility.BANDING}),
+)
+
+BLAZE_OF_GLORY = CardDefinition(
+    name="Blaze of Glory",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{W}"),
+    rules_text=(
+        "Cast before blockers are chosen. Target untapped defending creature "
+        "must block every attacking creature it can legally block."
+    ),
+    colors=frozenset({Color.WHITE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        untapped_only=True,
+        defending_player_only=True,
+    ),
+    spell_effects=(BlazeOfGloryEffect(),),
+)
+
+MESA_PEGASUS = CardDefinition(
+    name="Mesa Pegasus",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{W}"),
+    rules_text="Flying; bands.",
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Pegasus",),
+    power=1,
+    toughness=1,
+    abilities=frozenset({KeywordAbility.FLYING, KeywordAbility.BANDING}),
+)
+
+KARMA = CardDefinition(
+    name="Karma",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{2}{W}{W}"),
+    rules_text=(
+        "For each Swamp in play, Karma deals 1 damage to that Swamp's "
+        "owner during that player's upkeep."
+    ),
+    colors=frozenset({Color.WHITE}),
+    upkeep_effects=(
+        UpkeepDamageEffect(
+            1,
+            counted_active_player_owned_land_subtype="Swamp",
+        ),
+    ),
+)
 
 FARMSTEAD = CardDefinition(
     name="Farmstead",
@@ -475,6 +539,18 @@ RESURRECTION = CardDefinition(
     ),
 )
 
+BALANCE = CardDefinition(
+    name="Balance",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{1}{W}"),
+    rules_text=(
+        "Equalize lands in play, cards in hand, and creatures in play. "
+        "Players choose the cards they lose; creatures cannot regenerate."
+    ),
+    colors=frozenset({Color.WHITE}),
+    spell_effects=(BalanceEffect(),),
+)
+
 ARMAGEDDON = CardDefinition(
     name="Armageddon",
     card_types=frozenset({CardType.SORCERY}),
@@ -498,12 +574,42 @@ WRATH_OF_GOD = CardDefinition(
     ),
 )
 
+SWORDS_TO_PLOWSHARES = CardDefinition(
+    name="Swords to Plowshares",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{W}"),
+    rules_text=(
+        "Remove target creature from the game. Its controller gains life "
+        "equal to its power."
+    ),
+    colors=frozenset({Color.WHITE}),
+    target_requirement=_CREATURE_IN_PLAY,
+    spell_effects=(
+        ExileTargetsEffect(controller_gains_life_equal_to_power=True),
+    ),
+)
+
+REVERSE_DAMAGE = CardDefinition(
+    name="Reverse Damage",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{1}{W}{W}"),
+    rules_text=(
+        "All damage you have taken from one chosen source this turn is "
+        "added to your life total instead of subtracted from it."
+    ),
+    colors=frozenset({Color.WHITE}),
+    spell_effects=(ReverseDamageEffect(),),
+)
+
 WHITE_CARDS = tuple(
     sorted(
         (
             ANIMATE_WALL,
+            BALANCE,
             ARMAGEDDON,
+            BENALISH_HERO,
             BLACK_WARD,
+            BLAZE_OF_GLORY,
             BLESSING,
             BLUE_WARD,
             CASTLE,
@@ -517,17 +623,21 @@ WHITE_CARDS = tuple(
             HEALING_SALVE,
             HOLY_ARMOR,
             HOLY_STRENGTH,
+            KARMA,
             LANCE,
+            MESA_PEGASUS,
             NORTHERN_PALADIN,
             PEARLED_UNICORN,
             PERSONAL_INCARNATION,
             PURELACE,
             RED_WARD,
             RESURRECTION,
+            REVERSE_DAMAGE,
             RIGHTEOUSNESS,
             SAMITE_HEALER,
             SAVANNAH_LIONS,
             SERRA_ANGEL,
+            SWORDS_TO_PLOWSHARES,
             WALL_OF_SWORDS,
             VETERAN_BODYGUARD,
             WHITE_KNIGHT,

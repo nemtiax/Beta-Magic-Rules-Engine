@@ -22,7 +22,9 @@ EXPECTED_NAMES = {
     "Ironroot Treefolk",
     "Llanowar Elves",
     "Lifelace",
+    "Lifeforce",
     "Living Lands",
+    "Lure",
     "Ley Druid",
     "Regeneration",
     "Regrowth",
@@ -30,6 +32,7 @@ EXPECTED_NAMES = {
     "Shanodin Dryads",
     "Stream of Life",
     "Thicket Basilisk",
+    "Timber Wolves",
     "Tranquility",
     "Tsunami",
     "Wall of Brambles",
@@ -38,12 +41,13 @@ EXPECTED_NAMES = {
     "Wanderlust",
     "War Mammoth",
     "Web",
+    "Wild Growth",
 }
 
 
 class GreenDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_green_cards_are_migrated(self) -> None:
-        self.assertEqual(len(GREEN_CARDS), 32)
+        self.assertEqual(len(GREEN_CARDS), 36)
         self.assertEqual(
             {card.name for card in GREEN_CARDS}, EXPECTED_NAMES
         )

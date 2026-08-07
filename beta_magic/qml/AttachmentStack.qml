@@ -4,6 +4,7 @@ Item {
     id: stack
     required property var cardData
     property bool interactive: true
+    property bool selectionOnly: false
     property bool targetable: false
     signal selected(string cardId)
     signal activated(string cardId)
@@ -27,6 +28,7 @@ Item {
             tabMode: true
             cardData: modelData
             interactive: stack.interactive
+            selectionOnly: stack.selectionOnly
             targetable: stack.targetable && cardData.legalTarget
             onSelected: function(cardId) { stack.selected(cardId) }
             onActivated: function(cardId) { stack.activated(cardId) }
@@ -43,6 +45,7 @@ Item {
         z: stack.attachmentCount + 1
         cardData: stack.cardData
         interactive: stack.interactive
+        selectionOnly: stack.selectionOnly
         targetable: stack.targetable && cardData.legalTarget
         onSelected: function(cardId) { stack.selected(cardId) }
         onActivated: function(cardId) { stack.activated(cardId) }

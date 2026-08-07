@@ -1,6 +1,7 @@
 """Canonical definitions of currently supported green Beta cards."""
 
 from ..abilities import (
+    ActivatedCounterSpellAbility,
     ActivatedManaAbility,
     ActivatedRegenerationAbility,
     ActivatedInterruptUntapAbility,
@@ -10,6 +11,7 @@ from ..abilities import (
 from ..cards import CardDefinition
 from ..effects import (
     CombatDestructionEffect,
+    AttachedTapManaEffect,
     ContinuousEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
@@ -36,6 +38,46 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 LIFELACE = lace("Lifelace", Color.GREEN)
+
+LURE = CardDefinition(
+    name="Lure",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{G}{G}"),
+    rules_text=(
+        "Enchant creature. All creatures able to block enchanted creature "
+        "must do so. Multiple Lured attackers allow the defender to choose."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Creature",),
+    target_requirement=_CREATURE_IN_PLAY,
+    lures_blockers=True,
+)
+
+TIMBER_WOLVES = CardDefinition(
+    name="Timber Wolves",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text="Bands.",
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Wolves",),
+    power=1,
+    toughness=1,
+    abilities=frozenset({KeywordAbility.BANDING}),
+)
+
+LIFEFORCE = CardDefinition(
+    name="Lifeforce",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}{G}"),
+    rules_text=(
+        "Pay {G}{G}: Counter a black spell as it is being cast. This action "
+        "may be played as an interrupt and does not affect cards already in play."
+    ),
+    colors=frozenset({Color.GREEN}),
+    activated_abilities=(
+        ActivatedCounterSpellAbility(ManaCost.parse("{G}{G}"), Color.BLACK),
+    ),
+)
 
 LIVING_LANDS = CardDefinition(
     name="Living Lands",
@@ -80,6 +122,23 @@ GAEAS_LIEGE = CardDefinition(
             "Forest",
         ),
     ),
+)
+
+WILD_GROWTH = CardDefinition(
+    name="Wild Growth",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Enchant land. Whenever enchanted land becomes tapped for any "
+        "reason, its controller adds {G}."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Land",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+    ),
+    attached_tap_mana_effects=(AttachedTapManaEffect(Color.GREEN),),
 )
 
 ASPECT_OF_WOLF = CardDefinition(
@@ -480,13 +539,16 @@ GREEN_CARDS = tuple(
             LLANOWAR_ELVES,
             LEY_DRUID,
             LIFELACE,
+            LIFEFORCE,
             LIVING_LANDS,
+            LURE,
             REGENERATION,
             REGROWTH,
             SCRYB_SPRITES,
             SHANODIN_DRYADS,
             STREAM_OF_LIFE,
             THICKET_BASILISK,
+            TIMBER_WOLVES,
             TRANQUILITY,
             TSUNAMI,
             WALL_OF_BRAMBLES,
@@ -495,6 +557,7 @@ GREEN_CARDS = tuple(
             WANDERLUST,
             WAR_MAMMOTH,
             WEB,
+            WILD_GROWTH,
         ),
         key=lambda card: card.name,
     )

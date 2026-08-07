@@ -36,6 +36,7 @@ FIRST_STRIKE_CREATURES = _cards("Elvish Archers")
 PROTECTION_CREATURES = _cards("White Knight", "Black Knight")
 PREVENTION_CARDS = _cards("Healing Salve", "Samite Healer")
 TRAMPLE_CREATURES = _cards("War Mammoth")
+BANDING_CREATURES = _cards("Benalish Hero", "Mesa Pegasus", "Timber Wolves")
 GLOBAL_ENCHANTMENTS = _cards(
     "Crusade", "Bad Moon", "Orcish Oriflamme", "Castle", "Living Lands"
 )
@@ -43,6 +44,11 @@ GLOBAL_ENCHANTMENTS = _cards(
 LAND_ANIMATION_CARDS = _cards("Living Lands", "Kormus Bell")
 LAND_TAP_EVENT_ENCHANTMENTS = _cards("Lifetap", "Manabarbs")
 LAND_TYPE_CREATURES = _cards("Gaea's Liege")
+LAND_MANA_ENCHANTMENTS = _cards("Wild Growth", "Mana Flare")
+LAND_MANA_CARDS = LAND_MANA_ENCHANTMENTS + _cards("Gauntlet of Might")
+BALANCE_CARDS = _cards("Balance")
+CREATURE_SACRIFICE_UPKEEP = _cards("Lord of the Pit")
+UNTAP_RESTRICTION_CARDS = _cards("Meekstone", "Winter Orb", "Smoke", "Stasis")
 
 SIMPLE_ENCHANT_CREATURES = _cards(
     "Holy Strength", "Unholy Strength", "Weakness", "Aspect of Wolf"
@@ -69,6 +75,7 @@ ENCHANT_CREATURES = (
 )
 
 TARGETED_DAMAGE_SPELLS = _cards("Lightning Bolt", "Psionic Blast")
+RETROACTIVE_DAMAGE_SPELLS = _cards("Reverse Damage", "Simulacrum")
 COUNTERSPELLS = _cards("Counterspell", "Spell Blast")
 LACES = _cards(
     "Purelace", "Thoughtlace", "Deathlace", "Chaoslace", "Lifelace"
@@ -82,6 +89,7 @@ LAND_DESTRUCTION_SPELLS = _cards(
 PERMANENT_DESTRUCTION_SPELLS = _cards(
     "Disenchant", "Shatter", "Terror", "Tunnel", "Tranquility",
 ) + LAND_DESTRUCTION_SPELLS
+CREATURE_EXILE_SPELLS = _cards("Swords to Plowshares")
 GRAVEYARD_RECURSION_SPELLS = _cards(
     "Regrowth", "Raise Dead", "Resurrection"
 )
@@ -105,6 +113,6 @@ REGENERATION_CREATURES = _cards(
 REGENERATION_SPELLS = _cards("Death Ward")
 LIFE_GAIN_SPELLS = _cards("Stream of Life")
 VARIABLE_SPELLS = _cards(
-    "Braingeyser", "Howl from Beyond", "Earthquake", "Hurricane"
+    "Braingeyser", "Howl from Beyond", "Disintegrate", "Earthquake", "Hurricane"
 )
 BLUE_UTILITY_SPELLS = _cards("Ancestral Recall", "Jump", "Unsummon")

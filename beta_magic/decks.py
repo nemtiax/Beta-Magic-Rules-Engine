@@ -118,6 +118,22 @@ SHADOW_COATS_DECK = _cards(
     "Firebreathing", "Swamp",
 )
 
+BANDING_CHARGE_DECK = _cards(
+    "Plains", "Forest", "Grizzly Bears", "Mesa Pegasus", "Benalish Hero",
+    "Timber Wolves", "Savannah Lions", "Plains", "Forest", "Giant Growth",
+    "Grizzly Bears", "Mesa Pegasus", "Benalish Hero",
+    "Forest", "Plains", "Timber Wolves", "Benalish Hero", "Mesa Pegasus",
+    "Helm of Chatzuk", "Plains",
+)
+
+BANDING_DEFENSE_DECK = _cards(
+    "Plains", "Forest", "Grizzly Bears", "Scryb Sprites", "Hill Giant",
+    "Mesa Pegasus", "Timber Wolves", "Forest", "Plains", "Giant Spider",
+    "Grizzly Bears", "Benalish Hero", "Mesa Pegasus",
+    "Forest", "Plains", "Grizzly Bears", "Mesa Pegasus", "Timber Wolves",
+    "Helm of Chatzuk", "Forest",
+)
+
 
 def _make_game(
     first_id: str,
@@ -211,6 +227,16 @@ def make_aura_test_game() -> GameState:
     )
 
 
+def make_banding_test_game() -> GameState:
+    """Create compact decks for attacking and defensive Banding tests."""
+
+    return _make_game(
+        "banding-charge", "Banding Charge (W/G)", BANDING_CHARGE_DECK,
+        "banding-defense", "Banding Defense (W/G)", BANDING_DEFENSE_DECK,
+        shuffle=False,
+    )
+
+
 __all__ = [
     "VERDANT_TIDES_DECK",
     "STONEFIRE_DECK",
@@ -224,6 +250,8 @@ __all__ = [
     "SPECTRUM_ASSAULT_DECK",
     "IVORY_LAYERS_DECK",
     "SHADOW_COATS_DECK",
+    "BANDING_CHARGE_DECK",
+    "BANDING_DEFENSE_DECK",
     "make_demo_game",
     "make_test_game",
     "make_enchantment_test_game",
@@ -231,4 +259,5 @@ __all__ = [
     "make_x_test_game",
     "make_protection_test_game",
     "make_aura_test_game",
+    "make_banding_test_game",
 ]

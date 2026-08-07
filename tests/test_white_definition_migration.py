@@ -6,9 +6,12 @@ from beta_magic.types import Color
 
 
 EXPECTED_NAMES = {
+    "Balance",
+    "Benalish Hero",
     "Animate Wall",
     "Armageddon",
     "Black Ward",
+    "Blaze of Glory",
     "Blessing",
     "Blue Ward",
     "Castle",
@@ -26,17 +29,21 @@ EXPECTED_NAMES = {
     "Healing Salve",
     "Holy Armor",
     "Holy Strength",
+    "Karma",
     "Lance",
+    "Mesa Pegasus",
     "Northern Paladin",
     "Pearled Unicorn",
     "Personal Incarnation",
     "Purelace",
     "Red Ward",
     "Resurrection",
+    "Reverse Damage",
     "Righteousness",
     "Samite Healer",
     "Savannah Lions",
     "Serra Angel",
+    "Swords to Plowshares",
     "Wall of Swords",
     "Veteran Bodyguard",
     "White Knight",
@@ -47,7 +54,7 @@ EXPECTED_NAMES = {
 
 class WhiteDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_white_cards_are_migrated(self) -> None:
-        self.assertEqual(len(WHITE_CARDS), 36)
+        self.assertEqual(len(WHITE_CARDS), 43)
         self.assertEqual(
             {card.name for card in WHITE_CARDS}, EXPECTED_NAMES
         )

@@ -38,6 +38,7 @@ class KeywordAbility(str, Enum):
     FLYING = "Flying"
     FIRST_STRIKE = "First strike"
     TRAMPLE = "Trample"
+    BANDING = "Banding"
     FORESTWALK = "Forestwalk"
     ISLANDWALK = "Islandwalk"
     MOUNTAINWALK = "Mountainwalk"
@@ -106,6 +107,8 @@ class CombatStep(str, Enum):
     """Declarations and response windows in the clarified Beta attack."""
 
     ATTACK_RESPONSE = "fast_effects_before_attackers"
+    DECLARE_ATTACKERS = "declare_attackers"
     ATTACKER_RESPONSE = "fast_effects_before_blockers"
+    DECLARE_BLOCKERS = "declare_blockers"
     BLOCKER_RESPONSE = "fast_effects_before_damage"
     DAMAGE = "damage"

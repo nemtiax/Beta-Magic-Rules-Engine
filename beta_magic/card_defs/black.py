@@ -1,7 +1,9 @@
 """Canonical definitions of currently supported black Beta cards."""
 
 from ..abilities import (
+    ActivatedCounterSpellAbility,
     ActivatedDestroyAbility,
+    ActivatedGlobalDamageAbility,
     ActivatedAttackRequirementAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
@@ -15,11 +17,15 @@ from ..effects import (
     DestroyTargetsEffect,
     EffectScope,
     MoveTargetsEffect,
+    RetroactiveDamageTransferEffect,
     OptionalUpkeepPaymentEffect,
     TemporaryPumpEffect,
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
+    UpkeepCostEffect,
+    UpkeepFailure,
     UpkeepBenefit,
+    UpkeepCreatureSacrificeEffect,
     VariableCreatureStats,
     VariableStatKind,
     DiscardCardsEffect,
@@ -35,6 +41,66 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 DEATHLACE = lace("Deathlace", Color.BLACK)
+
+DEATHGRIP = CardDefinition(
+    name="Deathgrip",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{B}{B}"),
+    rules_text=(
+        "Pay {B}{B}: Counter a green spell as it is being cast. This action "
+        "may be played as an interrupt and does not affect cards already in play."
+    ),
+    colors=frozenset({Color.BLACK}),
+    activated_abilities=(
+        ActivatedCounterSpellAbility(ManaCost.parse("{B}{B}"), Color.GREEN),
+    ),
+)
+
+DEMONIC_HORDES = CardDefinition(
+    name="Demonic Hordes",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{B}{B}{B}"),
+    rules_text=(
+        "{T}: Destroy target land. Pay {B}{B}{B} during upkeep or tap "
+        "Demonic Hordes and lose a land chosen by an opponent. Its tap "
+        "ability cannot be used until its upkeep is paid."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Demon",),
+    power=5,
+    toughness=5,
+    activated_abilities=(
+        ActivatedDestroyAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.LAND}),
+            )
+        ),
+    ),
+    upkeep_effects=(
+        UpkeepCostEffect(
+            ManaCost.parse("{B}{B}{B}"),
+            failure=UpkeepFailure.TAP_SOURCE_AND_OPPONENT_CHOOSES_LAND,
+        ),
+    ),
+    tap_abilities_require_paid_upkeep=True,
+)
+
+LORD_OF_THE_PIT = CardDefinition(
+    name="Lord of the Pit",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{4}{B}{B}{B}"),
+    rules_text=(
+        "Flying, trample. During upkeep, sacrifice another eligible creature "
+        "if possible; otherwise Lord of the Pit deals 7 damage to you."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Demon",),
+    abilities=frozenset({KeywordAbility.FLYING, KeywordAbility.TRAMPLE}),
+    power=7,
+    toughness=7,
+    upkeep_effects=(UpkeepCreatureSacrificeEffect(7),),
+)
 
 PARALYZE = CardDefinition(
     name="Paralyze",
@@ -59,6 +125,22 @@ PARALYZE = CardDefinition(
         ),
     ),
     taps_attached_on_entry=True,
+)
+
+PESTILENCE = CardDefinition(
+    name="Pestilence",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{2}{B}{B}"),
+    rules_text=(
+        "{B}: Pestilence deals 1 damage to each creature and player. "
+        "You may pay multiple {B} as one damage effect. Destroy Pestilence "
+        "at end of turn if no creatures are in play."
+    ),
+    colors=frozenset({Color.BLACK}),
+    activated_abilities=(
+        ActivatedGlobalDamageAbility(ManaCost.parse("{B}")),
+    ),
+    destroy_at_end_of_turn_if_no_creatures=True,
 )
 _LAND_IN_PLAY = TargetRequirement(
     zone=Zone.BATTLEFIELD,
@@ -411,6 +493,39 @@ HYPNOTIC_SPECTER = CardDefinition(
     combat_player_damage_random_discard=1,
 )
 
+SENGIR_VAMPIRE = CardDefinition(
+    name="Sengir Vampire",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{B}{B}"),
+    rules_text=(
+        "Flying. Whenever a creature damaged by Sengir Vampire this turn "
+        "dies without regenerating, put a +1/+1 counter on Sengir Vampire."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Vampire",),
+    power=4,
+    toughness=4,
+    abilities=frozenset({KeywordAbility.FLYING}),
+    grows_when_damaged_creature_dies=True,
+)
+
+SIMULACRUM = CardDefinition(
+    name="Simulacrum",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{1}{B}"),
+    rules_text=(
+        "Move all damage dealt to you so far this turn onto target creature "
+        "you control. That creature may regenerate."
+    ),
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        controller_only=True,
+    ),
+    spell_effects=(RetroactiveDamageTransferEffect(),),
+)
+
 MIND_TWIST = CardDefinition(
     name="Mind Twist",
     card_types=frozenset({CardType.SORCERY}),
@@ -469,20 +584,26 @@ BLACK_CARDS = tuple(
             CURSED_LAND,
             DARK_RITUAL,
             DEATHLACE,
+            DEATHGRIP,
+            DEMONIC_HORDES,
             DRUDGE_SKELETONS,
             EVIL_PRESENCE,
             FEAR,
             FROZEN_SHADE,
             HOWL_FROM_BEYOND,
             HYPNOTIC_SPECTER,
+            LORD_OF_THE_PIT,
             MIND_TWIST,
             NETTLING_IMP,
             NIGHTMARE,
             PARALYZE,
+            PESTILENCE,
             PLAGUE_RATS,
             RAISE_DEAD,
             ROYAL_ASSASSIN,
             SCATHE_ZOMBIES,
+            SENGIR_VAMPIRE,
+            SIMULACRUM,
             SINKHOLE,
             TERROR,
             UNHOLY_STRENGTH,

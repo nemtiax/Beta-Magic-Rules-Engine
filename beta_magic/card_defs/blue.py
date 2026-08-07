@@ -24,9 +24,12 @@ from ..effects import (
     ShuffleHandAndGraveyardEffect,
     SirensCallEffect,
     TemporaryPumpEffect,
+    TapLandsAndEmptyManaPoolEffect,
     UpkeepCostEffect,
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
+    UntapRestrictionEffect,
+    UpkeepFailure,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
@@ -39,6 +42,21 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 THOUGHTLACE = lace("Thoughtlace", Color.BLUE)
+
+STASIS = CardDefinition(
+    name="Stasis",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text=(
+        "Players skip their untap phases. During your upkeep, pay {U} or "
+        "Stasis is destroyed."
+    ),
+    colors=frozenset({Color.BLUE}),
+    untap_effects=(UntapRestrictionEffect(skip_untap=True),),
+    upkeep_effects=(
+        UpkeepCostEffect(ManaCost.parse("{U}"), UpkeepFailure.DESTROY_SOURCE),
+    ),
+)
 
 LIFETAP = CardDefinition(
     name="Lifetap",
@@ -463,6 +481,19 @@ TWIDDLE = CardDefinition(
     casting_modes=("Tap", "Untap"),
 )
 
+MANA_SHORT = CardDefinition(
+    name="Mana Short",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{2}{U}"),
+    rules_text=(
+        "Tap all lands controlled by target opponent, then empty that "
+        "player's mana pool without mana burn."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(players=True, opponent_only=True),
+    spell_effects=(TapLandsAndEmptyManaPoolEffect(),),
+)
+
 PSIONIC_BLAST = CardDefinition(
     name="Psionic Blast",
     card_types=frozenset({CardType.INSTANT}),
@@ -541,6 +572,7 @@ BLUE_CARDS = tuple(
             LIFETAP,
             LORD_OF_ATLANTIS,
             MAHAMOTI_DJINN,
+            MANA_SHORT,
             MERFOLK_OF_THE_PEARL_TRIDENT,
             PHANTASMAL_FORCES,
             PHANTASMAL_TERRAIN,
@@ -552,6 +584,7 @@ BLUE_CARDS = tuple(
             SEA_SERPENT,
             SIRENS_CALL,
             SPELL_BLAST,
+            STASIS,
             STEAL_ARTIFACT,
             THOUGHTLACE,
             TIME_WALK,

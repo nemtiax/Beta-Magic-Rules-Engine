@@ -165,12 +165,19 @@ class DemoGameTests(unittest.TestCase):
         attacker.zone = Zone.BATTLEFIELD
         game.players[0].battlefield.append(attacker)
         game.begin_combat()
+        self.assertFalse(view_model.state["canDeclareAttackers"])
+        self.assertTrue(view_model.state["priorityRequired"])
+        game.pass_priority(game.players[1].id)
+        game.pass_priority(game.players[0].id)
         self.assertTrue(view_model.state["canDeclareAttackers"])
         self.assertFalse(view_model.state["canDeclareBlockers"])
 
         game.declare_attackers([attacker])
         view_model.switchPerspective()
         self.assertFalse(view_model.state["canDeclareAttackers"])
+        self.assertFalse(view_model.state["canDeclareBlockers"])
+        game.pass_priority(game.players[0].id)
+        game.pass_priority(game.players[1].id)
         self.assertTrue(view_model.state["canDeclareBlockers"])
 
     def test_auto_pass_applies_to_later_priority_windows_in_current_turn(self) -> None:
@@ -312,6 +319,84 @@ class DemoGameTests(unittest.TestCase):
         self.assertEqual(len(state["perspective"]["hand"]), 7)
         self.assertEqual(state["opponent"]["hand"], [])
         self.assertEqual(state["opponent"]["handCount"], 7)
+
+    def test_switching_perspective_preserves_each_players_message(self) -> None:
+        view_model = GameViewModel(make_demo_game())
+        first = view_model.game.players[0]
+        second = view_model.game.players[1]
+        view_model._messages.tell(first.id, "First player's prompt.")
+        view_model._messages.tell(second.id, "Second player's prompt.")
+
+        self.assertEqual(view_model.state["message"], "First player's prompt.")
+        view_model.switchPerspective()
+        self.assertEqual(view_model.state["message"], "Second player's prompt.")
+        view_model.switchPerspective()
+        self.assertEqual(view_model.state["message"], "First player's prompt.")
+
+    def test_ordinary_messages_are_published_to_both_players(self) -> None:
+        view_model = GameViewModel(make_demo_game())
+        view_model._message = "Shared action result."
+
+        self.assertEqual(view_model.state["message"], "Shared action result.")
+        view_model.switchPerspective()
+        self.assertEqual(view_model.state["message"], "Shared action result.")
+
+    def test_local_action_error_does_not_replace_opponents_message(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        active = view_model.game.players[0]
+        opponent = view_model.game.players[1]
+        land = next(
+            card
+            for card in active.hand
+            if CardType.LAND in card.definition.card_types
+        )
+        view_model._messages.tell(opponent.id, "Opponent's pending instruction.")
+
+        view_model.activateCard(str(land.id))
+
+        self.assertIn("land", view_model.state["message"].lower())
+        view_model.switchPerspective()
+        self.assertEqual(
+            view_model.state["message"], "Opponent's pending instruction."
+        )
+
+    def test_phase_advance_proposal_has_messages_for_both_players(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        active = view_model.game.active_player
+        opponent = view_model.game.players[1]
+        view_model.advance()  # Untap to upkeep is immediate.
+        view_model.advance()  # Propose ending upkeep.
+
+        self.assertEqual(
+            view_model.state["message"],
+            f"Proposed ending Upkeep; waiting for {opponent.name} to pass.",
+        )
+        view_model.switchPerspective()
+        self.assertEqual(
+            view_model.state["message"],
+            f"{active.name} proposed ending Upkeep. Last chance to play fast "
+            "effects, or pass priority.",
+        )
+
+    def test_priority_pass_has_waiting_and_actionable_messages(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        active = view_model.game.active_player
+        opponent = view_model.game.players[1]
+        while view_model.game.current_phase is not TurnPhase.MAIN:
+            view_model.game.advance_phase()
+        view_model.beginCombat()
+        view_model.switchPerspective()
+        view_model.passPriority()
+
+        self.assertEqual(
+            view_model.state["message"],
+            f"You passed priority; waiting for {active.name}.",
+        )
+        view_model.switchPerspective()
+        self.assertEqual(
+            view_model.state["message"],
+            f"{opponent.name} passed priority. You may act, or pass.",
+        )
 
     def test_card_view_data_includes_compact_mana_cost(self) -> None:
         view_model = GameViewModel(make_demo_game())

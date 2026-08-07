@@ -5,6 +5,7 @@ Flickable {
     id: flow
     required property var cards
     property bool interactive: true
+    property bool selectionOnly: false
     property bool targetable: false
     signal selected(string cardId)
     signal activated(string cardId)
@@ -39,6 +40,7 @@ Flickable {
                 required property var modelData
                 cardData: modelData
                 interactive: flow.interactive
+                selectionOnly: flow.selectionOnly
                 targetable: flow.targetable && cardData.legalTarget
                 onSelected: function(cardId) { flow.selected(cardId) }
                 onActivated: function(cardId) { flow.activated(cardId) }

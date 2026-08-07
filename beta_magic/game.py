@@ -7,28 +7,9 @@ from random import Random
 from typing import Iterable
 from uuid import UUID
 
+from .ability_activation import AbilityActivationMixin
 from .abilities import (
-    ActivatedAbility,
-    ActivatedAnimationAbility,
-    ActivatedDamageAbility,
-    ActivatedDrawAbility,
-    ActivatedDiscardAbility,
-    ActivatedAttackRequirementAbility,
-    ActivatedLandTypeAbility,
-    ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
-    ActivatedDestroyAbility,
-    ActivatedDestroyAllAbility,
-    ActivatedManaAbility,
-    ActivatedPumpAbility,
-    ActivatedPreventDamageAbility,
-    ActivatedRedirectDamageAbility,
-    ActivatedRegenerationAbility,
-    ActivatedTapAbility,
-    ActivatedTemporaryAbility,
-    ActivatedUntapAbility,
-    ActivatedInterruptUntapAbility,
-    ActivatedUnblockableAbility,
 )
 from .cards import Card, CardDefinition
 from .casting import (
@@ -45,51 +26,43 @@ from .incident_resolution import (
     PendingPrevention,
     PendingRedirection,
 )
-from .turn_flow import PendingTimedEvent, PendingTurnChoice, TurnFlowMixin
+from .turn_flow import (
+    PendingTimedEvent,
+    PendingTurnChoice,
+    PendingUntapChoice,
+    PendingUpkeepLandLossChoice,
+    TurnFlowMixin,
+)
 from .effects import (
-    AddManaEffect,
     ContinuousEffect,
-    CounterTargetSpellEffect,
-    ChangeTargetColorEffect,
-    DamageEffect,
-    DestroyAllEffect,
-    DestroyTargetsEffect,
-    EffectRecipient,
-    DrawCardsEffect,
-    DiscardCardsEffect,
-    ShuffleHandAndGraveyardEffect,
-    SirensCallEffect,
-    ExtraTurnEffect,
-    GainLifeEffect,
-    GlobalDamageEffect,
     AttachedEventDamageEffect,
     LandEventDamageEffect,
-    TemporaryPumpEffect,
-    RegenerateTargetsEffect,
-    MoveTargetsEffect,
-    SetTappedEffect,
 )
 from .events import (
     CardMovedEvent,
     GameEvent,
-    SpellCastEvent,
 )
 from .damage import (
     DamageIncident,
     DamageIncidentKind,
     DamageRecipientKind,
+    PlayerDamageRecord,
 )
 from .destruction import (
     DestructionIncident,
-    DestructionTarget,
 )
-from .mana import ManaPool
+from .priority_resolution import (
+    BalanceChoice,
+    PendingBalance,
+    PendingDiscardChoice,
+    PriorityBatchResolutionMixin,
+)
+from .mana import ManaCost, ManaPool
 from .rule_events import RuleEventKind, RuleEventOpportunity
 from .types import (
     CardType,
-    CombatStep,
+    Color,
     GameStatus,
-    KeywordAbility,
     TurnPhase,
     Zone,
 )
@@ -190,15 +163,10 @@ class PlayerState:
 
 
 @dataclass(slots=True)
-class PendingDiscardChoice:
-    player_id: str
-    amount: int
-    source_name: str
-
-
-@dataclass(slots=True)
 class GameState(
     TargetingCastingMixin,
+    AbilityActivationMixin,
+    PriorityBatchResolutionMixin,
     CombatMixin,
     DamageDestructionMixin,
     TurnFlowMixin,
@@ -218,12 +186,15 @@ class GameState(
     attacks_this_turn: int = 0
     attack_requirements: dict[UUID, AttackRequirement] = field(default_factory=dict)
     attacked_this_turn: set[UUID] = field(default_factory=set)
+    vampire_damage_marks: dict[UUID, set[UUID]] = field(default_factory=dict)
+    player_damage_history: list[PlayerDamageRecord] = field(default_factory=list)
     combat: CombatState | None = None
     pending_cast: PendingCast | None = None
     pending_activation: PendingActivation | None = None
     pending_prevention: PendingPrevention | None = None
     pending_redirection: PendingRedirection | None = None
     batch_abilities: list[AbilityOnStack] = field(default_factory=list)
+    interrupt_abilities: list[AbilityOnStack] = field(default_factory=list)
     events: list[GameEvent] = field(default_factory=list)
     temporary_creature_effects: dict[UUID, list[ContinuousEffect]] = field(
         default_factory=dict
@@ -233,6 +204,7 @@ class GameState(
     )
     ability_activations_this_turn: dict[UUID, int] = field(default_factory=dict)
     destroy_at_end_of_turn: set[UUID] = field(default_factory=set)
+    disintegrated_this_turn: set[UUID] = field(default_factory=set)
     timed_events: list[PendingTimedEvent] = field(default_factory=list)
     pending_damage: DamageIncident | None = None
     resolved_damage_incidents: list[DamageIncident] = field(default_factory=list)
@@ -251,12 +223,16 @@ class GameState(
     upcoming_turns: list[str] = field(default_factory=list)
     next_natural_player_index: int = 1
     pending_turn_choice: PendingTurnChoice | None = None
+    pending_untap_choice: PendingUntapChoice | None = None
+    pending_upkeep_land_loss: PendingUpkeepLandLossChoice | None = None
     pending_phase_advance: TurnPhase | None = None
     vaults_untapping_next_turn: dict[str, set[UUID]] = field(
         default_factory=dict
     )
     upkeep_payments_this_turn: set[UUID] = field(default_factory=set)
+    unpaid_tap_upkeep_ids: set[UUID] = field(default_factory=set)
     pending_discard_choices: list[PendingDiscardChoice] = field(default_factory=list)
+    pending_balance: PendingBalance | None = None
     random: Random = field(default_factory=Random, repr=False)
 
     def __post_init__(self) -> None:
@@ -283,6 +259,75 @@ class GameState(
                 return player
         raise KeyError(player_id)
 
+    def _mana_payment_substitutions(
+        self, player: PlayerState
+    ) -> tuple[tuple[Color, Color], ...]:
+        return tuple(
+            (effect.source_color, effect.paid_as_color)
+            for permanent in player.battlefield
+            if self.continuous_permanent_is_active(permanent)
+            for effect in permanent.definition.mana_payment_effects
+        )
+
+    def can_pay_mana(self, player: PlayerState, cost: ManaCost) -> bool:
+        """Whether a player can pay a cost under current continuous effects."""
+
+        return player.mana_pool.can_pay(
+            cost, self._mana_payment_substitutions(player)
+        )
+
+    def pay_mana(self, player: PlayerState, cost: ManaCost) -> None:
+        """Pay a cost using all currently active mana substitutions."""
+
+        player.mana_pool.pay(cost, self._mana_payment_substitutions(player))
+
+    @staticmethod
+    def _damage_source_key(source_id: UUID | None, source_name: str) -> str:
+        return str(source_id) if source_id is not None else f"name:{source_name}"
+
+    def damage_source_choices(self, player_id: str) -> list[tuple[str, str, int]]:
+        """Return the still-reversible damage sources for one player."""
+
+        self.player(player_id)
+        grouped: dict[str, tuple[str, int]] = {}
+        for record in self.player_damage_history:
+            if record.player_id != player_id:
+                continue
+            name, amount = grouped.get(record.source_key, (record.source_name, 0))
+            grouped[record.source_key] = (name, amount + record.remaining)
+        if self.pending_damage is not None:
+            for packet in self.pending_damage.packets:
+                if (
+                    packet.recipient_kind is not DamageRecipientKind.PLAYER
+                    or packet.recipient_id != player_id
+                    or packet.remaining <= 0
+                ):
+                    continue
+                key = self._damage_source_key(packet.source_id, packet.source_name)
+                name, amount = grouped.get(key, (packet.source_name, 0))
+                grouped[key] = (name, amount + packet.remaining)
+        return [
+            (key, name, amount)
+            for key, (name, amount) in grouped.items()
+        ]
+
+    def _consume_player_damage(
+        self, player_id: str, *, source_key: str | None = None
+    ) -> list[tuple[PlayerDamageRecord, int]]:
+        consumed: list[tuple[PlayerDamageRecord, int]] = []
+        for record in self.player_damage_history:
+            if (
+                record.player_id != player_id
+                or record.remaining <= 0
+                or source_key is not None
+                and record.source_key != source_key
+            ):
+                continue
+            amount = record.remaining
+            record.reversed_amount += amount
+            consumed.append((record, amount))
+        return consumed
+
     def _require_no_pending_action(
         self, *, allow_stack: bool = False, allow_damage: bool = False
     ) -> None:
@@ -304,10 +349,29 @@ class GameState(
             )
         if self.pending_turn_choice is not None:
             raise RuntimeError("choose whether to skip the upcoming turn first")
+        if self.pending_untap_choice is not None:
+            choice = self.pending_untap_choice
+            raise RuntimeError(
+                f"{self.player(choice.player_id).name} must choose permanents "
+                f"to untap under the {choice.card_type.value} limit first"
+            )
+        if self.pending_upkeep_land_loss is not None:
+            choice = self.pending_upkeep_land_loss
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must choose a land "
+                f"for {choice.source_name} first"
+            )
         if self.pending_discard_choices:
             choice = self.pending_discard_choices[0]
             raise RuntimeError(
                 f"{self.player(choice.player_id).name} must choose cards to discard first"
+            )
+        if self.pending_balance is not None:
+            choice = self.pending_balance.current_choice
+            assert choice is not None
+            raise RuntimeError(
+                f"{self.player(choice.player_id).name} must choose "
+                f"{choice.amount} {choice.category} card(s) for Balance first"
             )
         if self.pending_damage is not None and not allow_damage:
             raise RuntimeError("finish resolving the pending damage incident first")
@@ -355,6 +419,12 @@ class GameState(
         source_zone = card.zone
         was_land = CardType.LAND in self.card_types(card)
         was_creature = CardType.CREATURE in self.card_types(card)
+        if (
+            source_zone is Zone.BATTLEFIELD
+            and destination is Zone.GRAVEYARD
+            and card.id in self.disintegrated_this_turn
+        ):
+            destination = Zone.EXILE
         prior_controller_id = card.controller_id or card.owner_id
         prior_toughness = self.creature_toughness(card) if was_creature else 0
         creature_bonds = tuple(
@@ -438,6 +508,9 @@ class GameState(
             )
 
         if source_zone is Zone.BATTLEFIELD:
+            self.vampire_damage_marks.pop(card.id, None)
+            for vampire_ids in self.vampire_damage_marks.values():
+                vampire_ids.discard(card.id)
             for player in self.players:
                 for permanent in player.battlefield:
                     permanent.land_type_marks.pop(card.id, None)
@@ -445,6 +518,8 @@ class GameState(
             self.combat_creature_effects.pop(card.id, None)
             self.ability_activations_this_turn.pop(card.id, None)
             self.destroy_at_end_of_turn.discard(card.id)
+            self.disintegrated_this_turn.discard(card.id)
+            self.unpaid_tap_upkeep_ids.discard(card.id)
             attachments = [
                 attachment
                 for player in self.players
@@ -605,6 +680,20 @@ class GameState(
     ) -> None:
         """Expose a post-regeneration death event if Soul Net is in play."""
 
+        for vampire_id in self.vampire_damage_marks.get(creature.id, ()):
+            vampire = next(
+                (
+                    card
+                    for player in self.players
+                    for card in player.battlefield
+                    if card.id == vampire_id
+                    and card.definition.grows_when_damaged_creature_dies
+                ),
+                None,
+            )
+            if vampire is not None:
+                vampire.plus_one_counters += 1
+
         matching = any(
             isinstance(ability, ActivatedEventLifeGainAbility)
             and ability.creature_death
@@ -651,10 +740,13 @@ class GameState(
             return False
         permanent.tapped = True
         permanent_controller_id = permanent.controller_id or permanent.owner_id
+        permanent_controller = self.player(permanent_controller_id)
         for player in self.players:
             for source in player.battlefield:
                 if source.enchanted_card_id != permanent.id:
                     continue
+                for effect in source.definition.attached_tap_mana_effects:
+                    permanent_controller.mana_pool.add(effect.color, effect.amount)
                 for effect in source.definition.attached_event_damage_effects:
                     if not effect.when_tapped:
                         continue
@@ -678,6 +770,15 @@ class GameState(
                 for source in player.battlefield:
                     if not self.continuous_permanent_is_active(source):
                         continue
+                    for effect in source.definition.land_tap_mana_effects:
+                        if effect.land_subtype not in self.land_subtypes(permanent):
+                            continue
+                        recipient = self.player(
+                            permanent.owner_id
+                            if effect.owner_receives
+                            else permanent_controller_id
+                        )
+                        recipient.mana_pool.add(effect.color, effect.amount)
                     source_controller_id = source.controller_id or source.owner_id
                     for effect in source.definition.permanent_tapped_effects:
                         if (
@@ -814,6 +915,7 @@ class GameState(
                     self.player(event.affected_player_id),
                     event.damage,
                     event.source_name or "rules event",
+                    source_id=event.source_id,
                     source_controller_id=event.source_controller_id,
                     source_colors=event.damage_colors,
                 )
@@ -827,1197 +929,6 @@ class GameState(
             incident = self.deferred_damage_continuation
             self.deferred_damage_continuation = None
             self._continue_after_damage_incident(incident)
-
-    def activate_ability(
-        self, player_id: str, card: Card, ability_index: int
-    ) -> PendingActivation | None:
-        """Pay a permanent ability's costs and apply its effect."""
-
-        try:
-            selected_ability = self.activated_abilities(card)[ability_index]
-        except IndexError as error:
-            raise ValueError(f"{card.name} has no such activated ability") from error
-        if isinstance(selected_ability, ActivatedPreventDamageAbility):
-            player, ability = self._validate_prevention_activation(
-                player_id, card, ability_index
-            )
-            self.pending_prevention = PendingPrevention(
-                card,
-                player.id,
-                ability.amount,
-                ability_index=ability_index,
-                source_color=ability.source_color,
-                controller_only=ability.controller_only,
-            )
-            return None
-        if isinstance(selected_ability, ActivatedRedirectDamageAbility):
-            player, _ = self._validate_redirection_activation(
-                player_id, card, ability_index
-            )
-            self.pending_redirection = PendingRedirection(
-                card, player.id, ability_index
-            )
-            return None
-        if isinstance(selected_ability, ActivatedRegenerationAbility):
-            player, ability, affected_card = self._validate_regeneration_activation(
-                player_id, card, ability_index
-            )
-            player.mana_pool.pay(ability.mana_cost)
-            self._tap_permanent(affected_card)
-            affected_card.damage = 0
-            if self.pending_damage is not None:
-                self.pending_damage.regenerated_card_ids.add(affected_card.id)
-            else:
-                assert self.pending_destruction is not None
-                self.pending_destruction.regenerated_card_ids.add(affected_card.id)
-            if self.combat is not None:
-                self.combat.regenerated_card_ids.add(affected_card.id)
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-
-        player, ability = self._validate_ability_activation(
-            player_id, card, ability_index
-        )
-        if isinstance(
-            ability,
-            (
-                ActivatedDamageAbility,
-                ActivatedDestroyAbility,
-                ActivatedTapAbility,
-                ActivatedUnblockableAbility,
-                ActivatedTemporaryAbility,
-                ActivatedDiscardAbility,
-                ActivatedAttackRequirementAbility,
-                ActivatedLandTypeAbility,
-                ActivatedInterruptUntapAbility,
-            ),
-        ):
-            pending = PendingActivation(card, player.id, ability_index)
-            self.pending_activation = pending
-            if (
-                not self.legal_targets_for()
-                and not self.legal_player_targets_for()
-            ):
-                self.pending_activation = None
-                raise RuntimeError(f"there are no legal targets for {card.name}")
-            return pending
-        if isinstance(ability, ActivatedManaAbility):
-            if ability.tap_cost:
-                self._tap_permanent(card)
-            player.mana_pool.add(ability.color, ability.amount)
-            # Producing mana is an interrupt-speed action. It resolves
-            # immediately and does not surrender priority or close the
-            # current spell's interrupt window, but any earlier passes no
-            # longer count toward resolving that window.
-            self.consecutive_passes = 0
-            if ability.sacrifice_source:
-                # Black Lotus destroys itself as part of its own ability. The
-                # era's ruling makes that destruction non-regenerable.
-                self._move_card(card, Zone.GRAVEYARD)
-            self.check_state_based_actions()
-            return None
-        if isinstance(ability, ActivatedDrawAbility):
-            player.mana_pool.pay(ability.mana_cost)
-            if ability.tap_cost:
-                self._tap_permanent(card)
-            self.batch_abilities.append(
-                AbilityOnStack(
-                    card,
-                    card.name,
-                    player.id,
-                    ability,
-                    (),
-                )
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-        if isinstance(ability, ActivatedDestroyAllAbility):
-            player.mana_pool.pay(ability.mana_cost)
-            if ability.tap_cost:
-                self._tap_permanent(card)
-            self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, ())
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-        if isinstance(ability, ActivatedExtraTurnAbility):
-            if ability.tap_cost:
-                self._tap_permanent(card)
-            self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, ())
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-        if isinstance(ability, ActivatedUntapAbility):
-            player.mana_pool.pay(ability.mana_cost)
-            self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, (card,))
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-        if isinstance(ability, ActivatedEventLifeGainAbility):
-            opportunity = self._matching_event_opportunities(card, ability)[0]
-            player.mana_pool.pay(ability.mana_cost)
-            self.event_ability_uses.add((card.id, opportunity.id))
-            self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, ())
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-        if isinstance(ability, ActivatedAnimationAbility):
-            player.mana_pool.pay(ability.mana_cost)
-            self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, (card,))
-            )
-            self.ability_activations_this_turn[card.id] = (
-                self.ability_activations_this_turn.get(card.id, 0) + 1
-            )
-            self.interruptible_spell_id = None
-            self.priority_player_index = (
-                self.players.index(player) + 1
-            ) % len(self.players)
-            self.consecutive_passes = 0
-            return None
-
-        player.mana_pool.pay(ability.mana_cost)
-        affected_card = (
-            self._attached_creature(card)
-            if ability.affects_attached_creature
-            else card
-        )
-        self.batch_abilities.append(
-            AbilityOnStack(
-                card,
-                card.name,
-                player.id,
-                ability,
-                (affected_card,),
-            )
-        )
-        self.interruptible_spell_id = None
-        activations = self.ability_activations_this_turn.get(card.id, 0) + 1
-        self.ability_activations_this_turn[card.id] = activations
-        if (
-            ability.safe_activations_per_turn is not None
-            and activations > ability.safe_activations_per_turn
-        ):
-            self.destroy_at_end_of_turn.add(card.id)
-        self.priority_player_index = (
-            self.players.index(player) + 1
-        ) % len(self.players)
-        self.consecutive_passes = 0
-        return None
-
-    def _validate_ability_activation(
-        self, player_id: str, card: Card, ability_index: int
-    ) -> tuple[PlayerState, ActivatedAbility]:
-        """Return an ability and controller after validating all activation costs."""
-
-        self._require_no_pending_action(allow_stack=True, allow_damage=True)
-        if self.status is not GameStatus.IN_PROGRESS:
-            raise RuntimeError("mana can only be produced during a game")
-        if self.current_phase is TurnPhase.UNTAP:
-            raise RuntimeError("abilities cannot be activated during the Untap phase")
-        player = self.player(player_id)
-        if (
-            self.priority_player_index is not None
-            and player is not self.players[self.priority_player_index]
-        ):
-            raise RuntimeError(
-                f"{self.players[self.priority_player_index].name} has priority"
-            )
-        if card not in player.battlefield or card.zone is not Zone.BATTLEFIELD:
-            raise ValueError("the permanent must be on that player's battlefield")
-        if card.controller_id != player_id:
-            raise ValueError("a player can only activate a permanent they control")
-        if ability_index < 0:
-            raise ValueError(f"{card.name} has no such activated ability")
-        try:
-            ability = self.activated_abilities(card)[ability_index]
-        except IndexError as error:
-            raise ValueError(f"{card.name} has no such activated ability") from error
-        if not isinstance(
-            ability,
-            (
-                ActivatedManaAbility,
-                ActivatedAnimationAbility,
-                ActivatedPumpAbility,
-                ActivatedDamageAbility,
-                ActivatedDestroyAbility,
-                ActivatedDestroyAllAbility,
-                ActivatedTapAbility,
-                ActivatedUnblockableAbility,
-                ActivatedTemporaryAbility,
-                ActivatedDiscardAbility,
-                ActivatedAttackRequirementAbility,
-                ActivatedLandTypeAbility,
-                ActivatedDrawAbility,
-                ActivatedExtraTurnAbility,
-                ActivatedUntapAbility,
-                ActivatedInterruptUntapAbility,
-                ActivatedEventLifeGainAbility,
-                ActivatedPreventDamageAbility,
-                ActivatedRedirectDamageAbility,
-            ),
-        ):
-            raise ValueError("unsupported activated ability")
-        if (
-            (
-                self.pending_damage is not None
-                or self.pending_destruction is not None
-            )
-            and not isinstance(
-                ability,
-                (
-                    ActivatedManaAbility,
-                    ActivatedPreventDamageAbility,
-                    ActivatedRedirectDamageAbility,
-                ),
-            )
-        ):
-            raise RuntimeError(
-                "only mana, prevention, redirection, and regeneration abilities "
-                "can be used during damage resolution"
-            )
-        if isinstance(ability, ActivatedAnimationAbility):
-            if self.combat is None:
-                raise RuntimeError(
-                    f"{card.name} can only be animated during an attack"
-                )
-            if (
-                ability.once_per_turn
-                and self.ability_activations_this_turn.get(card.id, 0)
-            ):
-                raise RuntimeError(
-                    f"{card.name} has already been activated this turn"
-                )
-        if isinstance(ability, ActivatedAttackRequirementAbility) and (
-            player is self.active_player
-            or self.attacks_this_turn
-            or self.combat is not None
-        ):
-            raise RuntimeError(
-                f"{card.name} can only be activated during an opponent's turn before the attack"
-            )
-        if (
-            isinstance(ability, ActivatedPumpAbility)
-            and ability.affects_attached_creature
-        ):
-            self._attached_creature(card)
-        if (
-            isinstance(
-                ability,
-                (
-                    ActivatedPumpAbility,
-                    ActivatedDamageAbility,
-                    ActivatedDestroyAbility,
-                    ActivatedDestroyAllAbility,
-                    ActivatedTapAbility,
-                    ActivatedUnblockableAbility,
-                    ActivatedTemporaryAbility,
-                    ActivatedDiscardAbility,
-                    ActivatedAttackRequirementAbility,
-                    ActivatedLandTypeAbility,
-                    ActivatedDrawAbility,
-                    ActivatedExtraTurnAbility,
-                    ActivatedUntapAbility,
-                    ActivatedInterruptUntapAbility,
-                    ActivatedEventLifeGainAbility,
-                    ActivatedAnimationAbility,
-                ),
-            )
-            and not player.mana_pool.can_pay(ability.mana_cost)
-        ):
-            raise RuntimeError(
-                f"not enough mana to activate {card.name}: {ability.label}"
-            )
-        if isinstance(ability, ActivatedEventLifeGainAbility):
-            if card.tapped and CardType.ARTIFACT in card.definition.card_types:
-                raise RuntimeError(f"{card.name} is tapped and cannot be used")
-            if not self._matching_event_opportunities(card, ability):
-                raise RuntimeError(
-                    f"{card.name} has no matching event to catch"
-                )
-        has_tap_cost = (
-            isinstance(ability, ActivatedManaAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedDamageAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedDestroyAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedDestroyAllAbility)
-            and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedTapAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedUnblockableAbility)
-            and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedTemporaryAbility)
-            and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedDrawAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedExtraTurnAbility) and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedAttackRequirementAbility)
-            and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedLandTypeAbility)
-            and ability.tap_cost
-        ) or (
-            isinstance(ability, ActivatedInterruptUntapAbility)
-            and ability.tap_cost
-        )
-        if has_tap_cost and card.tapped:
-            raise RuntimeError(f"{card.name} is already tapped")
-        if isinstance(ability, ActivatedUntapAbility) and not card.tapped:
-            raise RuntimeError(f"{card.name} is already untapped")
-        if (
-            has_tap_cost
-            and CardType.CREATURE in card.definition.card_types
-            and self.has_summoning_sickness(card)
-        ):
-            raise RuntimeError(
-                f"{card.name} did not begin the turn under its controller's control"
-            )
-        return player, ability
-
-    def _attached_creature(self, aura: Card) -> Card:
-        """Return the in-play creature currently enchanted by an Aura."""
-
-        if aura.enchanted_card_id is None:
-            raise ValueError(f"{aura.name} is not enchanting a creature")
-        for player in self.players:
-            for permanent in player.battlefield:
-                if (
-                    permanent.id == aura.enchanted_card_id
-                    and CardType.CREATURE in self.card_types(permanent)
-                ):
-                    return permanent
-        raise ValueError(f"{aura.name}'s enchanted creature is not in play")
-
-    def can_activate_ability(
-        self, player_id: str, card: Card, ability_index: int
-    ) -> bool:
-        """Whether an ability can currently be activated without changing state."""
-
-        try:
-            ability = self.activated_abilities(card)[ability_index]
-            if isinstance(ability, ActivatedRegenerationAbility):
-                self._validate_regeneration_activation(
-                    player_id, card, ability_index
-                )
-            elif isinstance(ability, ActivatedRedirectDamageAbility):
-                self._validate_redirection_activation(
-                    player_id, card, ability_index
-                )
-            else:
-                self._validate_ability_activation(player_id, card, ability_index)
-        except (KeyError, ValueError, RuntimeError):
-            return False
-        return True
-
-    def pass_priority(self, player_id: str) -> tuple[Card, ...] | None:
-        """Pass once; unanimous passes resolve a batch or pending timed event."""
-
-        if self.pending_damage is not None:
-            self._pass_damage_priority(player_id)
-            return None
-        if self.pending_destruction is not None:
-            self._pass_destruction_priority(player_id)
-            return None
-        self._require_no_pending_action(allow_stack=True)
-        if (
-            not self.stack
-            and not self.batch_abilities
-            and not self.timed_events
-            and not self.event_opportunities
-            and self.pending_phase_advance is None
-            or self.priority_player_index is None
-        ):
-            raise RuntimeError(
-                "there is no batch, timed event, or rules event awaiting priority"
-            )
-        player = self.player(player_id)
-        if player is not self.players[self.priority_player_index]:
-            raise RuntimeError(
-                f"{self.players[self.priority_player_index].name} has priority"
-            )
-        if (
-            not self.stack
-            and not self.batch_abilities
-            and not self.event_opportunities
-            and self._timed_event_needs_payment()
-            and player.id == self.timed_events[0].affected_player_id
-        ):
-            raise RuntimeError("choose whether to pay the upkeep cost first")
-        self.consecutive_passes += 1
-        if self.consecutive_passes < len(self.players):
-            self.priority_player_index = (
-                self.priority_player_index + 1
-            ) % len(self.players)
-            return None
-
-        if self.stack or self.batch_abilities:
-            if (
-                self.stack
-                and CardType.INTERRUPT
-                in self.stack[-1].definition.card_types
-            ):
-                resolved = self._resolve_interrupt()
-                return resolved
-            resolved = self._resolve_batch()
-            if (
-                self.pending_damage is None
-                and self.pending_destruction is None
-            ):
-                self.consecutive_passes = 0
-                self.priority_player_index = (
-                    self.active_player_index
-                    if self.timed_events or self.event_opportunities
-                    or self.pending_phase_advance is not None
-                    else None
-                )
-            return resolved
-
-        if self.event_opportunities:
-            self._close_event_opportunities()
-            if (
-                self.pending_damage is None
-                and self.pending_destruction is None
-            ):
-                self.consecutive_passes = 0
-                self.priority_player_index = (
-                    self.active_player_index
-                    if self.timed_events or self.event_opportunities
-                    or self.pending_phase_advance is not None
-                    else None
-                )
-            return ()
-
-        if self.pending_phase_advance is not None:
-            self.pending_phase_advance = None
-            self.priority_player_index = None
-            self.consecutive_passes = 0
-            self.advance_phase()
-            return ()
-
-        self._resolve_timed_event()
-        if (
-            self.pending_damage is None
-            and self.pending_destruction is None
-        ):
-            self.consecutive_passes = 0
-            self.priority_player_index = (
-                self.active_player_index
-                if self.timed_events or self.event_opportunities
-                or self.pending_phase_advance is not None
-                else None
-            )
-        return ()
-
-    def _discard_random(self, player: PlayerState, amount: int) -> tuple[Card, ...]:
-        chosen = tuple(self.random.sample(player.hand, min(amount, len(player.hand))))
-        for card in chosen:
-            self._move_card(card, Zone.GRAVEYARD)
-        return chosen
-
-    def choose_discard(self, player_id: str, cards: Iterable[Card]) -> tuple[Card, ...]:
-        """Complete the oldest opponent-chosen discard effect."""
-
-        if not self.pending_discard_choices:
-            raise RuntimeError("there is no discard choice pending")
-        choice = self.pending_discard_choices[0]
-        if choice.player_id != player_id:
-            raise ValueError("only the affected player may choose the discarded cards")
-        player = self.player(player_id)
-        chosen = tuple(cards)
-        required = min(choice.amount, len(player.hand))
-        if len(chosen) != required or len({card.id for card in chosen}) != len(chosen):
-            raise ValueError(f"choose exactly {required} card(s) to discard")
-        if any(card not in player.hand for card in chosen):
-            raise ValueError("discard choices must be cards in the affected player's hand")
-        for card in chosen:
-            self._move_card(card, Zone.GRAVEYARD)
-        self.pending_discard_choices.pop(0)
-        if not self.pending_discard_choices and self.pending_damage is None:
-            self.priority_player_index = (
-                self.active_player_index
-                if self.timed_events or self.event_opportunities
-                or self.pending_phase_advance is not None
-                else None
-            )
-            self.consecutive_passes = 0
-        return chosen
-
-    def _resolve_interrupt(self) -> tuple[Card, ...]:
-        """Resolve the newest interrupt immediately, before its target spell."""
-
-        interrupts = [
-            card
-            for card in self.stack
-            if CardType.INTERRUPT in card.definition.card_types
-        ]
-        targeted_interrupt_ids = {
-            target.id
-            for card in interrupts
-            for target in self.stack_spells[card.id].targets
-            if isinstance(target, Card)
-            and CardType.INTERRUPT in target.definition.card_types
-        }
-        resolvable = [
-            card for card in interrupts if card.id not in targeted_interrupt_ids
-        ]
-
-        def interrupt_rank(card: Card) -> tuple[int, int, int]:
-            state = self.stack_spells[card.id]
-            target = (
-                state.targets[0]
-                if state.targets and isinstance(state.targets[0], Card)
-                else None
-            )
-            depth = 0
-            cursor = target
-            while (
-                cursor is not None
-                and CardType.INTERRUPT in cursor.definition.card_types
-                and cursor.id in self.stack_spells
-            ):
-                depth += 1
-                cursor_state = self.stack_spells[cursor.id]
-                cursor = (
-                    cursor_state.targets[0]
-                    if cursor_state.targets
-                    and isinstance(cursor_state.targets[0], Card)
-                    else None
-                )
-            target_caster_id = (
-                self.stack_spells[target.id].caster_id
-                if target is not None and target.id in self.stack_spells
-                else None
-            )
-            caster_first = int(state.caster_id == target_caster_id)
-            declaration_order = self.stack.index(card)
-            return depth, caster_first, -declaration_order
-
-        interrupt = max(resolvable, key=interrupt_rank)
-        spell = self.stack_spells.pop(interrupt.id)
-        target = (
-            spell.targets[0]
-            if spell.targets and isinstance(spell.targets[0], Card)
-            else None
-        )
-        legal_target = (
-            target is not None
-            and (
-                target.zone is Zone.BATTLEFIELD
-                or (
-                    target.zone is Zone.STACK
-                    and target.id in self.stack_spells
-                )
-            )
-        )
-        requirement = interrupt.definition.target_requirement
-        if legal_target and requirement is not None:
-            legal_target = self._requirement_accepts_card(
-                requirement,
-                target,
-                spell.caster_id,
-                source_colors=self.card_colors(interrupt),
-            )
-        if (
-            legal_target
-            and interrupt.definition.casting_mode_target_zones
-        ):
-            mode_index = interrupt.definition.casting_modes.index(
-                spell.chosen_mode
-            )
-            legal_target = (
-                target.zone
-                is interrupt.definition.casting_mode_target_zones[mode_index]
-            )
-        destruction_effect = next(
-            (
-                effect
-                for effect in interrupt.definition.spell_effects
-                if isinstance(effect, DestroyTargetsEffect)
-            ),
-            None,
-        )
-        if (
-            legal_target
-            and target.zone is Zone.STACK
-            and any(
-            isinstance(effect, CounterTargetSpellEffect)
-            for effect in interrupt.definition.spell_effects
-            )
-        ):
-            self.stack_spells.pop(target.id, None)
-            self.event_opportunities = [
-                event
-                for event in self.event_opportunities
-                if event.spell_id != target.id
-            ]
-            self._move_card(target, Zone.GRAVEYARD)
-        elif (
-            legal_target
-            and target.zone is Zone.BATTLEFIELD
-            and destruction_effect is not None
-        ):
-            self.pending_destruction = DestructionIncident(
-                [
-                    DestructionTarget(
-                        target.id,
-                        target.name,
-                        destruction_effect.regeneration_allowed,
-                    )
-                ]
-            )
-            self.resume_interrupts_after_destruction = True
-        elif legal_target:
-            color_effect = next(
-                (
-                    effect
-                    for effect in interrupt.definition.spell_effects
-                    if isinstance(effect, ChangeTargetColorEffect)
-                ),
-                None,
-            )
-            if color_effect is not None:
-                target.color_override = color_effect.color
-                if target.zone is Zone.STACK:
-                    self._refresh_spell_cast_opportunity(target)
-        for effect in interrupt.definition.spell_effects:
-            if isinstance(effect, AddManaEffect):
-                self.player(spell.caster_id).mana_pool.add(
-                    effect.color, effect.amount
-                )
-
-        if interrupt.zone is Zone.STACK:
-            self._move_card(interrupt, Zone.GRAVEYARD)
-
-        if not any(
-            card.id == self.interruptible_spell_id for card in self.stack
-        ):
-            self.interruptible_spell_id = None
-        self.consecutive_passes = 0
-        if self.stack:
-            underlying = self.stack_spells[self.stack[-1].id]
-            self.priority_player_index = self.players.index(
-                self.player(underlying.caster_id)
-            )
-        elif (
-            self.batch_abilities
-            or self.event_opportunities
-            or self.pending_phase_advance is not None
-        ):
-            self.priority_player_index = self.active_player_index
-        else:
-            self.priority_player_index = None
-        if self.pending_destruction is not None:
-            self._open_destruction_incident()
-        self.check_state_based_actions()
-        return (interrupt,)
-
-    def _resolve_batch(self) -> tuple[Card, ...]:
-        """Apply one 1993 fast-effect batch, then stabilize exactly once."""
-
-        cards = tuple(self.stack)
-        self.interruptible_spell_id = None
-        spells = tuple(self.stack_spells[card.id] for card in cards)
-        abilities = tuple(self.batch_abilities)
-        caught_event_ids = {event.id for event in self.event_opportunities}
-        self._begin_damage_incident(DamageIncidentKind.FAST_EFFECT_BATCH)
-
-        # Target validity is fixed before any member of the simultaneous batch
-        # changes zones or characteristics.
-        legal: dict[UUID, bool] = {}
-        for spell in spells:
-            requirement = spell.card.definition.target_requirement
-            legal[spell.card.id] = requirement is None or all(
-                (
-                    self._requirement_accepts_card(
-                        requirement,
-                        target,
-                        spell.caster_id,
-                        source_colors=self.card_colors(spell.card),
-                    )
-                    if isinstance(target, Card)
-                    else requirement.players and target in self.players
-                )
-                for target in spell.targets
-            )
-        legal_abilities = [
-            (
-                True
-                if isinstance(
-                    ability.ability,
-                    (
-                        ActivatedDestroyAllAbility,
-                        ActivatedEventLifeGainAbility,
-                        ActivatedUntapAbility,
-                    ),
-                )
-                else ability.source.zone is Zone.BATTLEFIELD
-                if isinstance(ability.ability, ActivatedAnimationAbility)
-                else all(
-                    isinstance(target, Card)
-                    and target.zone is Zone.BATTLEFIELD
-                    for target in ability.targets
-                )
-                if isinstance(ability.ability, ActivatedPumpAbility)
-                else all(
-                    (
-                        self._requirement_accepts_card(
-                            ability.ability.target_requirement,
-                            target,
-                            ability.controller_id,
-                            check_tapped=False,
-                            source_colors=self.card_colors(ability.source),
-                        )
-                        if isinstance(target, Card)
-                        else ability.ability.target_requirement.players
-                        and target in self.players
-                    )
-                    for target in ability.targets
-                )
-            )
-            for ability in abilities
-        ]
-
-        # Slow permanents enter as part of the same instant. This lets their
-        # continuous effects participate in the final state of the batch.
-        for spell in spells:
-            card = spell.card
-            if legal[card.id] and card.definition.is_permanent:
-                self._move_card(card, Zone.BATTLEFIELD)
-                card.entered_battlefield_turn = self.turn_number
-                card.enchanted_card_id = (
-                    spell.targets[0].id
-                    if spell.targets and isinstance(spell.targets[0], Card)
-                    else None
-                )
-                if (
-                    card.definition.taps_attached_on_entry
-                    and spell.targets
-                    and isinstance(spell.targets[0], Card)
-                ):
-                    self._tap_permanent(spell.targets[0])
-                if (
-                    CardType.CREATURE in card.definition.card_types
-                    and CardType.ARTIFACT not in card.definition.card_types
-                ):
-                    card.summoned_turn = self.turn_number
-
-        pending_destruction: list[tuple[Card, bool]] = []
-        pending_regeneration: list[Card] = []
-        for spell in spells:
-            card = spell.card
-            if not legal[card.id] or card.definition.is_permanent:
-                continue
-            caster = self.player(spell.caster_id)
-            for effect in card.definition.spell_effects:
-                if isinstance(effect, DamageEffect):
-                    recipients = (
-                        (caster,)
-                        if effect.recipient is EffectRecipient.CASTER
-                        else spell.targets
-                    )
-                    for recipient in recipients:
-                        self._deal_damage(
-                            recipient,
-                            effect.amount,
-                            card.name,
-                            source_card=card,
-                            source_controller_id=spell.caster_id,
-                        )
-                elif isinstance(effect, TemporaryPumpEffect):
-                    power = effect.power + effect.power_per_x * spell.x_value
-                    toughness = (
-                        effect.toughness
-                        + effect.toughness_per_x * spell.x_value
-                    )
-                    for target in spell.targets:
-                        if isinstance(target, Card):
-                            self.temporary_creature_effects.setdefault(
-                                target.id, []
-                            ).append(
-                                ContinuousEffect(
-                                    power=power,
-                                    toughness=toughness,
-                                    granted_abilities=effect.granted_abilities,
-                                )
-                            )
-                elif isinstance(effect, RegenerateTargetsEffect):
-                    pending_regeneration.extend(
-                        target
-                        for target in spell.targets
-                        if isinstance(target, Card)
-                    )
-                elif isinstance(effect, GainLifeEffect):
-                    amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
-                        if isinstance(target, PlayerState):
-                            target.life += amount
-                elif isinstance(effect, DrawCardsEffect):
-                    amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
-                        if isinstance(target, PlayerState):
-                            target.draw(amount)
-                elif isinstance(effect, DiscardCardsEffect):
-                    amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
-                        if not isinstance(target, PlayerState):
-                            continue
-                        if effect.random:
-                            self._discard_random(target, amount)
-                        elif target.hand:
-                            self.pending_discard_choices.append(
-                                PendingDiscardChoice(target.id, amount, card.name)
-                            )
-                elif isinstance(effect, ShuffleHandAndGraveyardEffect):
-                    for player in self.players:
-                        recyclable = tuple(player.hand) + tuple(player.graveyard)
-                        for recyclable_card in recyclable:
-                            self._move_card(recyclable_card, Zone.LIBRARY)
-                        player.shuffle_library(self.random)
-                    for player in self.players:
-                        player.draw(effect.draw_count)
-                elif isinstance(effect, SirensCallEffect):
-                    for creature in tuple(self.active_player.battlefield):
-                        if (
-                            CardType.CREATURE not in self.card_types(creature)
-                            or creature.summoned_turn == self.turn_number
-                        ):
-                            continue
-                        is_wall = "Wall" in creature.definition.subtypes
-                        self.attack_requirements[creature.id] = AttackRequirement(
-                            creature.id, destroy_if_no_attack=not is_wall
-                        )
-                elif isinstance(effect, ExtraTurnEffect):
-                    self.schedule_extra_turn(spell.caster_id)
-                elif isinstance(effect, GlobalDamageEffect):
-                    amount = effect.amount + effect.amount_per_x * spell.x_value
-                    if effect.damage_players:
-                        for player in self.players:
-                            self._deal_damage(
-                                player,
-                                amount,
-                                card.name,
-                                source_card=card,
-                                source_controller_id=spell.caster_id,
-                            )
-                    for player in self.players:
-                        for creature in tuple(player.battlefield):
-                            if CardType.CREATURE not in self.card_types(creature):
-                                continue
-                            has_flying = (
-                                KeywordAbility.FLYING
-                                in self.creature_abilities(creature)
-                            )
-                            if (
-                                effect.creatures_with_flying is not None
-                                and has_flying
-                                is not effect.creatures_with_flying
-                            ):
-                                continue
-                            self._deal_damage(
-                                creature,
-                                amount,
-                                card.name,
-                                source_card=card,
-                                source_controller_id=spell.caster_id,
-                            )
-                elif isinstance(effect, DestroyTargetsEffect):
-                    pending_destruction.extend(
-                        (target, effect.regeneration_allowed)
-                        for target in spell.targets
-                        if isinstance(target, Card)
-                    )
-                elif isinstance(effect, DestroyAllEffect):
-                    pending_destruction.extend(
-                        (permanent, effect.regeneration_allowed)
-                        for player in self.players
-                        for permanent in tuple(player.battlefield)
-                        if effect.matches(
-                            permanent,
-                            current_card_types=self.card_types(permanent),
-                            current_subtypes=(
-                                self.land_subtypes(permanent)
-                                if CardType.LAND
-                                in permanent.definition.card_types
-                                else None
-                            ),
-                        )
-                    )
-                elif isinstance(effect, MoveTargetsEffect):
-                    for target in spell.targets:
-                        if not isinstance(target, Card):
-                            continue
-                        if effect.under_caster_control:
-                            target.controller_id = caster.id
-                        self._move_card(target, effect.destination)
-                        if effect.destination is Zone.BATTLEFIELD:
-                            target.entered_battlefield_turn = self.turn_number
-                elif isinstance(effect, SetTappedEffect):
-                    tapped = spell.chosen_mode == "Tap"
-                    for target in spell.targets:
-                        if isinstance(target, Card):
-                            if tapped:
-                                self._tap_permanent(target)
-                            else:
-                                target.tapped = False
-
-        for declared, is_legal in zip(abilities, legal_abilities):
-            if not is_legal:
-                continue
-            if isinstance(declared.ability, ActivatedDamageAbility):
-                for target in declared.targets:
-                    self._deal_damage(
-                        target,
-                        declared.ability.damage,
-                        declared.source_name,
-                        source_card=declared.source,
-                        source_controller_id=declared.controller_id,
-                    )
-                if declared.ability.controller_damage:
-                    self._deal_damage(
-                        self.player(declared.controller_id),
-                        declared.ability.controller_damage,
-                        declared.source_name,
-                        source_card=declared.source,
-                        source_controller_id=declared.controller_id,
-                    )
-            elif isinstance(declared.ability, ActivatedDestroyAbility):
-                pending_destruction.extend(
-                    (target, declared.ability.regeneration_allowed)
-                    for target in declared.targets
-                    if isinstance(target, Card)
-                )
-            elif isinstance(declared.ability, ActivatedDestroyAllAbility):
-                pending_destruction.extend(
-                    (permanent, declared.ability.regeneration_allowed)
-                    for player in self.players
-                    for permanent in tuple(player.battlefield)
-                    if self.card_types(permanent) & declared.ability.card_types
-                )
-            elif isinstance(declared.ability, ActivatedTapAbility):
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self._tap_permanent(target)
-            elif isinstance(declared.ability, ActivatedUnblockableAbility):
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self.temporary_creature_effects.setdefault(
-                            target.id, []
-                        ).append(ContinuousEffect(unblockable=True))
-            elif isinstance(declared.ability, ActivatedTemporaryAbility):
-                for target in declared.targets:
-                    if not isinstance(target, Card):
-                        continue
-                    self.temporary_creature_effects.setdefault(
-                        target.id, []
-                    ).append(
-                        ContinuousEffect(
-                            granted_abilities=declared.ability.granted_abilities
-                        )
-                    )
-                    if declared.ability.destroy_at_end_of_turn:
-                        self.destroy_at_end_of_turn.add(target.id)
-            elif isinstance(declared.ability, ActivatedDrawAbility):
-                self.player(declared.controller_id).draw(
-                    declared.ability.amount
-                )
-            elif isinstance(declared.ability, ActivatedDiscardAbility):
-                for target in declared.targets:
-                    if isinstance(target, PlayerState) and target.hand:
-                        self.pending_discard_choices.append(
-                            PendingDiscardChoice(
-                                target.id, declared.ability.amount, declared.source_name
-                            )
-                        )
-            elif isinstance(declared.ability, ActivatedAttackRequirementAbility):
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self.attack_requirements[target.id] = AttackRequirement(target.id)
-            elif isinstance(declared.ability, ActivatedLandTypeAbility):
-                if declared.source.zone is not Zone.BATTLEFIELD:
-                    continue
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self.battlefield_entry_sequence += 1
-                        target.land_type_marks[declared.source.id] = (
-                            declared.ability.replacement_subtype,
-                            self.battlefield_entry_sequence,
-                        )
-            elif isinstance(declared.ability, ActivatedExtraTurnAbility):
-                self.schedule_extra_turn(declared.controller_id)
-            elif isinstance(declared.ability, ActivatedUntapAbility):
-                declared.source.tapped = False
-            elif isinstance(
-                declared.ability, ActivatedEventLifeGainAbility
-            ):
-                self.player(declared.controller_id).life += (
-                    declared.ability.amount
-                )
-            elif isinstance(declared.ability, ActivatedAnimationAbility):
-                self.combat_creature_effects.setdefault(
-                    declared.source.id, []
-                ).append(
-                    ContinuousEffect(
-                        granted_card_types=frozenset({CardType.CREATURE}),
-                        base_power=declared.ability.power,
-                        base_toughness=declared.ability.toughness,
-                    )
-                )
-            else:
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self.temporary_creature_effects.setdefault(
-                            target.id, []
-                        ).append(
-                            ContinuousEffect(
-                                power=declared.ability.power,
-                                toughness=declared.ability.toughness,
-                                granted_abilities=(
-                                    declared.ability.granted_abilities
-                                ),
-                            )
-                        )
-
-        destruction_by_card: dict[Card, bool] = {}
-        for card, regeneration_allowed in pending_destruction:
-            destruction_by_card[card] = (
-                destruction_by_card.get(card, True) and regeneration_allowed
-            )
-        destruction_targets = [
-            DestructionTarget(card.id, card.name, regeneration_allowed)
-            for card, regeneration_allowed in destruction_by_card.items()
-            if card.zone is Zone.BATTLEFIELD
-        ]
-        if destruction_targets:
-            self.pending_destruction = DestructionIncident(destruction_targets)
-        for target in pending_regeneration:
-            incoming_damage = sum(
-                packet.remaining
-                for packet in (
-                    self.pending_damage.packets
-                    if self.pending_damage is not None
-                    else ()
-                )
-                if packet.recipient_kind is DamageRecipientKind.CREATURE
-                and packet.recipient_id == target.id
-            )
-            if (
-                self.pending_damage is not None
-                and self.creature_toughness(target) > 0
-                and target.damage + incoming_damage
-                >= self.creature_toughness(target)
-            ):
-                self.pending_damage.regenerated_card_ids.add(target.id)
-                if self.combat is not None:
-                    self.combat.regenerated_card_ids.add(target.id)
-            if self.pending_destruction is not None:
-                matching = next(
-                    (
-                        item
-                        for item in self.pending_destruction.targets
-                        if item.card_id == target.id
-                    ),
-                    None,
-                )
-                if matching is not None and matching.regeneration_allowed:
-                    self.pending_destruction.regenerated_card_ids.add(target.id)
-                    self._tap_permanent(target)
-                    target.damage = 0
-        self._resolve_damage_incident()
-        if self.pending_damage is None:
-            self._open_destruction_incident()
-
-        for spell in spells:
-            card = spell.card
-            self.stack_spells.pop(card.id, None)
-            if card.zone is Zone.STACK:
-                self._move_card(card, Zone.GRAVEYARD)
-        self.batch_abilities.clear()
-        self.check_state_based_actions()
-        self._close_event_opportunities(caught_event_ids)
-        return cards
-
-    def _resolve_spell_effects(
-        self,
-        card: Card,
-        targets: tuple[Card | PlayerState, ...],
-        caster: PlayerState,
-    ) -> None:
-        for effect in card.definition.spell_effects:
-            if isinstance(effect, DamageEffect):
-                recipients: tuple[Card | PlayerState, ...]
-                if effect.recipient is EffectRecipient.CASTER:
-                    recipients = (caster,)
-                else:
-                    recipients = targets
-                for recipient in recipients:
-                    self._deal_damage(
-                        recipient,
-                        effect.amount,
-                        card.name,
-                        source_card=card,
-                        source_controller_id=caster.id,
-                    )
-            elif isinstance(effect, DestroyTargetsEffect):
-                self._destroy_permanents(
-                    target for target in targets if isinstance(target, Card)
-                )
-            elif isinstance(effect, DestroyAllEffect):
-                self._destroy_permanents(
-                    permanent
-                    for player in self.players
-                    for permanent in tuple(player.battlefield)
-                    if effect.matches(
-                        permanent,
-                        current_card_types=self.card_types(permanent),
-                        current_subtypes=(
-                            self.land_subtypes(permanent)
-                            if CardType.LAND
-                            in permanent.definition.card_types
-                            else None
-                        ),
-                    )
-                )
-            elif isinstance(effect, MoveTargetsEffect):
-                for target in targets:
-                    if not isinstance(target, Card):
-                        continue
-                    if effect.under_caster_control:
-                        target.controller_id = caster.id
-                    self._move_card(target, effect.destination)
-                    if effect.destination is Zone.BATTLEFIELD:
-                        target.entered_battlefield_turn = self.turn_number
 
     def _destroy_permanents(self, permanents: Iterable[Card]) -> None:
         """Single resolution hook for future regeneration/replacement handling."""

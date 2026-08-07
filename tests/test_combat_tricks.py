@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     GIANT_GROWTH,
+    LLANOWAR_ELVES,
     LIGHTNING_BOLT,
     RIGHTEOUSNESS,
     TARGETED_PUMP_SPELLS,
@@ -63,6 +64,28 @@ class CombatTrickTests(unittest.TestCase):
         self.assertTrue(
             all(CardType.INSTANT in card.card_types for card in TARGETED_PUMP_SPELLS)
         )
+
+    def test_spells_and_abilities_are_forbidden_during_declarations(self) -> None:
+        attacker = self.put_in_play(self.alice, HILL_GIANT)
+        elves = self.put_in_play(self.alice, LLANOWAR_ELVES)
+        growth = self.put_in_hand(self.alice, GIANT_GROWTH)
+        self.alice.mana_pool.green = 1
+        self.game.begin_combat()
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
+        with self.assertRaisesRegex(RuntimeError, "combat declaration"):
+            self.game.begin_cast(growth)
+        with self.assertRaisesRegex(RuntimeError, "combat declaration"):
+            self.game.activate_ability(self.alice.id, elves, 0)
+
+        self.game.declare_attackers([attacker])
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+        with self.assertRaisesRegex(RuntimeError, "combat declaration"):
+            self.game.begin_cast(growth)
+        with self.assertRaisesRegex(RuntimeError, "combat declaration"):
+            self.game.activate_ability(self.alice.id, elves, 0)
         self.assertFalse(GIANT_GROWTH.target_requirement.blocking_only)
         self.assertTrue(RIGHTEOUSNESS.target_requirement.blocking_only)
 
@@ -132,6 +155,7 @@ class CombatTrickTests(unittest.TestCase):
         self.game.begin_combat()
         self.game.declare_attackers([attacker])
         self.game.declare_blockers({blocker: attacker})
+        self.game.pass_priority(self.alice.id)
         righteousness = self.cast(self.bob, RIGHTEOUSNESS, blocker)
 
         self.resolve_batch()

@@ -1,9 +1,9 @@
  - [x] Animate Wall
  - [x] Armageddon
- - [ ] Balance
- - [ ] Benalish Hero
+ - [x] Balance
+ - [x] Benalish Hero
  - [x] Black Ward
- - [ ] Blaze of Glory
+ - [x] Blaze of Glory
  - [x] Blessing
  - [x] Blue Ward
  - [x] Castle
@@ -24,21 +24,21 @@
  - [x] Holy Armor
  - [x] Holy Strength
  - [ ] Island Sanctuary
- - [ ] Karma
+ - [x] Karma
  - [x] Lance
- - [ ] Mesa Pegasus
+ - [x] Mesa Pegasus
  - [x] Northern Paladin
  - [x] Pearled Unicorn
  - [x] Personal Incarnation
  - [x] Purelace
  - [x] Red Ward
  - [x] Resurrection
- - [ ] Reverse Damage
+ - [x] Reverse Damage
  - [x] Righteousness
  - [x] Samite Healer
  - [x] Savannah Lions
  - [x] Serra Angel
- - [ ] Swords to Plowshares
+ - [x] Swords to Plowshares
  - [x] Veteran Bodyguard
  - [x] Wall of Swords
  - [x] White Knight
@@ -63,7 +63,7 @@
  - [x] Lord of Atlantis
  - [ ] Magical Hack
  - [x] Mahamoti Djinn
- - [ ] Mana Short
+ - [x] Mana Short
  - [x] Merfolk of the Pearl Trident
  - [x] Phantasmal Forces
  - [x] Phantasmal Terrain
@@ -78,7 +78,7 @@
  - [x] Siren's Call
  - [ ] Sleight of Mind
  - [x] Spell Blast
- - [ ] Stasis
+ - [x] Stasis
  - [x] Steal Artifact
  - [x] Thoughtlace
  - [x] Time Walk
@@ -98,10 +98,10 @@
  - [x] Cursed Land
  - [x] Dark Ritual
  - [ ] Darkpact
- - [ ] Deathgrip
+ - [x] Deathgrip
  - [x] Deathlace
  - [ ] Demonic Attorney
- - [ ] Demonic Hordes
+ - [x] Demonic Hordes
  - [ ] Demonic Tutor
  - [ ] Drain Life
  - [x] Drudge Skeletons
@@ -112,21 +112,21 @@
  - [x] Howl from Beyond
  - [x] Hypnotic Specter
  - [ ] Lich
- - [ ] Lord of the Pit
+ - [x] Lord of the Pit
  - [x] Mind Twist
  - [ ] Nether Shadow
  - [x] Nettling Imp
  - [x] Nightmare
  - [x] Paralyze
- - [ ] Pestilence
+ - [x] Pestilence
  - [x] Plague Rats
  - [x] Raise Dead
  - [x] Royal Assassin
  - [ ] Sacrifice
  - [x] Scathe Zombies
  - [ ] Scavenging Ghoul
- - [ ] Sengir Vampire
- - [ ] Simulacrum
+ - [x] Sengir Vampire
+ - [x] Simulacrum
  - [x] Sinkhole
  - [x] Terror
  - [x] Unholy Strength
@@ -138,7 +138,7 @@
  - [x] Zombie Master
  - [x] Burrowing
  - [x] Chaoslace
- - [ ] Disintegrate
+ - [x] Disintegrate
  - [x] Dragon Whelp
  - [x] Dwarven Demolition Team
  - [x] Dwarven Warriors
@@ -160,7 +160,7 @@
  - [x] Ironclaw Orcs
  - [x] Keldon Warlord
  - [x] Lightning Bolt
- - [ ] Mana Flare
+ - [x] Mana Flare
  - [x] Manabarbs
  - [x] Mons's Goblin Raiders
  - [x] Orcish Artillery
@@ -173,7 +173,7 @@
  - [x] Sedge Troll
  - [x] Shatter
  - [x] Shivan Dragon
- - [ ] Smoke
+ - [x] Smoke
  - [x] Stone Giant
  - [x] Stone Rain
  - [x] Tunnel
@@ -181,7 +181,7 @@
  - [x] Uthden Troll
  - [x] Wall of Fire
  - [x] Wall of Stone
- - [ ] Wheel of Fortune
+ - [x] Wheel of Fortune
  - [x] Aspect of Wolf
  - [ ] Berserk
  - [x] Birds of Paradise
@@ -204,12 +204,12 @@
  - [x] Ironroot Treefolk
  - [ ] Kudzu
  - [x] Ley Druid
- - [ ] Lifeforce
+ - [x] Lifeforce
  - [x] Lifelace
  - [ ] Living Artifact
  - [x] Living Lands
  - [x] Llanowar Elves
- - [ ] Lure
+ - [x] Lure
  - [ ] Natural Selection
  - [x] Regeneration
  - [x] Regrowth
@@ -217,7 +217,7 @@
  - [x] Shanodin Dryads
  - [x] Stream of Life
  - [x] Thicket Basilisk
- - [ ] Timber Wolves
+ - [x] Timber Wolves
  - [x] Tranquility
  - [x] Tsunami
  - [ ] Verduran Enchantress
@@ -227,9 +227,9 @@
  - [x] Wanderlust
  - [x] War Mammoth
  - [x] Web
- - [ ] Wild Growth
+ - [x] Wild Growth
  - [x] Ankh of Mishra
- - [ ] Basalt Monolith
+ - [x] Basalt Monolith
  - [x] Black Lotus
  - [ ] Black Vise
  - [ ] Celestial Prism
@@ -242,9 +242,9 @@
  - [x] Dingus Egg
  - [x] Disrupting Scepter
  - [ ] Forcefield
- - [ ] Gauntlet of Might
+ - [x] Gauntlet of Might
  - [ ] Glasses of Urza
- - [ ] Helm of Chatzuk
+ - [x] Helm of Chatzuk
  - [x] Howling Mine
  - [x] Icy Manipulator
  - [ ] Illusionary Mask
@@ -258,7 +258,7 @@
  - [ ] Library of Leng
  - [x] Living Wall
  - [x] Mana Vault
- - [ ] Meekstone
+ - [x] Meekstone
  - [x] Mox Emerald
  - [x] Mox Jet
  - [x] Mox Pearl
@@ -269,11 +269,11 @@
  - [x] Rod of Ruin
  - [x] Sol Ring
  - [x] Soul Net
- - [ ] Sunglasses of Urza
+ - [x] Sunglasses of Urza
  - [ ] The Hive
  - [x] Throne of Bone
  - [x] Time Vault
- - [ ] Winter Orb
+ - [x] Winter Orb
  - [x] Wooden Sphere
  - [x] Badlands
  - [x] Bayou

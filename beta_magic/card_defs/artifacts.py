@@ -12,6 +12,7 @@ from ..abilities import (
     ActivatedRegenerationAbility,
     ActivatedRedirectDamageAbility,
     ActivatedTapAbility,
+    ActivatedTemporaryAbility,
     ActivatedUntapAbility,
     TargetRequirement,
 )
@@ -20,10 +21,13 @@ from ..effects import (
     ContinuousEffect,
     DrawPhaseEffect,
     LandEventDamageEffect,
+    LandTapManaEffect,
+    ManaPaymentEffect,
+    UntapRestrictionEffect,
     UpkeepDamageEffect,
 )
 from ..mana import ManaCost
-from ..types import CardType, Color, Zone
+from ..types import CardType, Color, KeywordAbility, Zone
 
 
 def _mox(name: str, color: Color) -> CardDefinition:
@@ -97,6 +101,32 @@ MANA_VAULT = CardDefinition(
     untaps_normally=False,
 )
 
+BASALT_MONOLITH = CardDefinition(
+    name="Basalt Monolith",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{3}"),
+    rules_text=(
+        "Tap to add {C}{C}{C} to your mana pool. Basalt Monolith does not "
+        "untap normally. Pay {3} to untap it; this is a fast effect. Its "
+        "mana ability can be played as an interrupt."
+    ),
+    activated_abilities=(
+        ActivatedManaAbility(Color.COLORLESS, amount=3),
+        ActivatedUntapAbility(ManaCost.parse("{3}")),
+    ),
+    untaps_normally=False,
+)
+
+SUNGLASSES_OF_URZA = CardDefinition(
+    name="Sunglasses of Urza",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{3}"),
+    rules_text=(
+        "White mana in your mana pool can be used as either white or red mana."
+    ),
+    mana_payment_effects=(ManaPaymentEffect(Color.WHITE, Color.RED),),
+)
+
 DISRUPTING_SCEPTER = CardDefinition(
     name="Disrupting Scepter",
     card_types=frozenset({CardType.ARTIFACT}),
@@ -106,7 +136,12 @@ DISRUPTING_SCEPTER = CardDefinition(
 )
 
 MOXEN = (MOX_PEARL, MOX_SAPPHIRE, MOX_JET, MOX_RUBY, MOX_EMERALD)
-MANA_ARTIFACTS = MOXEN + (SOL_RING, BLACK_LOTUS, MANA_VAULT)
+MANA_ARTIFACTS = MOXEN + (
+    SOL_RING,
+    BLACK_LOTUS,
+    MANA_VAULT,
+    BASALT_MONOLITH,
+)
 
 
 def _lucky_charm(name: str, color: Color) -> CardDefinition:
@@ -200,6 +235,66 @@ KORMUS_BELL = CardDefinition(
             granted_card_types=frozenset({CardType.CREATURE}),
             base_power=1,
             base_toughness=1,
+        ),
+    ),
+)
+
+MEEKSTONE = CardDefinition(
+    name="Meekstone",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "Creatures with power greater than 2 do not untap during their "
+        "controllers' untap phases."
+    ),
+    untap_effects=(UntapRestrictionEffect(maximum_creature_power=2),),
+)
+
+WINTER_ORB = CardDefinition(
+    name="Winter Orb",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{2}"),
+    rules_text="Each player untaps only one land during their untap phase.",
+    untap_effects=(
+        UntapRestrictionEffect(card_type=CardType.LAND, maximum_untaps=1),
+    ),
+)
+
+GAUNTLET_OF_MIGHT = CardDefinition(
+    name="Gauntlet of Might",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "All red creatures get +1/+1. Whenever a Mountain is tapped, "
+        "its owner adds {R}."
+    ),
+    continuous_effects=(
+        ContinuousEffect(power=1, toughness=1, color=Color.RED),
+    ),
+    land_tap_mana_effects=(
+        LandTapManaEffect(
+            Color.RED,
+            "Mountain",
+            owner_receives=True,
+        ),
+    ),
+)
+
+HELM_OF_CHATZUK = CardDefinition(
+    name="Helm of Chatzuk",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "{1}, {T}: Target creature gains Banding until end of turn."
+    ),
+    activated_abilities=(
+        ActivatedTemporaryAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.CREATURE}),
+            ),
+            granted_abilities=frozenset({KeywordAbility.BANDING}),
+            mana_cost=ManaCost.parse("{1}"),
         ),
     ),
 )
@@ -324,7 +419,12 @@ UTILITY_ARTIFACTS = (
     JADE_STATUE,
     HOWLING_MINE,
     KORMUS_BELL,
+    GAUNTLET_OF_MIGHT,
+    HELM_OF_CHATZUK,
+    SUNGLASSES_OF_URZA,
 )
+
+UNTAP_ARTIFACTS = (MEEKSTONE, WINTER_ORB)
 
 TURN_ARTIFACTS = (TIME_VAULT,)
 
@@ -382,6 +482,7 @@ ARTIFACT_CARDS = tuple(
         + UTILITY_ARTIFACTS
         + TIMED_ARTIFACTS
         + TURN_ARTIFACTS
+        + UNTAP_ARTIFACTS
         + ARTIFACT_CREATURES,
         key=lambda card: card.name,
     )
@@ -397,6 +498,8 @@ __all__ = [
     "SOL_RING",
     "BLACK_LOTUS",
     "MANA_VAULT",
+    "BASALT_MONOLITH",
+    "SUNGLASSES_OF_URZA",
     "DISRUPTING_SCEPTER",
     "MANA_ARTIFACTS",
     "THRONE_OF_BONE",
@@ -411,6 +514,8 @@ __all__ = [
     "DINGUS_EGG",
     "HOWLING_MINE",
     "KORMUS_BELL",
+    "GAUNTLET_OF_MIGHT",
+    "HELM_OF_CHATZUK",
     "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
     "JAYEMDAE_TOME",
@@ -420,6 +525,9 @@ __all__ = [
     "JADE_STATUE",
     "TIME_VAULT",
     "TURN_ARTIFACTS",
+    "MEEKSTONE",
+    "WINTER_ORB",
+    "UNTAP_ARTIFACTS",
     "UTILITY_ARTIFACTS",
     "COPPER_TABLET",
     "TIMED_ARTIFACTS",

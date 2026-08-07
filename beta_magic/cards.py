@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from .abilities import (
     ActivatedAbility,
     ActivatedDamageAbility,
+    ActivatedGlobalDamageAbility,
     ActivatedAnimationAbility,
     ActivatedDestroyAbility,
     ActivatedDestroyAllAbility,
@@ -42,27 +43,39 @@ from .effects import (
     ChangeTargetColorEffect,
     CreatureBuff,
     DamageEffect,
+    ReverseDamageEffect,
+    RetroactiveDamageTransferEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
     DrawCardsEffect,
     DrawPhaseEffect,
     DiscardCardsEffect,
+    DiscardHandsAndDrawEffect,
     ShuffleHandAndGraveyardEffect,
     SirensCallEffect,
+    BlazeOfGloryEffect,
+    BalanceEffect,
     ExtraTurnEffect,
     LandEventDamageEffect,
     AttachedEventDamageEffect,
     EffectRecipient,
     EffectScope,
+    ExileTargetsEffect,
     GainLifeEffect,
     GlobalDamageEffect,
     LandhomeRequirement,
     LandTypeEffect,
     MoveTargetsEffect,
     PermanentTappedEffect,
+    AttachedTapManaEffect,
+    LandManaBonusEffect,
+    LandTapManaEffect,
+    ManaPaymentEffect,
     OptionalUpkeepPaymentEffect,
+    UpkeepCreatureSacrificeEffect,
     SetTappedEffect,
     AddManaEffect,
+    TapLandsAndEmptyManaPoolEffect,
     CombatDestructionEffect,
     RegenerateTargetsEffect,
     SpellEffect,
@@ -71,6 +84,7 @@ from .effects import (
     UpkeepDamageEffect,
     UpkeepDamageRecipient,
     UpkeepEffect,
+    UntapRestrictionEffect,
     UpkeepFailure,
     UpkeepBenefit,
     VariableCreatureStats,
@@ -104,9 +118,14 @@ class CardDefinition:
     spell_effects: tuple[SpellEffect, ...] = ()
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
     draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
+    untap_effects: tuple[UntapRestrictionEffect, ...] = ()
     land_event_effects: tuple[LandEventDamageEffect, ...] = ()
     attached_event_damage_effects: tuple[AttachedEventDamageEffect, ...] = ()
     permanent_tapped_effects: tuple[PermanentTappedEffect, ...] = ()
+    attached_tap_mana_effects: tuple[AttachedTapManaEffect, ...] = ()
+    land_mana_bonus_effects: tuple[LandManaBonusEffect, ...] = ()
+    land_tap_mana_effects: tuple[LandTapManaEffect, ...] = ()
+    mana_payment_effects: tuple[ManaPaymentEffect, ...] = ()
     prevention_amount: int = 0
     casting_modes: tuple[str, ...] = ()
     casting_mode_target_zones: tuple[Zone, ...] = ()
@@ -118,11 +137,15 @@ class CardDefinition:
     redirects_unblocked_combat_damage: bool = False
     combat_player_damage_random_discard: int = 0
     grows_after_surviving_damage: bool = False
+    grows_when_damaged_creature_dies: bool = False
     owner_life_loss_on_death_divisor: int | None = None
     enters_tapped: bool = False
     untaps_normally: bool = True
     may_skip_turn_to_untap: bool = False
     taps_attached_on_entry: bool = False
+    destroy_at_end_of_turn_if_no_creatures: bool = False
+    lures_blockers: bool = False
+    tap_abilities_require_paid_upkeep: bool = False
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -183,12 +206,22 @@ class CardDefinition:
             raise ValueError("only permanents can supply upkeep effects")
         if self.draw_phase_effects and not self.is_permanent:
             raise ValueError("only permanents can supply draw-phase effects")
+        if self.untap_effects and not self.is_permanent:
+            raise ValueError("only permanents can modify untap processing")
         if self.land_event_effects and not self.is_permanent:
             raise ValueError("only permanents can supply land-event effects")
+        if self.mana_payment_effects and not self.is_permanent:
+            raise ValueError("only permanents can modify mana payments")
         if self.attached_event_damage_effects and self.target_requirement is None:
             raise ValueError("attached-event effects require an attachment target")
+        if self.attached_tap_mana_effects and self.target_requirement is None:
+            raise ValueError("attached tap-mana effects require an attachment target")
         if self.taps_attached_on_entry and self.target_requirement is None:
             raise ValueError("tapping an attachment target requires a target")
+        if self.lures_blockers and self.target_requirement is None:
+            raise ValueError("a blocking lure requires an attachment target")
+        if self.tap_abilities_require_paid_upkeep and not self.upkeep_effects:
+            raise ValueError("an upkeep-locked ability requires an upkeep effect")
         if self.prevention_amount < 0:
             raise ValueError("damage prevention cannot be negative")
         if len(set(self.casting_modes)) != len(self.casting_modes):
@@ -225,6 +258,11 @@ class CardDefinition:
             and CardType.CREATURE not in self.card_types
         ):
             raise ValueError("only creatures can receive redirected combat damage")
+        if (
+            self.grows_when_damaged_creature_dies
+            and CardType.CREATURE not in self.card_types
+        ):
+            raise ValueError("only creatures can grow when damaged creatures die")
         if (
             self.owner_life_loss_on_death_divisor is not None
             and self.owner_life_loss_on_death_divisor < 1
@@ -319,6 +357,7 @@ __all__ = [
     "CardDefinition",
     "ActivatedAbility",
     "ActivatedDamageAbility",
+    "ActivatedGlobalDamageAbility",
     "ActivatedAnimationAbility",
     "ActivatedDestroyAbility",
     "ActivatedDestroyAllAbility",
@@ -343,11 +382,17 @@ __all__ = [
     "ChangeTargetColorEffect",
     "CreatureBuff",
     "DamageEffect",
+    "ReverseDamageEffect",
+    "RetroactiveDamageTransferEffect",
     "DestroyAllEffect",
     "DestroyTargetsEffect",
     "DrawCardsEffect",
     "DrawPhaseEffect",
+    "DiscardCardsEffect",
+    "DiscardHandsAndDrawEffect",
+    "UntapRestrictionEffect",
     "ExtraTurnEffect",
+    "BlazeOfGloryEffect",
     "LandEventDamageEffect",
     "AttachedEventDamageEffect",
     "EffectRecipient",
@@ -356,10 +401,13 @@ __all__ = [
     "GlobalDamageEffect",
     "LandhomeRequirement",
     "LandTypeEffect",
+    "ManaPaymentEffect",
     "MoveTargetsEffect",
+    "ExileTargetsEffect",
     "OptionalUpkeepPaymentEffect",
     "SetTappedEffect",
     "AddManaEffect",
+    "TapLandsAndEmptyManaPoolEffect",
     "CombatDestructionEffect",
     "RegenerateTargetsEffect",
     "SpellEffect",

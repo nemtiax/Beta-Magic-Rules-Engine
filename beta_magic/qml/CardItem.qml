@@ -5,6 +5,7 @@ Rectangle {
     id: card
     required property var cardData
     property bool interactive: true
+    property bool selectionOnly: false
     property bool targetable: false
     property bool tabMode: false
     signal selected(string cardId)
@@ -16,8 +17,13 @@ Rectangle {
     height: tabMode ? 30 : 68
     radius: 7
     color: cardData.background
-    border.color: cardData.selected ? "#ffd54a" : "#262626"
-    border.width: cardData.selected ? 4 : 2
+    border.color: cardData.selected ? "#ffd54a"
+                  : cardData.balanceEligible || cardData.upkeepSacrificeEligible
+                    ? "#7fc8ff"
+                  : cardData.combatRole === "attacker" ? "#e58a55"
+                  : cardData.combatRole === "blocker" ? "#75b7e8"
+                  : "#262626"
+    border.width: cardData.selected ? 4 : cardData.combatRole ? 3 : 2
     rotation: cardData.tapped ? 7 : 0
     scale: mouse.containsMouse && (interactive || targetable) ? 1.035 : 1.0
 
@@ -62,13 +68,40 @@ Rectangle {
 
     Text {
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 7
-        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottomMargin: cardData.combatLabel ? 20 : 7
+        anchors.right: parent.right
+        anchors.rightMargin: 8
         visible: !card.tabMode && cardData.isCreature
         text: cardData.power + "/" + cardData.toughness
               + (cardData.damage ? "  · " + cardData.damage + " damage" : "")
         color: cardData.foreground
         font.pixelSize: 11
+    }
+
+    Rectangle {
+        id: combatBadge
+        visible: !card.tabMode && !!cardData.combatLabel
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 4
+        height: 15
+        radius: 4
+        color: cardData.combatRole === "attacker" ? "#7a3f26" : "#285875"
+        border.color: cardData.combatRole === "attacker" ? "#f0a06d" : "#8ac9f3"
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            text: cardData.combatLabel
+            color: "#ffffff"
+            font.bold: true
+            font.pixelSize: 9
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+
     }
 
     Text {
@@ -85,12 +118,13 @@ Rectangle {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: card.interactive || card.targetable
-                         ? Qt.LeftButton | Qt.RightButton : Qt.NoButton
+        acceptedButtons: card.selectionOnly ? Qt.LeftButton
+                         : card.interactive || card.targetable
+                           ? Qt.LeftButton | Qt.RightButton : Qt.NoButton
         onEntered: card.inspected(cardData)
         onClicked: function(mouse) {
             if (mouse.button === Qt.RightButton) {
-                if (cardData.activatedAbilities.length)
+                if (!card.selectionOnly && cardData.activatedAbilities.length)
                     abilityMenu.popup()
             } else {
                 card.selected(cardData.id)
@@ -98,6 +132,8 @@ Rectangle {
         }
         onDoubleClicked: function(mouse) {
             if (mouse.button !== Qt.LeftButton)
+                return
+            if (card.selectionOnly)
                 return
             if (cardData.activatedAbilities.length === 1)
                 card.abilityActivated(

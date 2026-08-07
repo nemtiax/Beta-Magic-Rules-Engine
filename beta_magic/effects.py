@@ -31,6 +31,7 @@ class UpkeepDamageRecipient(str, Enum):
 class UpkeepFailure(str, Enum):
     DESTROY_SOURCE = "destroy_source"
     DAMAGE_CONTROLLER = "damage_controller"
+    TAP_SOURCE_AND_OPPONENT_CHOOSES_LAND = "tap_source_and_opponent_chooses_land"
 
 
 class UpkeepBenefit(str, Enum):
@@ -107,13 +108,39 @@ LandTypeEffect = AttachedLandTypeEffect | GlobalLandTypeConversion
 
 
 @dataclass(frozen=True, slots=True)
-class DamageEffect:
-    amount: int
-    recipient: EffectRecipient = EffectRecipient.TARGET
+class ManaPaymentEffect:
+    """Allow one mana color to satisfy another color's payment requirement."""
+
+    source_color: Color
+    paid_as_color: Color
 
     def __post_init__(self) -> None:
-        if self.amount < 0:
+        if self.source_color is Color.COLORLESS or self.paid_as_color is Color.COLORLESS:
+            raise ValueError("mana payment substitutions require colored mana")
+        if self.source_color is self.paid_as_color:
+            raise ValueError("a mana payment substitution must change color")
+
+
+@dataclass(frozen=True, slots=True)
+class DamageEffect:
+    amount: int = 0
+    recipient: EffectRecipient = EffectRecipient.TARGET
+    amount_per_x: int = 0
+    disintegrates_target: bool = False
+
+    def __post_init__(self) -> None:
+        if self.amount < 0 or self.amount_per_x < 0:
             raise ValueError("damage cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class ReverseDamageEffect:
+    """Reverse all damage from one chosen source dealt to the caster this turn."""
+
+
+@dataclass(frozen=True, slots=True)
+class RetroactiveDamageTransferEffect:
+    """Move all damage dealt to the caster this turn onto a target creature."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +189,17 @@ class DiscardCardsEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class DiscardHandsAndDrawEffect:
+    """Make every player discard their hand, then draw new cards."""
+
+    draw_count: int = 7
+
+    def __post_init__(self) -> None:
+        if self.draw_count < 0:
+            raise ValueError("a replacement hand size cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
 class ShuffleHandAndGraveyardEffect:
     """Recycle each player's hand and graveyard, then draw a new hand."""
 
@@ -175,6 +213,16 @@ class ShuffleHandAndGraveyardEffect:
 @dataclass(frozen=True, slots=True)
 class SirensCallEffect:
     """Apply Beta Siren's Call to the active player's current creatures."""
+
+
+@dataclass(frozen=True, slots=True)
+class BlazeOfGloryEffect:
+    """Make a defender block every attacking group it legally can."""
+
+
+@dataclass(frozen=True, slots=True)
+class BalanceEffect:
+    """Snapshot and equalize lands, hands, and creatures by player choice."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +278,45 @@ class PermanentTappedEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class AttachedTapManaEffect:
+    """Produce mana whenever the enchanted permanent becomes tapped."""
+
+    color: Color
+    amount: int = 1
+
+    def __post_init__(self) -> None:
+        if self.amount < 1:
+            raise ValueError("attached tap mana must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class LandManaBonusEffect:
+    """Duplicate mana when a land is deliberately tapped for mana."""
+
+    amount: int = 1
+
+    def __post_init__(self) -> None:
+        if self.amount < 1:
+            raise ValueError("land mana bonuses must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class LandTapManaEffect:
+    """Produce fixed mana whenever a current land subtype is tapped."""
+
+    color: Color
+    land_subtype: str
+    amount: int = 1
+    owner_receives: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.land_subtype.strip():
+            raise ValueError("a land tap-mana effect needs a land subtype")
+        if self.amount < 1:
+            raise ValueError("land tap mana must be positive")
+
+
+@dataclass(frozen=True, slots=True)
 class CounterTargetSpellEffect:
     """Counter the targeted spell during its interrupt window."""
 
@@ -265,10 +352,16 @@ class UpkeepDamageEffect:
     recipient: UpkeepDamageRecipient = UpkeepDamageRecipient.ACTIVE_PLAYER
     controller_upkeep_only: bool = False
     source_tapped: bool | None = None
+    counted_active_player_owned_land_subtype: str | None = None
 
     def __post_init__(self) -> None:
         if self.amount < 1:
             raise ValueError("upkeep damage must be positive")
+        if (
+            self.counted_active_player_owned_land_subtype is not None
+            and not self.counted_active_player_owned_land_subtype.strip()
+        ):
+            raise ValueError("counted land subtype cannot be blank")
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +377,11 @@ class UpkeepCostEffect:
             raise ValueError("a damaging upkeep failure must deal positive damage")
         if self.failure is UpkeepFailure.DESTROY_SOURCE and self.damage:
             raise ValueError("source-destruction upkeep cannot also deal damage")
+        if (
+            self.failure is UpkeepFailure.TAP_SOURCE_AND_OPPONENT_CHOOSES_LAND
+            and self.damage
+        ):
+            raise ValueError("land-loss upkeep cannot also deal damage")
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,7 +401,23 @@ class OptionalUpkeepPaymentEffect:
             raise ValueError("untap upkeep benefits do not use an amount")
 
 
-UpkeepEffect = UpkeepDamageEffect | UpkeepCostEffect | OptionalUpkeepPaymentEffect
+@dataclass(frozen=True, slots=True)
+class UpkeepCreatureSacrificeEffect:
+    """Require another eligible creature or damage the source's controller."""
+
+    damage: int
+
+    def __post_init__(self) -> None:
+        if self.damage < 1:
+            raise ValueError("failed creature-sacrifice upkeep must deal damage")
+
+
+UpkeepEffect = (
+    UpkeepDamageEffect
+    | UpkeepCostEffect
+    | OptionalUpkeepPaymentEffect
+    | UpkeepCreatureSacrificeEffect
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +429,32 @@ class DrawPhaseEffect:
     def __post_init__(self) -> None:
         if self.amount < 1:
             raise ValueError("an additional draw amount must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class UntapRestrictionEffect:
+    """Modify a player's normal untap processing while a permanent is active."""
+
+    card_type: CardType | None = None
+    maximum_untaps: int | None = None
+    maximum_creature_power: int | None = None
+    skip_untap: bool = False
+
+    def __post_init__(self) -> None:
+        modes = sum(
+            value is not None
+            for value in (
+                self.maximum_untaps,
+                self.maximum_creature_power,
+            )
+        ) + int(self.skip_untap)
+        if modes != 1:
+            raise ValueError("an untap restriction must describe exactly one rule")
+        if self.maximum_untaps is not None:
+            if self.card_type is None or self.maximum_untaps < 0:
+                raise ValueError("a capped untap rule needs a card type and nonnegative cap")
+        elif self.card_type is not None:
+            raise ValueError("only a capped untap rule names a card type")
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,6 +479,17 @@ class MoveTargetsEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class ExileTargetsEffect:
+    """Remove targeted permanents from the game, optionally granting life.
+
+    The life option uses each target's power immediately before it leaves play
+    and grants that life to its controller.  Negative power counts as zero.
+    """
+
+    controller_gains_life_equal_to_power: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class SetTappedEffect:
     """Tap or untap each targeted permanent, as chosen while casting."""
 
@@ -353,6 +504,11 @@ class AddManaEffect:
     def __post_init__(self) -> None:
         if self.amount <= 0:
             raise ValueError("a mana effect must add a positive amount")
+
+
+@dataclass(frozen=True, slots=True)
+class TapLandsAndEmptyManaPoolEffect:
+    """Tap a targeted player's lands, then empty their pool without burn."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,13 +558,18 @@ class DestroyAllEffect:
 
 SpellEffect = (
     DamageEffect
+    | ReverseDamageEffect
+    | RetroactiveDamageTransferEffect
     | TemporaryPumpEffect
     | RegenerateTargetsEffect
     | GainLifeEffect
     | DrawCardsEffect
     | DiscardCardsEffect
+    | DiscardHandsAndDrawEffect
     | ShuffleHandAndGraveyardEffect
     | SirensCallEffect
+    | BlazeOfGloryEffect
+    | BalanceEffect
     | ExtraTurnEffect
     | CounterTargetSpellEffect
     | ChangeTargetColorEffect
@@ -416,8 +577,10 @@ SpellEffect = (
     | DestroyTargetsEffect
     | DestroyAllEffect
     | MoveTargetsEffect
+    | ExileTargetsEffect
     | SetTappedEffect
     | AddManaEffect
+    | TapLandsAndEmptyManaPoolEffect
 )
 
 
@@ -501,30 +664,43 @@ __all__ = [
     "AttachedLandTypeEffect",
     "GlobalLandTypeConversion",
     "LandTypeEffect",
+    "ManaPaymentEffect",
     "DamageEffect",
+    "ReverseDamageEffect",
+    "RetroactiveDamageTransferEffect",
     "TemporaryPumpEffect",
     "RegenerateTargetsEffect",
     "GainLifeEffect",
     "DrawCardsEffect",
     "DiscardCardsEffect",
+    "DiscardHandsAndDrawEffect",
     "ShuffleHandAndGraveyardEffect",
     "SirensCallEffect",
+    "BlazeOfGloryEffect",
+    "BalanceEffect",
     "ExtraTurnEffect",
     "LandEventDamageEffect",
     "AttachedEventDamageEffect",
     "PermanentTappedEffect",
+    "AttachedTapManaEffect",
+    "LandManaBonusEffect",
+    "LandTapManaEffect",
     "CounterTargetSpellEffect",
     "ChangeTargetColorEffect",
     "GlobalDamageEffect",
     "UpkeepDamageEffect",
     "UpkeepCostEffect",
     "OptionalUpkeepPaymentEffect",
+    "UpkeepCreatureSacrificeEffect",
     "DrawPhaseEffect",
+    "UntapRestrictionEffect",
     "UpkeepEffect",
     "DestroyTargetsEffect",
     "MoveTargetsEffect",
+    "ExileTargetsEffect",
     "SetTappedEffect",
     "AddManaEffect",
+    "TapLandsAndEmptyManaPoolEffect",
     "CombatDestructionEffect",
     "DestroyAllEffect",
     "SpellEffect",

@@ -16,9 +16,12 @@ from ..effects import (
     DamageEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
+    DiscardHandsAndDrawEffect,
     EffectScope,
     GlobalDamageEffect,
+    LandManaBonusEffect,
     PermanentTappedEffect,
+    UntapRestrictionEffect,
     VariableCreatureStats,
     VariableStatKind,
 )
@@ -34,6 +37,17 @@ _CREATURE_IN_PLAY = TargetRequirement(
 
 CHAOSLACE = lace("Chaoslace", Color.RED)
 
+SMOKE = CardDefinition(
+    name="Smoke",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{R}{R}"),
+    rules_text="Each player untaps only one creature during their untap phase.",
+    colors=frozenset({Color.RED}),
+    untap_effects=(
+        UntapRestrictionEffect(card_type=CardType.CREATURE, maximum_untaps=1),
+    ),
+)
+
 MANABARBS = CardDefinition(
     name="Manabarbs",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -44,6 +58,18 @@ MANABARBS = CardDefinition(
     ),
     colors=frozenset({Color.RED}),
     permanent_tapped_effects=(PermanentTappedEffect(damage=1),),
+)
+
+MANA_FLARE = CardDefinition(
+    name="Mana Flare",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{2}{R}"),
+    rules_text=(
+        "Whenever either player taps a land for mana, that land produces "
+        "one additional mana of the chosen type."
+    ),
+    colors=frozenset({Color.RED}),
+    land_mana_bonus_effects=(LandManaBonusEffect(),),
 )
 
 RED_ELEMENTAL_BLAST = CardDefinition(
@@ -444,6 +470,21 @@ LIGHTNING_BOLT = CardDefinition(
     spell_effects=(DamageEffect(3),),
 )
 
+DISINTEGRATE = CardDefinition(
+    name="Disintegrate",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{X}{R}"),
+    rules_text=(
+        "Disintegrate does X damage to one target. If target dies this turn, "
+        "it is removed from the game and cannot be regenerated."
+    ),
+    colors=frozenset({Color.RED}),
+    target_requirement=_ANY_CREATURE_OR_PLAYER,
+    spell_effects=(
+        DamageEffect(amount_per_x=1, disintegrates_target=True),
+    ),
+)
+
 SHATTER = CardDefinition(
     name="Shatter",
     card_types=frozenset({CardType.INSTANT}),
@@ -512,6 +553,15 @@ EARTHQUAKE = CardDefinition(
     ),
 )
 
+WHEEL_OF_FORTUNE = CardDefinition(
+    name="Wheel of Fortune",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{2}{R}"),
+    rules_text="Both players discard their hands, then draw seven cards.",
+    colors=frozenset({Color.RED}),
+    spell_effects=(DiscardHandsAndDrawEffect(7),),
+)
+
 
 RED_CARDS = tuple(
     sorted(
@@ -521,6 +571,7 @@ RED_CARDS = tuple(
             DRAGON_WHELP,
             DWARVEN_DEMOLITION_TEAM,
             DWARVEN_WARRIORS,
+            DISINTEGRATE,
             EARTH_ELEMENTAL,
             EARTHQUAKE,
             FIRE_ELEMENTAL,
@@ -536,6 +587,7 @@ RED_CARDS = tuple(
             KELDON_WARLORD,
             LIGHTNING_BOLT,
             MANABARBS,
+            MANA_FLARE,
             MONSS_GOBLIN_RAIDERS,
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,
@@ -544,6 +596,7 @@ RED_CARDS = tuple(
             SEDGE_TROLL,
             SHATTER,
             SHIVAN_DRAGON,
+            SMOKE,
             STONE_RAIN,
             STONE_GIANT,
             TUNNEL,
@@ -551,6 +604,7 @@ RED_CARDS = tuple(
             UTHDEN_TROLL,
             WALL_OF_STONE,
             WALL_OF_FIRE,
+            WHEEL_OF_FORTUNE,
         ),
         key=lambda card: card.name,
     )

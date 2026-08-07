@@ -87,3 +87,22 @@ class DamageIncident:
     @property
     def total_remaining(self) -> int:
         return sum(packet.remaining for packet in self.packets)
+
+
+@dataclass(slots=True)
+class PlayerDamageRecord:
+    """Unreversed damage actually applied to a player during this turn."""
+
+    player_id: str
+    amount: int
+    source_key: str
+    source_name: str
+    source_id: UUID | None = None
+    source_controller_id: str | None = None
+    colors: frozenset[Color] = field(default_factory=frozenset)
+    combat: bool = False
+    reversed_amount: int = 0
+
+    @property
+    def remaining(self) -> int:
+        return self.amount - self.reversed_amount

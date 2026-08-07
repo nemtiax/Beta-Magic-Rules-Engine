@@ -38,6 +38,13 @@ class JadeStatueTests(unittest.TestCase):
 
     def animate(self, statue):
         self.alice.mana_pool.colorless = 2
+        if (
+            self.game.priority_player_index is not None
+            and self.game.players[self.game.priority_player_index] is not self.alice
+        ):
+            self.game.pass_priority(
+                self.game.players[self.game.priority_player_index].id
+            )
         self.game.activate_ability(self.alice.id, statue, 0)
         self.game.pass_priority(self.bob.id)
         self.game.pass_priority(self.alice.id)
@@ -97,6 +104,7 @@ class JadeStatueTests(unittest.TestCase):
         game.begin_combat()
         game.declare_attackers([attacker])
         game.players[1].mana_pool.colorless = 2
+        game.pass_priority(game.players[0].id)
         game.activate_ability(game.players[1].id, defending_statue, 0)
         game.pass_priority(game.players[0].id)
         game.pass_priority(game.players[1].id)
