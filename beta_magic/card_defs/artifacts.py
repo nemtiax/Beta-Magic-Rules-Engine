@@ -5,10 +5,13 @@ from ..abilities import (
     ActivatedDamageAbility,
     ActivatedDestroyAllAbility,
     ActivatedDrawAbility,
+    ActivatedCreateTokenAbility,
     ActivatedDiscardAbility,
     ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
     ActivatedManaAbility,
+    ActivatedPreventDamageAbility,
+    ActivatedRevealHandAbility,
     ActivatedRegenerationAbility,
     ActivatedRedirectDamageAbility,
     ActivatedTapAbility,
@@ -25,6 +28,7 @@ from ..effects import (
     ManaPaymentEffect,
     UntapRestrictionEffect,
     UpkeepDamageEffect,
+    UpkeepHandSizeDamageEffect,
 )
 from ..mana import ManaCost
 from ..types import CardType, Color, KeywordAbility, Zone
@@ -127,6 +131,26 @@ SUNGLASSES_OF_URZA = CardDefinition(
     mana_payment_effects=(ManaPaymentEffect(Color.WHITE, Color.RED),),
 )
 
+CELESTIAL_PRISM = CardDefinition(
+    name="Celestial Prism",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{3}"),
+    rules_text=(
+        "{2}, {T}: Add one mana of any color to your mana pool. This ability "
+        "can be played as an interrupt."
+    ),
+    activated_abilities=tuple(
+        ActivatedManaAbility(color, mana_cost=ManaCost.parse("{2}"))
+        for color in (
+            Color.WHITE,
+            Color.BLUE,
+            Color.BLACK,
+            Color.RED,
+            Color.GREEN,
+        )
+    ),
+)
+
 DISRUPTING_SCEPTER = CardDefinition(
     name="Disrupting Scepter",
     card_types=frozenset({CardType.ARTIFACT}),
@@ -141,6 +165,7 @@ MANA_ARTIFACTS = MOXEN + (
     BLACK_LOTUS,
     MANA_VAULT,
     BASALT_MONOLITH,
+    CELESTIAL_PRISM,
 )
 
 
@@ -321,6 +346,29 @@ ROD_OF_RUIN = CardDefinition(
     ),
 )
 
+CONSERVATOR = CardDefinition(
+    name="Conservator",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text="{3}, {T}: Prevent the loss of up to 2 life.",
+    activated_abilities=(
+        ActivatedPreventDamageAbility(
+            amount=2,
+            mana_cost=ManaCost.parse("{3}"),
+            controller_only=True,
+            prevents_life_loss=True,
+        ),
+    ),
+)
+
+GLASSES_OF_URZA = CardDefinition(
+    name="Glasses of Urza",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text="{T}: You may look at opponent's hand.",
+    activated_abilities=(ActivatedRevealHandAbility(),),
+)
+
 JAYEMDAE_TOME = CardDefinition(
     name="Jayemdae Tome",
     card_types=frozenset({CardType.ARTIFACT}),
@@ -409,7 +457,35 @@ TIME_VAULT = CardDefinition(
     may_skip_turn_to_untap=True,
 )
 
+GIANT_WASP_TOKEN = CardDefinition(
+    name="Giant Wasp",
+    card_types=frozenset({CardType.ARTIFACT, CardType.CREATURE}),
+    mana_cost=ManaCost(),
+    rules_text="Flying",
+    subtypes=("Wasp",),
+    power=1,
+    toughness=1,
+    abilities=frozenset({KeywordAbility.FLYING}),
+)
+
+THE_HIVE = CardDefinition(
+    name="The Hive",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{5}"),
+    rules_text=(
+        "{5}, {T}: Create a Giant Wasp, a 1/1 flying artifact creature token."
+    ),
+    activated_abilities=(
+        ActivatedCreateTokenAbility(
+            token_definition=GIANT_WASP_TOKEN,
+            mana_cost=ManaCost.parse("{5}"),
+        ),
+    ),
+)
+
 UTILITY_ARTIFACTS = (
+    CONSERVATOR,
+    GLASSES_OF_URZA,
     DISRUPTING_SCEPTER,
     ROD_OF_RUIN,
     JAYEMDAE_TOME,
@@ -422,6 +498,7 @@ UTILITY_ARTIFACTS = (
     GAUNTLET_OF_MIGHT,
     HELM_OF_CHATZUK,
     SUNGLASSES_OF_URZA,
+    THE_HIVE,
 )
 
 UNTAP_ARTIFACTS = (MEEKSTONE, WINTER_ORB)
@@ -436,7 +513,18 @@ COPPER_TABLET = CardDefinition(
     upkeep_effects=(UpkeepDamageEffect(1),),
 )
 
-TIMED_ARTIFACTS = (COPPER_TABLET,)
+BLACK_VISE = CardDefinition(
+    name="Black Vise",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "During an opponent's upkeep, Black Vise deals 1 damage to that "
+        "player for each card in their hand beyond four."
+    ),
+    upkeep_effects=(UpkeepHandSizeDamageEffect(4),),
+)
+
+TIMED_ARTIFACTS = (COPPER_TABLET, BLACK_VISE)
 
 LIVING_WALL = CardDefinition(
     name="Living Wall",
@@ -460,6 +548,24 @@ OBSIANUS_GOLEM = CardDefinition(
     toughness=6,
 )
 
+CLOCKWORK_BEAST = CardDefinition(
+    name="Clockwork Beast",
+    card_types=frozenset({CardType.ARTIFACT, CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{6}"),
+    rules_text=(
+        "Enters with seven +1/+0 counters. Remove one immediately when it "
+        "is declared as an attacker or blocker. During untap, pay 1 per "
+        "lost counter to replace counters instead of untapping it."
+    ),
+    subtypes=("Beast",),
+    power=0,
+    toughness=4,
+    initial_counters=(("+1/+0", 7),),
+    counter_power_bonus=(("+1/+0", 1),),
+    loses_counter_when_declared_for_combat="+1/+0",
+    rewinds_during_untap=("+1/+0", 7),
+)
+
 JUGGERNAUT = CardDefinition(
     name="Juggernaut",
     card_types=frozenset({CardType.ARTIFACT, CardType.CREATURE}),
@@ -472,7 +578,12 @@ JUGGERNAUT = CardDefinition(
     cannot_be_blocked_by_subtypes=frozenset({"Wall"}),
 )
 
-ARTIFACT_CREATURES = (JUGGERNAUT, LIVING_WALL, OBSIANUS_GOLEM)
+ARTIFACT_CREATURES = (
+    CLOCKWORK_BEAST,
+    JUGGERNAUT,
+    LIVING_WALL,
+    OBSIANUS_GOLEM,
+)
 
 ARTIFACT_CARDS = tuple(
     sorted(
@@ -499,6 +610,7 @@ __all__ = [
     "BLACK_LOTUS",
     "MANA_VAULT",
     "BASALT_MONOLITH",
+    "CELESTIAL_PRISM",
     "SUNGLASSES_OF_URZA",
     "DISRUPTING_SCEPTER",
     "MANA_ARTIFACTS",
@@ -518,20 +630,26 @@ __all__ = [
     "HELM_OF_CHATZUK",
     "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
+    "CONSERVATOR",
+    "GLASSES_OF_URZA",
     "JAYEMDAE_TOME",
     "ICY_MANIPULATOR",
     "NEVINYRRALS_DISK",
     "JADE_MONOLITH",
     "JADE_STATUE",
     "TIME_VAULT",
+    "THE_HIVE",
+    "GIANT_WASP_TOKEN",
     "TURN_ARTIFACTS",
     "MEEKSTONE",
     "WINTER_ORB",
     "UNTAP_ARTIFACTS",
     "UTILITY_ARTIFACTS",
     "COPPER_TABLET",
+    "BLACK_VISE",
     "TIMED_ARTIFACTS",
     "LIVING_WALL",
+    "CLOCKWORK_BEAST",
     "JUGGERNAUT",
     "OBSIANUS_GOLEM",
     "ARTIFACT_CREATURES",

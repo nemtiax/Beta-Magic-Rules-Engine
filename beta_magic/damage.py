@@ -48,6 +48,7 @@ class DamagePacket:
     trample: bool = False
     first_strike: bool = False
     prevented: int = 0
+    life_loss_prevented: int = 0
     redirected: int = 0
     id: UUID = field(default_factory=uuid4)
 
@@ -56,8 +57,10 @@ class DamagePacket:
             raise ValueError("a damage packet must contain positive damage")
         if (
             self.prevented < 0
+            or self.life_loss_prevented < 0
             or self.redirected < 0
             or self.prevented + self.redirected > self.amount
+            or self.life_loss_prevented > self.remaining
         ):
             raise ValueError(
                 "prevented and redirected damage must fit within the packet"
@@ -66,6 +69,12 @@ class DamagePacket:
     @property
     def remaining(self) -> int:
         return self.amount - self.prevented - self.redirected
+
+    @property
+    def resulting_life_loss(self) -> int:
+        """Life lost by a player after loss-of-life prevention."""
+
+        return self.remaining - self.life_loss_prevented
 
 
 @dataclass(slots=True)

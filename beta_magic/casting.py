@@ -30,6 +30,8 @@ from .effects import (
     BlazeOfGloryEffect,
     ReverseDamageEffect,
     RetroactiveDamageTransferEffect,
+    TemporaryPumpEffect,
+    PreventCombatDamageEffect,
 )
 from .types import (
     BASIC_LAND_SUBTYPES,
@@ -77,6 +79,7 @@ class AbilityOnStack:
     ability: BatchActivatedAbility
     targets: tuple[Card | PlayerState, ...]
     amount: int = 1
+    event_id: UUID | None = None
 
 
 @dataclass(slots=True)
@@ -124,9 +127,7 @@ class TargetingCastingMixin:
             raise ValueError(f"{card.name} is not a {expected_type.value.lower()}")
         if not card.definition.is_permanent or CardType.LAND in card.definition.card_types:
             raise ValueError(f"{card.name} is not a permanent spell")
-        if not self.can_pay_mana(player,
-            card.definition.mana_cost.with_x(x_value)
-        ):
+        if not self.can_pay_mana(player, self.spell_mana_cost(card, x_value)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
 
     def _validate_enchantment_cast(self, card: Card) -> None:
@@ -205,9 +206,22 @@ class TargetingCastingMixin:
             and self.combat.step is CombatStep.DAMAGE
         ):
             raise RuntimeError("instants cannot be cast during combat damage")
-        if not self.can_pay_mana(caster,
-            card.definition.mana_cost.with_x(x_value)
-        ):
+        if any(
+            isinstance(effect, TemporaryPumpEffect)
+            and effect.destroy_at_end_of_turn_if_attacked
+            for effect in card.definition.spell_effects
+        ) and self.attacks_this_turn and self.combat is None:
+            raise RuntimeError(
+                f"{card.name} cannot be cast after the current turn's attack"
+            )
+        if any(
+            isinstance(effect, PreventCombatDamageEffect)
+            for effect in card.definition.spell_effects
+        ) and self.attacks_this_turn and self.combat is None:
+            raise RuntimeError(
+                f"{card.name} cannot be cast after the current turn's combat damage"
+            )
+        if not self.can_pay_mana(caster, self.spell_mana_cost(card, x_value)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
         if any(
             isinstance(effect, SirensCallEffect)
@@ -240,9 +254,20 @@ class TargetingCastingMixin:
             raise RuntimeError("spells cannot be cast during a combat declaration")
         if x_value < 0:
             raise ValueError("X cannot be negative")
+        if card.definition.requires_ante and not self.ante_enabled:
+            raise RuntimeError(f"{card.name} cannot be used when not playing for ante")
         if not card.definition.mana_cost.x_symbols and x_value:
             raise ValueError(f"{card.name} has no X in its mana cost")
         caster = self._caster_for(card)
+        requirement = card.definition.target_requirement
+        if (
+            requirement is not None
+            and requirement.count_equals_x
+            and x_value > len(self.legal_targets_for(card))
+        ):
+            raise ValueError(
+                f"X cannot exceed the number of legal targets for {card.name}"
+            )
         if (
             self.priority_player_index is not None
             and caster is not self.players[self.priority_player_index]
@@ -262,10 +287,14 @@ class TargetingCastingMixin:
         cost = card.definition.mana_cost
         if not cost.x_symbols:
             raise ValueError(f"{card.name} has no X in its mana cost")
-        if not self.can_pay_mana(caster, cost.with_x(0)):
+        if not self.can_pay_mana(caster, self.spell_mana_cost(card, 0)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
-        remaining = caster.mana_pool.total - cost.with_x(0).mana_value
-        return remaining // cost.x_symbols
+        remaining = caster.mana_pool.total - self.spell_mana_cost(card, 0).mana_value
+        maximum = remaining // cost.x_symbols
+        requirement = card.definition.target_requirement
+        if requirement is not None and requirement.count_equals_x:
+            maximum = min(maximum, len(self.legal_targets_for(card)))
+        return maximum
 
     def begin_cast(
         self,
@@ -312,7 +341,8 @@ class TargetingCastingMixin:
             raise ValueError(f"{card.name} does not choose a damage source")
 
         if card.definition.target_requirement is not None:
-            if not self.legal_targets_for(
+            requirement = card.definition.target_requirement
+            if not (requirement.count_equals_x and x_value == 0) and not self.legal_targets_for(
                 card, mode=mode
             ) and not self.legal_player_targets_for(card):
                 raise RuntimeError(f"there are no legal targets for {card.name}")
@@ -543,6 +573,14 @@ class TargetingCastingMixin:
             )
         ):
             return False
+        if requirement.required_abilities and not requirement.required_abilities.issubset(
+            self.creature_abilities(card)
+        ):
+            return False
+        if requirement.required_land_subtypes and not requirement.required_land_subtypes.issubset(
+            self.land_subtypes(card)
+        ):
+            return False
         if requirement.blocking_only:
             return (
                 self.combat is not None
@@ -740,9 +778,10 @@ class TargetingCastingMixin:
         chosen = tuple(targets)
         requirement = pending.spell.definition.target_requirement
         assert requirement is not None
-        if len(chosen) != requirement.count:
+        required_count = pending.x_value if requirement.count_equals_x else requirement.count
+        if len(chosen) != required_count:
             raise ValueError(
-                f"{pending.spell.name} requires {requirement.count} target(s)"
+                f"{pending.spell.name} requires {required_count} target(s)"
             )
         target_keys = {
             ("card", target.id)
@@ -822,7 +861,7 @@ class TargetingCastingMixin:
         chosen_land_subtype: str | None = None,
     ) -> None:
         player = self.active_player
-        self.pay_mana(player, card.definition.mana_cost)
+        self.pay_mana(player, self.spell_mana_cost(card))
         card.controller_id = player.id
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
@@ -856,7 +895,7 @@ class TargetingCastingMixin:
     ) -> None:
         """Pay for a spell and add it to the current response batch."""
 
-        self.pay_mana(caster, card.definition.mana_cost.with_x(x_value))
+        self.pay_mana(caster, self.spell_mana_cost(card, x_value))
         card.controller_id = caster.id
         self._move_card(card, Zone.STACK)
         card.chosen_land_subtype = chosen_land_subtype

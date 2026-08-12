@@ -3,6 +3,7 @@ import unittest
 from beta_magic import (
     BLACK_LOTUS,
     BASALT_MONOLITH,
+    CELESTIAL_PRISM,
     MANA_ARTIFACTS,
     MANA_VAULT,
     MOX_EMERALD,
@@ -54,7 +55,14 @@ class ManaArtifactTests(unittest.TestCase):
         )
         self.assertEqual(
             MANA_ARTIFACTS,
-            MOXEN + (SOL_RING, BLACK_LOTUS, MANA_VAULT, BASALT_MONOLITH),
+            MOXEN
+            + (
+                SOL_RING,
+                BLACK_LOTUS,
+                MANA_VAULT,
+                BASALT_MONOLITH,
+                CELESTIAL_PRISM,
+            ),
         )
         self.assertTrue(
             all(CardType.ARTIFACT in card.card_types for card in MANA_ARTIFACTS)

@@ -304,6 +304,9 @@ class CombatMixin:
             ):
                 self._tap_permanent(card)
             self.attacked_this_turn.add(card.id)
+            counter_name = card.definition.loses_counter_when_declared_for_combat
+            if counter_name is not None and card.counters.get(counter_name, 0):
+                card.counters[counter_name] -= 1
         self.combat.attackers = chosen
         self.combat.attacking_bands = declared_bands
         self.combat.blockers = {card.id: [] for card in chosen}
@@ -525,6 +528,10 @@ class CombatMixin:
                 # The non-Wall rider applies only to creatures blocking the
                 # Basilisk/Cockatrice, not to an attacker they block.
                 self.combat.end_of_combat_destruction_ids.add(attacker.id)
+        for blocker in assigned_attackers:
+            counter_name = blocker.definition.loses_counter_when_declared_for_combat
+            if counter_name is not None and blocker.counters.get(counter_name, 0):
+                blocker.counters[counter_name] -= 1
         self.combat.step = CombatStep.BLOCKER_RESPONSE
         self.priority_player_index = self.active_player_index
         self.consecutive_passes = 0

@@ -16,6 +16,313 @@ ApplicationWindow {
     property var inspectedCard: null
 
     Dialog {
+        id: counterRewindDialog
+        anchors.centerIn: parent
+        width: 390
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.counterRewindRequired
+        title: "Rewind " + gameState.counterRewindCard
+        onOpened: counterRewindAmount.value = gameState.counterRewindMaximum
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.counterRewindCanChoose
+                      ? "Choose how many lost +1/+0 counters to replace for 1 mana each. Replacing any counters leaves the Beast tapped."
+                      : "Waiting for the active player to choose."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            SpinBox {
+                id: counterRewindAmount
+                visible: gameState.counterRewindCanChoose
+                from: 0
+                to: gameState.counterRewindMaximum
+                value: gameState.counterRewindMaximum
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Button {
+                visible: gameState.counterRewindCanChoose
+                text: counterRewindAmount.value === 0
+                      ? "Untap normally" : "Replace counters"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.chooseCounterRewind(counterRewindAmount.value)
+            }
+            Button {
+                visible: !gameState.counterRewindCanChoose
+                text: "Switch perspective"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: partialUpkeepDialog
+        anchors.centerIn: parent
+        width: 390
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.partialUpkeepRequired
+        title: "Choose upkeep payment"
+        onOpened: partialUpkeepAmount.value = gameState.partialUpkeepAffordable
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.partialUpkeepPlayer === gameState.perspective.id
+                      ? "Choose how much mana to pay. You will take 1 damage "
+                        + "for each of the " + gameState.partialUpkeepMaximum
+                        + " mana left unpaid."
+                      : "Waiting for the affected player to choose a payment."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            SpinBox {
+                id: partialUpkeepAmount
+                visible: gameState.partialUpkeepPlayer === gameState.perspective.id
+                from: 0
+                to: gameState.partialUpkeepAffordable
+                value: gameState.partialUpkeepAffordable
+                editable: false
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Label {
+                visible: partialUpkeepAmount.visible
+                text: "Pay " + partialUpkeepAmount.value + " mana; take "
+                      + (gameState.partialUpkeepMaximum - partialUpkeepAmount.value)
+                      + " damage"
+                color: "#ffd978"
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Button {
+                visible: partialUpkeepAmount.visible
+                text: "Confirm payment"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.choosePartialUpkeepPayment(
+                    partialUpkeepAmount.value
+                )
+            }
+            Button {
+                visible: gameState.partialUpkeepPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        anchors.centerIn: parent
+        width: 420
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.counterPurchaseRequired
+        title: "Grow heads on " + gameState.counterPurchaseCard
+        onOpened: counterPurchaseAmount.value = gameState.counterPurchaseMaximum
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.counterPurchasePlayer === gameState.perspective.id
+                      ? "Choose how many head counters to grow for RRR each."
+                      : "Waiting for the active player to choose."
+                color: "#ffffff"; wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+            SpinBox {
+                id: counterPurchaseAmount
+                visible: gameState.counterPurchasePlayer === gameState.perspective.id
+                from: 0; to: gameState.counterPurchaseMaximum
+                value: gameState.counterPurchaseMaximum
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Button {
+                visible: counterPurchaseAmount.visible
+                text: counterPurchaseAmount.value ? "Grow heads" : "Grow no heads"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.chooseUpkeepCounterPurchase(counterPurchaseAmount.value)
+            }
+            Button {
+                visible: !counterPurchaseAmount.visible
+                text: "Switch perspective"; Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        anchors.centerIn: parent
+        width: 430
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.counterDamageRequired
+        title: gameState.counterDamageCard + " takes damage"
+        onOpened: counterDamageAmount.value = gameState.counterDamageMaximum
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.counterDamagePlayer === gameState.perspective.id
+                      ? gameState.counterDamageAmount + " damage will be absorbed by heads. Pay R for each head to preserve; unpaid heads are removed."
+                      : "Waiting for the creature's controller to choose."
+                color: "#ffffff"; wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+            SpinBox {
+                id: counterDamageAmount
+                visible: gameState.counterDamagePlayer === gameState.perspective.id
+                from: 0; to: gameState.counterDamageMaximum
+                value: gameState.counterDamageMaximum
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Button {
+                visible: counterDamageAmount.visible
+                text: "Confirm red mana payment"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.chooseCounterDamagePayment(counterDamageAmount.value)
+            }
+            Button {
+                visible: !counterDamageAmount.visible
+                text: "Switch perspective"; Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: drainPowerDialog
+        anchors.centerIn: parent
+        width: 390
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.drainPowerChoice
+        title: "Drain Power — " + gameState.drainPowerLand
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.drainPowerCanChoose
+                      ? "Choose the mana produced by " + gameState.drainPowerLand + "."
+                      : "Waiting for " + gameState.drainPowerChooser
+                        + " to choose mana."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.drainPowerCanChoose
+                       ? gameState.drainPowerManaChoices : []
+                Button {
+                    required property var modelData
+                    text: "Add " + modelData.label
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseDrainPowerMana(modelData.color)
+                }
+            }
+            Button {
+                visible: !gameState.drainPowerCanChoose
+                text: "Switch to " + gameState.drainPowerChooser
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: powerSinkDialog
+        anchors.centerIn: parent
+        width: 420
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.powerSinkPayment
+        title: "Power Sink — mandatory payment"
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.powerSinkCanChoose
+                      ? "Choose a land to tap. " + gameState.powerSinkRemaining
+                        + " more mana must be paid."
+                      : "Waiting for " + gameState.powerSinkPayer
+                        + " to pay " + gameState.powerSinkRemaining + " mana."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.powerSinkCanChoose
+                       ? gameState.powerSinkManaChoices : []
+                Button {
+                    required property var modelData
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.choosePowerSinkMana(
+                        modelData.landId, modelData.abilityIndex
+                    )
+                }
+            }
+            Button {
+                visible: !gameState.powerSinkCanChoose
+                text: "Switch to " + gameState.powerSinkPayer
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: handRevealDialog
+        anchors.centerIn: parent
+        width: Math.min(760, window.width - 48)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.handRevealPending
+        title: gameState.handRevealCanView
+               ? "Looking at " + gameState.handRevealTarget + "'s hand"
+               : "Private hand reveal"
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                visible: !gameState.handRevealCanView
+                text: gameState.handRevealViewer
+                      + " may look at " + gameState.handRevealTarget + "'s hand."
+                color: "#ffd978"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            CardFlow {
+                visible: gameState.handRevealCanView
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                cards: gameState.handRevealCards
+                interactive: false
+                onInspected: function(cardData) { window.inspectedCard = cardData }
+            }
+            Label {
+                visible: gameState.handRevealCanView
+                         && gameState.handRevealCards.length === 0
+                text: gameState.handRevealTarget + " has no cards in hand."
+                color: "#ffffff"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    visible: !gameState.handRevealCanView
+                    text: "Switch to " + gameState.handRevealViewer
+                    onClicked: gameBridge.switchPerspective()
+                }
+                Button {
+                    visible: gameState.handRevealCanView
+                    text: "Done"
+                    onClicked: gameBridge.finishHandReveal()
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: timeVaultPicker
         anchors.centerIn: parent
         implicitWidth: 420
@@ -538,14 +845,16 @@ ApplicationWindow {
                                          && gameState.upkeepPaymentPlayer
                                             === gameState.perspective.id
                                 enabled: gameState.canPayUpkeep
-                                text: "Pay upkeep"
+                                text: gameState.upkeepCounterRedemption
+                                      ? "Trade counter" : "Pay upkeep"
                                 onClicked: gameBridge.chooseUpkeepPayment(true)
                             }
                             Button {
                                 visible: gameState.upkeepPaymentRequired
                                          && gameState.upkeepPaymentPlayer
                                             === gameState.perspective.id
-                                text: "Decline upkeep"
+                                text: gameState.upkeepCounterRedemption
+                                      ? "Keep counter" : "Decline upkeep"
                                 onClicked: gameBridge.chooseUpkeepPayment(false)
                             }
                             Button {
@@ -621,7 +930,10 @@ ApplicationWindow {
                         RowLayout {
                             visible: gameState.choosingPrevention
                             Label {
-                                text: "Choose damage to prevent ("
+                                text: "Choose "
+                                      + (gameState.preventingLifeLoss
+                                         ? "life loss" : "damage")
+                                      + " to prevent ("
                                       + gameState.preventionRemaining + " remaining):"
                                 color: "#9fd6a8"
                                 font.bold: true
@@ -637,6 +949,7 @@ ApplicationWindow {
                             Button {
                                 text: "Done"
                                 visible: gameState.preventionPaid
+                                         || gameState.preventingLifeLoss
                                 onClicked: gameBridge.finishPrevention()
                             }
                             Button {

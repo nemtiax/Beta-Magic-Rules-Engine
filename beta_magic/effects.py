@@ -144,6 +144,11 @@ class RetroactiveDamageTransferEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class PreventCombatDamageEffect:
+    """Prevent damage assigned during this turn's combat damage steps."""
+
+
+@dataclass(frozen=True, slots=True)
 class TemporaryPumpEffect:
     """Modify targeted creatures until the current turn ends."""
 
@@ -151,7 +156,13 @@ class TemporaryPumpEffect:
     toughness: int = 0
     power_per_x: int = 0
     toughness_per_x: int = 0
+    power_multiplier: int = 1
     granted_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
+    destroy_at_end_of_turn_if_attacked: bool = False
+
+    def __post_init__(self) -> None:
+        if self.power_multiplier < 1:
+            raise ValueError("a power multiplier must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +213,17 @@ class DiscardHandsAndDrawEffect:
 @dataclass(frozen=True, slots=True)
 class ShuffleHandAndGraveyardEffect:
     """Recycle each player's hand and graveyard, then draw a new hand."""
+
+    draw_count: int = 7
+
+    def __post_init__(self) -> None:
+        if self.draw_count < 0:
+            raise ValueError("a replacement hand size cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class DiscardHandAnteAndDrawEffect:
+    """Discard the caster's hand, ante one library card, then draw anew."""
 
     draw_count: int = 7
 
@@ -321,6 +343,7 @@ class CounterTargetSpellEffect:
     """Counter the targeted spell during its interrupt window."""
 
     x_equals_target_cost: bool = False
+    power_sink: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,6 +388,18 @@ class UpkeepDamageEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class UpkeepHandSizeDamageEffect:
+    """Damage an opponent during upkeep for cards above a threshold."""
+
+    threshold: int = 4
+    source_tapped: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.threshold < 0:
+            raise ValueError("a hand-size damage threshold cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
 class UpkeepCostEffect:
     """An optional mana payment with a consequence for declining."""
 
@@ -402,6 +437,47 @@ class OptionalUpkeepPaymentEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class PartialUpkeepDamageEffect:
+    """Pay up to a generic upkeep amount and take damage for the remainder."""
+
+    maximum_payment: int
+    damage_per_unpaid: int = 1
+    attached_permanent_controller: bool = False
+
+    def __post_init__(self) -> None:
+        if self.maximum_payment < 1 or self.damage_per_unpaid < 1:
+            raise ValueError("partial upkeep amounts must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class CounterPurchaseUpkeepEffect:
+    """Buy any number of named counters during the source's upkeep."""
+
+    counter_name: str
+    mana_cost_per_counter: ManaCost
+
+    def __post_init__(self) -> None:
+        if not self.counter_name:
+            raise ValueError("an upkeep-purchased counter needs a name")
+        if self.mana_cost_per_counter.mana_value < 1:
+            raise ValueError("an upkeep-purchased counter must have a cost")
+
+
+@dataclass(frozen=True, slots=True)
+class CounterRedemptionUpkeepEffect:
+    """Optionally remove one named counter during upkeep to gain life."""
+
+    counter_name: str
+    life_gain: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.counter_name:
+            raise ValueError("an upkeep-redeemed counter needs a name")
+        if self.life_gain < 1:
+            raise ValueError("counter redemption must gain positive life")
+
+
+@dataclass(frozen=True, slots=True)
 class UpkeepCreatureSacrificeEffect:
     """Require another eligible creature or damage the source's controller."""
 
@@ -414,8 +490,12 @@ class UpkeepCreatureSacrificeEffect:
 
 UpkeepEffect = (
     UpkeepDamageEffect
+    | UpkeepHandSizeDamageEffect
     | UpkeepCostEffect
     | OptionalUpkeepPaymentEffect
+    | PartialUpkeepDamageEffect
+    | CounterPurchaseUpkeepEffect
+    | CounterRedemptionUpkeepEffect
     | UpkeepCreatureSacrificeEffect
 )
 
@@ -510,6 +590,9 @@ class AddManaEffect:
 class TapLandsAndEmptyManaPoolEffect:
     """Tap a targeted player's lands, then empty their pool without burn."""
 
+    transfer_to_caster: bool = False
+    produce_land_mana: bool = False
+
 
 @dataclass(frozen=True, slots=True)
 class CombatDestructionEffect:
@@ -560,6 +643,7 @@ SpellEffect = (
     DamageEffect
     | ReverseDamageEffect
     | RetroactiveDamageTransferEffect
+    | PreventCombatDamageEffect
     | TemporaryPumpEffect
     | RegenerateTargetsEffect
     | GainLifeEffect
@@ -567,6 +651,7 @@ SpellEffect = (
     | DiscardCardsEffect
     | DiscardHandsAndDrawEffect
     | ShuffleHandAndGraveyardEffect
+    | DiscardHandAnteAndDrawEffect
     | SirensCallEffect
     | BlazeOfGloryEffect
     | BalanceEffect
@@ -591,7 +676,9 @@ class ContinuousEffect:
     scope: EffectScope = EffectScope.ALL_CREATURES
     power: int = 0
     toughness: int = 0
+    power_multiplier: int = 1
     granted_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
+    removed_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
     granted_regeneration_cost: ManaCost | None = None
     color: Color | None = None
     subtype: str | None = None
@@ -623,6 +710,8 @@ class ContinuousEffect:
     round_toughness_up: bool = False
 
     def __post_init__(self) -> None:
+        if self.power_multiplier < 1:
+            raise ValueError("a continuous power multiplier must be positive")
         if (self.base_power is None) != (self.base_toughness is None):
             raise ValueError("base power and toughness must be supplied together")
         if (
@@ -668,6 +757,7 @@ __all__ = [
     "DamageEffect",
     "ReverseDamageEffect",
     "RetroactiveDamageTransferEffect",
+    "PreventCombatDamageEffect",
     "TemporaryPumpEffect",
     "RegenerateTargetsEffect",
     "GainLifeEffect",
@@ -675,6 +765,7 @@ __all__ = [
     "DiscardCardsEffect",
     "DiscardHandsAndDrawEffect",
     "ShuffleHandAndGraveyardEffect",
+    "DiscardHandAnteAndDrawEffect",
     "SirensCallEffect",
     "BlazeOfGloryEffect",
     "BalanceEffect",
@@ -689,8 +780,12 @@ __all__ = [
     "ChangeTargetColorEffect",
     "GlobalDamageEffect",
     "UpkeepDamageEffect",
+    "UpkeepHandSizeDamageEffect",
     "UpkeepCostEffect",
     "OptionalUpkeepPaymentEffect",
+    "PartialUpkeepDamageEffect",
+    "CounterPurchaseUpkeepEffect",
+    "CounterRedemptionUpkeepEffect",
     "UpkeepCreatureSacrificeEffect",
     "DrawPhaseEffect",
     "UntapRestrictionEffect",

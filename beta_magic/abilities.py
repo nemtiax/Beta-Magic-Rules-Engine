@@ -9,7 +9,7 @@ from .mana import ManaCost
 from .types import CardType, Color, KeywordAbility, Zone
 
 if TYPE_CHECKING:
-    from .cards import Card
+    from .cards import Card, CardDefinition
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +35,9 @@ class TargetRequirement:
     controller_only: bool = False
     defending_player_only: bool = False
     maximum_power: int | None = None
+    required_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
+    required_land_subtypes: frozenset[str] = field(default_factory=frozenset)
+    count_equals_x: bool = False
     count: int = 1
 
     def __post_init__(self) -> None:
@@ -129,6 +132,7 @@ class ActivatedManaAbility:
     amount: int = 1
     tap_cost: bool = True
     sacrifice_source: bool = False
+    mana_cost: ManaCost = field(default_factory=ManaCost)
 
     def __post_init__(self) -> None:
         if self.amount < 1:
@@ -136,7 +140,11 @@ class ActivatedManaAbility:
 
     @property
     def label(self) -> str:
-        return f"Add {self.color.value * self.amount}"
+        result = f"Add {self.color.value * self.amount}"
+        if not self.mana_cost.mana_value:
+            return result
+        tap = " and tap" if self.tap_cost else ""
+        return f"Pay {self.mana_cost.compact}{tap}: {result}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,6 +362,37 @@ class ActivatedDrawAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedCreateTokenAbility:
+    """Create a fixed creature token under the activating player's control."""
+
+    token_definition: CardDefinition
+    mana_cost: ManaCost
+    tap_cost: bool = True
+
+    @property
+    def label(self) -> str:
+        return f"Pay {self.mana_cost.compact} and tap: Create {self.token_definition.name}"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedRevealHandAbility:
+    """A tap ability that lets its controller inspect an opponent's hand."""
+
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+    tap_cost: bool = True
+
+    @property
+    def label(self) -> str:
+        cost_parts = []
+        if self.mana_cost.mana_value:
+            cost_parts.append(f"Pay {self.mana_cost.compact}")
+        if self.tap_cost:
+            cost_parts.append("tap")
+        cost = " and ".join(cost_parts).capitalize()
+        return f"{cost}: Look at opponent's hand"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedDiscardAbility:
     """A targeted fast effect that makes an opponent choose discards."""
 
@@ -470,12 +509,29 @@ class ActivatedEventLifeGainAbility:
 
 
 @dataclass(frozen=True, slots=True)
+class ActivatedEventDrawAbility:
+    """Optionally draw when the controller successfully casts an enchantment."""
+
+    amount: int = 1
+
+    def __post_init__(self) -> None:
+        if self.amount < 1:
+            raise ValueError("event draw amount must be positive")
+
+    @property
+    def label(self) -> str:
+        noun = "card" if self.amount == 1 else "cards"
+        return f"Draw {self.amount} {noun} for casting an enchantment"
+
+
+@dataclass(frozen=True, slots=True)
 class ActivatedPreventDamageAbility:
     amount: int | None = None
     mana_cost: ManaCost = field(default_factory=ManaCost)
     tap_cost: bool = True
     source_color: Color | None = None
     controller_only: bool = False
+    prevents_life_loss: bool = False
 
     def __post_init__(self) -> None:
         if self.amount is not None and self.amount < 1:
@@ -490,6 +546,8 @@ class ActivatedPreventDamageAbility:
             cost_parts.append("tap")
         cost = " and ".join(cost_parts).capitalize()
         amount = "all" if self.amount is None else str(self.amount)
+        if self.prevents_life_loss:
+            return f"{cost}: Prevent up to {amount} life loss"
         color = (
             f" from one {self.source_color.name.lower()} source"
             if self.source_color is not None
@@ -526,9 +584,12 @@ class ActivatedRedirectDamageAbility:
 class ActivatedRegenerationAbility:
     mana_cost: ManaCost
     affects_attached_creature: bool = False
+    counter_cost: str | None = None
 
     @property
     def label(self) -> str:
+        if self.counter_cost is not None:
+            return f"Remove a {self.counter_cost} counter: Regenerate"
         return f"Pay {self.mana_cost.compact}: Regenerate"
 
 
@@ -549,6 +610,8 @@ BatchActivatedAbility = (
     | ActivatedDestroyAllAbility
     | ActivatedPumpAbility
     | ActivatedDrawAbility
+    | ActivatedCreateTokenAbility
+    | ActivatedRevealHandAbility
     | ActivatedDiscardAbility
     | ActivatedAttackRequirementAbility
     | ActivatedLandTypeAbility
@@ -556,6 +619,7 @@ BatchActivatedAbility = (
     | ActivatedUntapAbility
     | ActivatedInterruptUntapAbility
     | ActivatedEventLifeGainAbility
+    | ActivatedEventDrawAbility
     | ActivatedAnimationAbility
     | ActivatedGlobalDamageAbility
 )
@@ -570,9 +634,12 @@ ActivatedAbility = (
     | ActivatedUnblockableAbility
     | ActivatedTemporaryAbility
     | ActivatedDrawAbility
+    | ActivatedCreateTokenAbility
+    | ActivatedRevealHandAbility
     | ActivatedExtraTurnAbility
     | ActivatedUntapAbility
     | ActivatedEventLifeGainAbility
+    | ActivatedEventDrawAbility
     | ActivatedAnimationAbility
     | ActivatedPreventDamageAbility
     | ActivatedRedirectDamageAbility
@@ -594,6 +661,8 @@ __all__ = [
     "ActivatedUnblockableAbility",
     "ActivatedTemporaryAbility",
     "ActivatedDrawAbility",
+    "ActivatedCreateTokenAbility",
+    "ActivatedRevealHandAbility",
     "ActivatedDiscardAbility",
     "ActivatedAttackRequirementAbility",
     "ActivatedLandTypeAbility",
@@ -602,6 +671,7 @@ __all__ = [
     "ActivatedInterruptUntapAbility",
     "ActivatedCounterSpellAbility",
     "ActivatedEventLifeGainAbility",
+    "ActivatedEventDrawAbility",
     "ActivatedAnimationAbility",
     "ActivatedPreventDamageAbility",
     "ActivatedRedirectDamageAbility",

@@ -6,6 +6,7 @@ Run with ``python -m beta_magic.ui``.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import signal
 import sys
 from pathlib import Path
@@ -48,7 +49,7 @@ from .effects import (
     UpkeepCreatureSacrificeEffect,
 )
 from .game import GameState, PlayerState
-from .types import CardType, CombatStep, TurnPhase, Zone
+from .types import CardType, Color, CombatStep, TurnPhase, Zone
 from .ui_presentation import UiPresentationBuilder, mana_text
 from .ui_combat import CombatUiController
 from .ui_choices import TransientChoiceState
@@ -712,9 +713,14 @@ class GameViewModel(QObject):
             )
             self.stateChanged.emit()
         elif self.game.pending_prevention is not None:
+            prevention_name = (
+                "life loss"
+                if self.game.pending_prevention.prevents_life_loss
+                else "damage"
+            )
             self._prompt(
                 player.id,
-                f"Choose damage for {card.name} to prevent.",
+                f"Choose {prevention_name} for {card.name} to prevent.",
                 observer_message=(
                     f"{player.name} is assigning {card.name}'s prevention."
                 ),
@@ -733,20 +739,25 @@ class GameViewModel(QObject):
     @Slot(str)
     def chooseDamagePacket(self, packet_id: str) -> None:
         player = self.game.players[self.perspective_index]
+        prevents_life_loss = (
+            self.game.pending_prevention is not None
+            and self.game.pending_prevention.prevents_life_loss
+        )
+        prevention_name = "life loss" if prevents_life_loss else "damage"
         prevented: list[int] = []
         if self._run(
             lambda: prevented.append(
                 self.game.prevent_damage(player.id, UUID(packet_id))
             ),
-            "Prevented damage.",
+            f"Prevented {prevention_name}.",
         ):
-            self._message = f"Prevented {prevented[0]} damage."
+            self._message = f"Prevented {prevented[0]} {prevention_name}."
             if self.game.pending_prevention is not None:
                 remaining = self.game.pending_prevention.remaining
                 remaining_text = "all" if remaining is None else str(remaining)
                 self._prompt(
                     player.id,
-                    f"Prevented {prevented[0]} damage; {remaining_text} prevention remains.",
+                    f"Prevented {prevented[0]} {prevention_name}; {remaining_text} prevention remains.",
                     observer_message=(
                         f"{player.name} prevented {prevented[0]} damage and is "
                         "continuing prevention assignment."
@@ -1052,6 +1063,30 @@ class GameViewModel(QObject):
             f"{choice} the upkeep cost.",
         )
 
+    @Slot(int)
+    def choosePartialUpkeepPayment(self, amount: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.choose_partial_upkeep_payment(player.id, amount),
+            f"Paid {amount} mana toward upkeep.",
+        )
+
+    @Slot(int)
+    def chooseUpkeepCounterPurchase(self, amount: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.choose_upkeep_counter_purchase(player.id, amount),
+            f"Bought {amount} counter(s) during upkeep.",
+        )
+
+    @Slot(int)
+    def chooseCounterDamagePayment(self, amount: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.choose_counter_damage_payment(player.id, amount),
+            f"Paid to preserve {amount} counter(s).",
+        )
+
     @Slot(str)
     def targetPlayer(self, player_id: str) -> None:
         if (
@@ -1208,6 +1243,14 @@ class GameViewModel(QObject):
             "Untap selection recorded.",
         )
 
+    @Slot(int)
+    def chooseCounterRewind(self, amount: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.choose_counter_rewind(player.id, amount),
+            f"Replaced {amount} counter(s).",
+        )
+
     @Slot()
     def chooseUpkeepSacrifice(self) -> None:
         if not self.game.timed_events:
@@ -1360,6 +1403,38 @@ class GameViewModel(QObject):
         self.stateChanged.emit()
 
     @Slot()
+    def finishHandReveal(self) -> None:
+        player = self.game.players[self.perspective_index]
+        if self._run(
+            lambda: self.game.finish_hand_reveal(player.id),
+            "Finished looking at opponent's hand.",
+        ):
+            self._message = "Finished looking at opponent's hand."
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def chooseDrainPowerMana(self, color: str) -> None:
+        player = self.game.players[self.perspective_index]
+        if self._run(
+            lambda: self.game.choose_drain_power_mana(player.id, Color(color)),
+            f"Chose {color} for Drain Power.",
+        ):
+            self._message = f"Chose {color} mana for Drain Power."
+        self.stateChanged.emit()
+
+    @Slot(str, int)
+    def choosePowerSinkMana(self, land_id: str, ability_index: int) -> None:
+        player = self.game.players[self.perspective_index]
+        if self._run(
+            lambda: self.game.choose_power_sink_mana(
+                player.id, UUID(land_id), ability_index
+            ),
+            "Paid mana toward Power Sink.",
+        ):
+            self._message = "Paid mana toward Power Sink."
+        self.stateChanged.emit()
+
+    @Slot()
     def newGame(self) -> None:
         self.game = self._game_factory()
         self.game.pause_for_damage_windows = True
@@ -1396,6 +1471,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--test-decks",
         action="store_true",
         help="use deterministic 20-card decks containing supported mechanics",
+    )
+    parser.add_argument(
+        "--ante",
+        action="store_true",
+        help="ante one face-up card from each shuffled deck before drawing",
     )
     deck_group.add_argument(
         "--enchantment-test-decks",
@@ -1455,6 +1535,8 @@ def main(argv: list[str] | None = None) -> int:
         game_factory = make_test_game
     else:
         game_factory = make_demo_game
+    if args.ante:
+        game_factory = partial(game_factory, ante=True)
     game = game_factory()
     engine = create_engine(GameViewModel(game, game_factory=game_factory))
     if not engine.rootObjects():

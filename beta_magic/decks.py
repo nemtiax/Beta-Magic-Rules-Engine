@@ -21,9 +21,9 @@ def _cards(*names: str) -> tuple[CardDefinition, ...]:
 VERDANT_TIDES_DECK = _cards(
     "War Mammoth", "Mox Sapphire", "Wall of Brambles", "Shanodin Dryads",
     "Sol Ring", "Forest", "Birds of Paradise", "Island", "Lord of Atlantis",
-    "Prodigal Sorcerer", "Island", "Forest", "Island", "Giant Growth",
+    "Prodigal Sorcerer", "Elvish Archers", "Forest", "Island", "Giant Growth",
     "Tropical Island", "Flight", "Llanowar Elves", "Tranquility",
-    "Psionic Blast", "Elvish Archers",
+    "Psionic Blast", "Glasses of Urza",
 )
 
 STONEFIRE_DECK = _cards(
@@ -144,96 +144,100 @@ def _make_game(
     second_deck: Iterable[CardDefinition],
     *,
     shuffle: bool,
+    ante: bool = False,
 ) -> GameState:
+    if not ante:
+        first_deck = tuple(card for card in first_deck if not card.requires_ante)
+        second_deck = tuple(card for card in second_deck if not card.requires_ante)
     game = GameState(
         [
             PlayerState.with_deck(first_id, first_name, first_deck),
             PlayerState.with_deck(second_id, second_name, second_deck),
         ]
     )
-    game.start(shuffle=shuffle)
+    game.start(shuffle=shuffle, ante=ante)
     return game
 
 
-def make_demo_game() -> GameState:
+def make_demo_game(*, ante: bool = False) -> GameState:
     """Create a started game with two decks containing every supported card."""
 
     deck = ALL_CARDS + BASIC_LANDS * 4
     return _make_game(
         "player-1", "Player 1", deck,
         "player-2", "Player 2", deck,
-        shuffle=True,
+        shuffle=True, ante=ante,
     )
 
 
-def make_test_game() -> GameState:
+def make_test_game(*, ante: bool = False) -> GameState:
     """Create deterministic, compact decks for rapid UI playtesting."""
 
     return _make_game(
         "verdant-tides", "Verdant Tides (U/G)", VERDANT_TIDES_DECK,
         "stonefire", "Stonefire (R/G)", STONEFIRE_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_enchantment_test_game() -> GameState:
+def make_enchantment_test_game(*, ante: bool = False) -> GameState:
     """Create deterministic decks focused on global creature enchantments."""
 
     return _make_game(
         "radiant-charge", "Radiant Charge (W/R)", RADIANT_CHARGE_DECK,
         "moonlit-horde", "Moonlit Horde (B/R)", MOONLIT_HORDE_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_timed_event_test_game() -> GameState:
+def make_timed_event_test_game(*, ante: bool = False) -> GameState:
     """Create compact decks for exercising Copper Tablet response windows."""
 
     return _make_game(
         "copper-control", "Copper Control (U/B)", COPPER_CONTROL_DECK,
         "copper-pressure", "Copper Pressure (R/G)", COPPER_PRESSURE_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_x_test_game() -> GameState:
+def make_x_test_game(*, ante: bool = False) -> GameState:
     """Create compact decks focused on variable casting costs."""
 
     return _make_game(
         "arcane-depths", "Arcane Depths (U/B)", ARCANE_DEPTHS_DECK,
         "elemental-surge", "Elemental Surge (R/G)", ELEMENTAL_SURGE_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_protection_test_game() -> GameState:
+def make_protection_test_game(*, ante: bool = False) -> GameState:
     """Create compact decks for exercising FAQ-era protection rules."""
 
     return _make_game(
         "aegis-wards", "Aegis Wards (W/B)", AEGIS_WARDS_DECK,
         "spectrum-assault", "Spectrum Assault (Five Color)",
         SPECTRUM_ASSAULT_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_aura_test_game() -> GameState:
+def make_aura_test_game(*, ante: bool = False) -> GameState:
     """Create compact decks for visually testing stacked attachments."""
 
     return _make_game(
         "ivory-layers", "Ivory Layers (W/U)", IVORY_LAYERS_DECK,
         "shadow-coats", "Shadow Coats (B/R)", SHADOW_COATS_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 
-def make_banding_test_game() -> GameState:
+def make_banding_test_game(*, ante: bool = False) -> GameState:
     """Create compact decks for attacking and defensive Banding tests."""
 
     return _make_game(
         "banding-charge", "Banding Charge (W/G)", BANDING_CHARGE_DECK,
         "banding-defense", "Banding Defense (W/G)", BANDING_DEFENSE_DECK,
-        shuffle=False,
+        shuffle=False, ante=ante,
     )
 
 

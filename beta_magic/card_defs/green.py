@@ -2,6 +2,7 @@
 
 from ..abilities import (
     ActivatedCounterSpellAbility,
+    ActivatedEventDrawAbility,
     ActivatedManaAbility,
     ActivatedRegenerationAbility,
     ActivatedInterruptUntapAbility,
@@ -10,6 +11,7 @@ from ..abilities import (
 )
 from ..cards import CardDefinition
 from ..effects import (
+    CounterRedemptionUpkeepEffect,
     CombatDestructionEffect,
     AttachedTapManaEffect,
     ContinuousEffect,
@@ -19,6 +21,7 @@ from ..effects import (
     GainLifeEffect,
     GlobalDamageEffect,
     MoveTargetsEffect,
+    PreventCombatDamageEffect,
     TemporaryPumpEffect,
     UpkeepCostEffect,
     UpkeepDamageEffect,
@@ -39,6 +42,24 @@ _CREATURE_IN_PLAY = TargetRequirement(
 
 LIFELACE = lace("Lifelace", Color.GREEN)
 
+LIVING_ARTIFACT = CardDefinition(
+    name="Living Artifact",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Enchant artifact. Put a counter on Living Artifact for each life "
+        "you lose. During your upkeep, you may trade one counter for one life."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Artifact",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.ARTIFACT}),
+    ),
+    counters_on_controller_life_loss="life",
+    upkeep_effects=(CounterRedemptionUpkeepEffect("life"),),
+)
+
 LURE = CardDefinition(
     name="Lure",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -51,6 +72,21 @@ LURE = CardDefinition(
     subtypes=("Enchant Creature",),
     target_requirement=_CREATURE_IN_PLAY,
     lures_blockers=True,
+)
+
+VERDURAN_ENCHANTRESS = CardDefinition(
+    name="Verduran Enchantress",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{1}{G}{G}"),
+    rules_text=(
+        "While Verduran Enchantress is in play, you may immediately draw a "
+        "card each time you cast an enchantment."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchantress",),
+    power=0,
+    toughness=2,
+    activated_abilities=(ActivatedEventDrawAbility(),),
 )
 
 TIMBER_WOLVES = CardDefinition(
@@ -448,6 +484,38 @@ GIANT_GROWTH = CardDefinition(
     spell_effects=(TemporaryPumpEffect(power=3, toughness=3),),
 )
 
+BERSERK = CardDefinition(
+    name="Berserk",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Until end of turn, target creature's current power doubles and it "
+        "gains trample. If it attacks, destroy it at end of turn. Berserk "
+        "cannot be cast after the current turn's attack is completed."
+    ),
+    colors=frozenset({Color.GREEN}),
+    target_requirement=_CREATURE_IN_PLAY,
+    spell_effects=(
+        TemporaryPumpEffect(
+            power_multiplier=2,
+            granted_abilities=frozenset({KeywordAbility.TRAMPLE}),
+            destroy_at_end_of_turn_if_attacked=True,
+        ),
+    ),
+)
+
+FOG = CardDefinition(
+    name="Fog",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Creatures attack and block as normal, but no damage is dealt during "
+        "combat this turn. Cast only before combat damage is dealt."
+    ),
+    colors=frozenset({Color.GREEN}),
+    spell_effects=(PreventCombatDamageEffect(),),
+)
+
 REGROWTH = CardDefinition(
     name="Regrowth",
     card_types=frozenset({CardType.SORCERY}),
@@ -523,11 +591,13 @@ GREEN_CARDS = tuple(
     sorted(
         (
             ASPECT_OF_WOLF,
+            BERSERK,
             BIRDS_OF_PARADISE,
             COCKATRICE,
             CRAW_WURM,
             ELVISH_ARCHERS,
             FORCE_OF_NATURE,
+            FOG,
             FUNGUSAUR,
             GAEAS_LIEGE,
             GIANT_GROWTH,
@@ -541,6 +611,7 @@ GREEN_CARDS = tuple(
             LIFELACE,
             LIFEFORCE,
             LIVING_LANDS,
+            LIVING_ARTIFACT,
             LURE,
             REGENERATION,
             REGROWTH,
@@ -551,6 +622,7 @@ GREEN_CARDS = tuple(
             TIMBER_WOLVES,
             TRANQUILITY,
             TSUNAMI,
+            VERDURAN_ENCHANTRESS,
             WALL_OF_BRAMBLES,
             WALL_OF_ICE,
             WALL_OF_WOOD,

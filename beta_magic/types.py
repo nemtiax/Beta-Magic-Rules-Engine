@@ -78,6 +78,7 @@ class Zone(str, Enum):
     GRAVEYARD = "graveyard"
     STACK = "stack"
     EXILE = "exile"
+    ANTE = "ante"
 
 
 class GameStatus(str, Enum):

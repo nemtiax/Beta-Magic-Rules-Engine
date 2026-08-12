@@ -40,6 +40,7 @@ class PendingPrevention:
     recipient_id: UUID | str | None = None
     source_color: Color | None = None
     controller_only: bool = False
+    prevents_life_loss: bool = False
     paid: bool = False
 
 
@@ -50,6 +51,19 @@ class PendingRedirection:
     source: Card
     controller_id: str
     ability_index: int
+
+
+@dataclass(slots=True)
+class PendingCounterDamageChoice:
+    """Choose how many damage-absorbing counters to preserve with mana."""
+
+    creature_id: UUID
+    creature_name: str
+    controller_id: str
+    packet_id: UUID
+    counter_name: str
+    absorbed_amount: int
+    maximum_payment: int
 
 
 class DamageDestructionMixin:
@@ -74,7 +88,7 @@ class DamageDestructionMixin:
             raise RuntimeError(
                 f"{self.players[self.priority_player_index].name} has priority"
             )
-        if not self.can_pay_mana(caster, card.definition.mana_cost):
+        if not self.can_pay_mana(caster, self.spell_mana_cost(card)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
         return caster
 
@@ -104,7 +118,7 @@ class DamageDestructionMixin:
                 amount = packet.remaining
                 packet.prevented += amount
                 pending += amount
-        self.pay_mana(caster, card.definition.mana_cost)
+        self.pay_mana(caster, self.spell_mana_cost(card))
         self._move_card(card, Zone.GRAVEYARD)
         caster.life += prior * 2 + pending
         if caster.life > 0:
@@ -165,7 +179,7 @@ class DamageDestructionMixin:
                     first_strike=packet.first_strike,
                 )
             )
-        self.pay_mana(caster, card.definition.mana_cost)
+        self.pay_mana(caster, self.spell_mana_cost(card))
         self._move_card(card, Zone.GRAVEYARD)
         self.priority_player_index = (
             self.players.index(caster) + 1
@@ -199,7 +213,7 @@ class DamageDestructionMixin:
         authorized_id = card.owner_id if ability.owner_activates else card.controller_id
         if not in_play or authorized_id != player_id:
             raise ValueError("that player cannot activate this redirection ability")
-        if not self.can_pay_mana(player, ability.mana_cost):
+        if not self.can_pay_mana(player, self.ability_mana_cost(card, ability.mana_cost)):
             raise RuntimeError(f"not enough mana to activate {card.name}")
         if not self._legal_redirection_packets(card, player, ability):
             raise RuntimeError("there is no eligible damage to redirect")
@@ -272,7 +286,9 @@ class DamageDestructionMixin:
         ]
         assert isinstance(ability, ActivatedRedirectDamageAbility)
         player = self.player(player_id)
-        self.pay_mana(player, ability.mana_cost)
+        self.pay_mana(
+            player, self.ability_mana_cost(pending.source, ability.mana_cost)
+        )
         if amount is None:
             amount = packet.remaining
         if amount < 1 or amount > packet.remaining:
@@ -383,7 +399,7 @@ class DamageDestructionMixin:
             )
         if card.definition.prevention_amount < 1:
             raise ValueError(f"{card.name} has no damage-prevention mode")
-        if not self.can_pay_mana(caster, card.definition.mana_cost):
+        if not self.can_pay_mana(caster, self.spell_mana_cost(card)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
         self.pending_prevention = PendingPrevention(
             card, caster.id, card.definition.prevention_amount
@@ -414,6 +430,11 @@ class DamageDestructionMixin:
         ):
             raise ValueError("this effect only prevents damage to its controller")
         if (
+            pending.prevents_life_loss
+            and packet.recipient_kind is not DamageRecipientKind.PLAYER
+        ):
+            raise ValueError("this effect only prevents loss of life by a player")
+        if (
             pending.source_color is not None
             and pending.source_color not in packet.colors
         ):
@@ -428,7 +449,7 @@ class DamageDestructionMixin:
         if not pending.paid:
             if pending.ability_index is None:
                 caster = self.player(pending.controller_id)
-                self.pay_mana(caster, pending.source.definition.mana_cost)
+                self.pay_mana(caster, self.spell_mana_cost(pending.source))
                 self._move_card(pending.source, Zone.GRAVEYARD)
             else:
                 ability = self.activated_abilities(pending.source)[
@@ -436,18 +457,25 @@ class DamageDestructionMixin:
                 ]
                 assert isinstance(ability, ActivatedPreventDamageAbility)
                 self.pay_mana(
-                    self.player(pending.controller_id), ability.mana_cost
+                    self.player(pending.controller_id),
+                    self.ability_mana_cost(pending.source, ability.mana_cost),
                 )
                 if ability.tap_cost:
                     self._tap_permanent(pending.source)
             pending.paid = True
             pending.recipient_id = packet.recipient_id
-        amount = (
-            packet.remaining
-            if pending.remaining is None
-            else min(pending.remaining, packet.remaining)
+        available = (
+            packet.resulting_life_loss
+            if pending.prevents_life_loss
+            else packet.remaining
         )
-        packet.prevented += amount
+        amount = available if pending.remaining is None else min(
+            pending.remaining, available
+        )
+        if pending.prevents_life_loss:
+            packet.life_loss_prevented += amount
+        else:
+            packet.prevented += amount
         if pending.remaining is not None:
             pending.remaining -= amount
         if pending.remaining is None or pending.remaining == 0:
@@ -465,6 +493,13 @@ class DamageDestructionMixin:
             packet
             for packet in incident.packets
             if packet.remaining
+            and (
+                not pending.prevents_life_loss
+                or (
+                    packet.recipient_kind is DamageRecipientKind.PLAYER
+                    and packet.resulting_life_loss
+                )
+            )
             and (
                 pending.recipient_id is None
                 or packet.recipient_id == pending.recipient_id
@@ -491,8 +526,18 @@ class DamageDestructionMixin:
         if pending.controller_id != player_id:
             raise ValueError("only the prevention effect's controller may finish")
         if not pending.paid:
-            raise RuntimeError("choose at least one damage packet first")
-        player = self.player(player_id)
+            if not pending.prevents_life_loss or pending.ability_index is None:
+                raise RuntimeError("choose at least one damage packet first")
+            ability = self.activated_abilities(pending.source)[
+                pending.ability_index
+            ]
+            assert isinstance(ability, ActivatedPreventDamageAbility)
+            self.pay_mana(player := self.player(player_id), ability.mana_cost)
+            if ability.tap_cost:
+                self._tap_permanent(pending.source)
+            pending.paid = True
+        else:
+            player = self.player(player_id)
         self.pending_prevention = None
         self.priority_player_index = (
             self.players.index(player) + 1
@@ -579,7 +624,12 @@ class DamageDestructionMixin:
                 raise RuntimeError(
                     f"{affected_card.name} cannot regenerate from this destruction"
                 )
-        if not self.can_pay_mana(player, ability.mana_cost):
+        if (
+            ability.counter_cost is not None
+            and card.counters.get(ability.counter_cost, 0) < 1
+        ):
+            raise RuntimeError(f"{card.name} has no {ability.counter_cost} counter")
+        if ability.counter_cost is None and not self.can_pay_mana(player, ability.mana_cost):
             raise RuntimeError(f"not enough mana to regenerate {card.name}")
         return player, ability, affected_card
 
@@ -712,7 +762,16 @@ class DamageDestructionMixin:
             self.pending_damage = None
             return None
 
+        if self.prevent_combat_damage_this_turn and incident.kind in {
+            DamageIncidentKind.FIRST_STRIKE_COMBAT,
+            DamageIncidentKind.COMBAT,
+        }:
+            for packet in incident.packets:
+                packet.prevented = packet.amount
+
         incident.step = DamageResolutionStep.PREVENTION
+        if not self._continue_counter_damage_absorption():
+            return incident
         if self._damage_window_requires_priority():
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
@@ -724,6 +783,98 @@ class DamageDestructionMixin:
         ):
             self._advance_damage_resolution()
         return incident
+
+    def _continue_counter_damage_absorption(self) -> bool:
+        """Apply mandatory counter-for-damage replacement before prevention."""
+
+        incident = self.pending_damage
+        if incident is None:
+            return True
+        for packet in incident.packets:
+            if packet.recipient_kind is not DamageRecipientKind.CREATURE:
+                continue
+            creature = next(
+                (
+                    card
+                    for player in self.players
+                    for card in player.battlefield
+                    if card.id == packet.recipient_id
+                ),
+                None,
+            )
+            if creature is None:
+                continue
+            counter_name = creature.definition.damage_absorbing_counter
+            counters = creature.counters.get(counter_name, 0) if counter_name else 0
+            damage = packet.remaining
+            if not counters or not damage:
+                continue
+            cost = creature.definition.damage_counter_preservation_cost
+            maximum = 0
+            controller = self.player(creature.controller_id)
+            if cost is not None:
+                while maximum < damage and self.can_pay_mana(
+                    controller, cost.scaled(maximum + 1)
+                ):
+                    maximum += 1
+            if maximum:
+                self.pending_counter_damage_choice = PendingCounterDamageChoice(
+                    creature.id,
+                    creature.name,
+                    controller.id,
+                    packet.id,
+                    counter_name,
+                    damage,
+                    maximum,
+                )
+                self.priority_player_index = self.players.index(controller)
+                self.consecutive_passes = 0
+                return False
+            absorbed = min(counters, damage)
+            creature.counters[counter_name] = counters - absorbed
+            packet.prevented += absorbed
+        return True
+
+    def choose_counter_damage_payment(self, player_id: str, amount: int) -> None:
+        """Pay to preserve some counters; every absorbed point is prevented."""
+
+        choice = self.pending_counter_damage_choice
+        incident = self.pending_damage
+        if choice is None or incident is None:
+            raise RuntimeError("there is no counter damage choice waiting")
+        if choice.controller_id != player_id:
+            raise RuntimeError("only the damaged creature's controller may choose")
+        if not 0 <= amount <= choice.maximum_payment:
+            raise ValueError(f"choose a payment from 0 to {choice.maximum_payment}")
+        creature = next(
+            (
+                card
+                for player in self.players
+                for card in player.battlefield
+                if card.id == choice.creature_id
+            ),
+            None,
+        )
+        packet = next((item for item in incident.packets if item.id == choice.packet_id), None)
+        if creature is None or packet is None:
+            raise RuntimeError("the damage choice is no longer valid")
+        cost = creature.definition.damage_counter_preservation_cost
+        if amount:
+            assert cost is not None
+            self.pay_mana(self.player(player_id), cost.scaled(amount))
+        current = creature.counters.get(choice.counter_name, 0)
+        removed = min(current, max(0, choice.absorbed_amount - amount))
+        creature.counters[choice.counter_name] = current - removed
+        packet.prevented += min(choice.absorbed_amount, amount + removed)
+        self.pending_counter_damage_choice = None
+        if not self._continue_counter_damage_absorption():
+            return
+        if self._damage_window_requires_priority():
+            self.priority_player_index = self.active_player_index
+            self.consecutive_passes = 0
+            return
+        while self.pending_damage is not None and not self._damage_window_requires_priority():
+            self._advance_damage_resolution()
 
     def _damage_window_requires_priority(self) -> bool:
         incident = self.pending_damage
@@ -857,7 +1008,7 @@ class DamageDestructionMixin:
             event_source = "combat" if packet.combat else packet.source_name
             if packet.recipient_kind is DamageRecipientKind.PLAYER:
                 recipient = self.player(str(packet.recipient_id))
-                recipient.life -= amount
+                self._lose_life(recipient, packet.resulting_life_loss)
                 self.player_damage_history.append(
                     PlayerDamageRecord(
                         player_id=recipient.id,
@@ -879,8 +1030,6 @@ class DamageDestructionMixin:
                         player_id=recipient.id,
                     )
                 )
-                if recipient.life <= 0:
-                    recipient.has_lost = True
                 source = next(
                     (
                         card

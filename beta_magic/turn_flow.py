@@ -10,10 +10,14 @@ from .cards import Card
 from .damage import DamageIncidentKind
 from .destruction import DestructionIncident, DestructionTarget
 from .effects import (
+    CounterPurchaseUpkeepEffect,
+    CounterRedemptionUpkeepEffect,
     OptionalUpkeepPaymentEffect,
+    PartialUpkeepDamageEffect,
     UpkeepBenefit,
     UpkeepCostEffect,
     UpkeepDamageEffect,
+    UpkeepHandSizeDamageEffect,
     UpkeepDamageRecipient,
     UpkeepEffect,
     UpkeepFailure,
@@ -21,6 +25,7 @@ from .effects import (
     UntapRestrictionEffect,
 )
 from .events import ManaBurnEvent
+from .mana import ManaCost
 from .types import CardType, GameStatus, TurnPhase, Zone
 
 if TYPE_CHECKING:
@@ -38,9 +43,15 @@ class PendingTimedEvent:
     effect: UpkeepEffect
     attached_permanent_id: UUID | None = None
     payment_decision: bool | None = None
+    payment_amount: int | None = None
 
     @property
     def label(self) -> str:
+        if isinstance(self.effect, UpkeepHandSizeDamageEffect):
+            return (
+                f"{self.source_name}: damage to {self.affected_player_name} "
+                f"for cards beyond {self.effect.threshold}"
+            )
         if isinstance(self.effect, OptionalUpkeepPaymentEffect):
             benefit = (
                 f"gain {self.effect.amount} life"
@@ -50,6 +61,21 @@ class PendingTimedEvent:
             return (
                 f"{self.source_name}: pay {self.effect.mana_cost.compact} "
                 f"to {benefit}"
+            )
+        if isinstance(self.effect, PartialUpkeepDamageEffect):
+            return (
+                f"{self.source_name}: pay up to {self.effect.maximum_payment} "
+                "mana; take 1 damage for each unpaid mana"
+            )
+        if isinstance(self.effect, CounterPurchaseUpkeepEffect):
+            return (
+                f"{self.source_name}: pay {self.effect.mana_cost_per_counter.compact} "
+                f"for each {self.effect.counter_name} counter to add"
+            )
+        if isinstance(self.effect, CounterRedemptionUpkeepEffect):
+            return (
+                f"{self.source_name}: trade one {self.effect.counter_name} "
+                f"counter for {self.effect.life_gain} life"
             )
         if isinstance(self.effect, UpkeepCostEffect):
             consequence = (
@@ -193,6 +219,45 @@ class TurnFlowMixin:
             if permanent.id in owed_vaults:
                 permanent.tapped = False
         self.check_state_based_actions()
+        self.rewound_during_untap.clear()
+
+    def current_counter_rewind(self) -> Card | None:
+        if not self.pending_counter_rewinds:
+            return None
+        card_id = self.pending_counter_rewinds[0]
+        return next(
+            (card for card in self.active_player.battlefield if card.id == card_id),
+            None,
+        )
+
+    def maximum_counter_rewind(self) -> int:
+        card = self.current_counter_rewind()
+        if card is None or card.definition.rewinds_during_untap is None:
+            return 0
+        counter_name, maximum = card.definition.rewinds_during_untap
+        missing = maximum - card.counters.get(counter_name, 0)
+        return min(missing, self.active_player.mana_pool.total)
+
+    def choose_counter_rewind(self, player_id: str, amount: int) -> None:
+        """Choose how many Clockwork counters to buy back during untap."""
+
+        card = self.current_counter_rewind()
+        if card is None or card.definition.rewinds_during_untap is None:
+            raise RuntimeError("there is no counter-rewind choice pending")
+        if player_id != self.active_player.id:
+            raise RuntimeError("only the active player may rewind this permanent")
+        maximum = self.maximum_counter_rewind()
+        if not 0 <= amount <= maximum:
+            raise ValueError(f"choose a rewind amount from 0 to {maximum}")
+        counter_name, _ = card.definition.rewinds_during_untap
+        if amount:
+            self.pay_mana(self.active_player, ManaCost(generic=amount))
+            card.counters[counter_name] = card.counters.get(counter_name, 0) + amount
+            card.tapped = True
+            self.rewound_during_untap.add(card.id)
+        self.pending_counter_rewinds.pop(0)
+        if not self.pending_counter_rewinds:
+            self._process_normal_untap()
 
     def propose_phase_advance(self) -> TurnPhase:
         """Declare the active player done and give the opponent a response."""
@@ -221,7 +286,10 @@ class TurnFlowMixin:
         self.consecutive_passes = 1
         return self.current_phase
 
-    def start(self, *, opening_hand_size: int = 7, shuffle: bool = True) -> None:
+    def start(
+        self, *, opening_hand_size: int = 7, shuffle: bool = True,
+        ante: bool = False,
+    ) -> None:
         if self.status is not GameStatus.NOT_STARTED:
             raise RuntimeError("the game has already started")
         if opening_hand_size < 0:
@@ -229,6 +297,14 @@ class TurnFlowMixin:
         if shuffle:
             for player in self.players:
                 player.shuffle_library()
+        self.ante_enabled = ante
+        if ante:
+            for player in self.players:
+                if not player.library:
+                    raise RuntimeError("each player needs a card to ante")
+                card = player.library.pop()
+                card.zone = Zone.ANTE
+                player.ante.append(card)
         for player in self.players:
             player.draw(opening_hand_size)
         self.turn_number = 1
@@ -252,6 +328,18 @@ class TurnFlowMixin:
         self._finish_turn_effects()
         if self.pending_destruction is not None:
             return self.active_player
+        if self.creature_deaths_this_turn:
+            for player in self.players:
+                for permanent in player.battlefield:
+                    counter_name = (
+                        permanent.definition.collects_creature_deaths_at_end_counter
+                    )
+                    if counter_name is not None:
+                        permanent.counters[counter_name] = (
+                            permanent.counters.get(counter_name, 0)
+                            + self.creature_deaths_this_turn
+                        )
+        self.creature_deaths_this_turn = 0
         self._clear_creature_damage()
         self.vampire_damage_marks.clear()
         self.player_damage_history.clear()
@@ -341,20 +429,31 @@ class TurnFlowMixin:
         self.attacks_this_turn = 0
         self.attack_requirements.clear()
         self.attacked_this_turn.clear()
+        self.prevent_combat_damage_this_turn = False
         self._enter_phase(TurnPhase.UNTAP)
 
     def _finish_turn_effects(self) -> None:
         """Resolve delayed end-of-turn destruction before cleanup."""
 
-        doomed_ids = tuple(self.destroy_at_end_of_turn)
-        doomed = (
+        doomed_ids = set(self.destroy_at_end_of_turn)
+        doomed_ids.update(
+            self.destroy_at_end_of_turn_if_attacked & self.attacked_this_turn
+        )
+        doomed = [
             card
             for player in self.players
             for card in tuple(player.battlefield)
             if card.id in doomed_ids
-        )
-        self._destroy_permanents(doomed)
+        ]
         self.destroy_at_end_of_turn.clear()
+        self.destroy_at_end_of_turn_if_attacked.clear()
+        if doomed:
+            self.pending_destruction = DestructionIncident(
+                [DestructionTarget(card.id, card.name, True) for card in doomed]
+            )
+            self._open_destruction_incident()
+            if self.pending_destruction is not None:
+                return
         no_creatures = not any(
             CardType.CREATURE in self.card_types(permanent)
             for player in self.players
@@ -398,6 +497,14 @@ class TurnFlowMixin:
         ):
             return False
         event = self.timed_events[0]
+        if isinstance(event.effect, CounterRedemptionUpkeepEffect):
+            source = self._timed_event_source(event)
+            return bool(
+                event.affected_player_id == player_id
+                and event.payment_decision is None
+                and source is not None
+                and source.counters.get(event.effect.counter_name, 0) > 0
+            )
         return bool(
             isinstance(
                 event.effect,
@@ -408,6 +515,98 @@ class TurnFlowMixin:
             and self._timed_event_source(event) is not None
             and self.can_pay_mana(self.player(player_id), event.effect.mana_cost)
         )
+
+    def maximum_partial_upkeep_payment(self, player_id: str) -> int:
+        """Largest legal payment for the current partial upkeep event."""
+
+        if not self.timed_events:
+            return 0
+        event = self.timed_events[0]
+        if (
+            not isinstance(event.effect, PartialUpkeepDamageEffect)
+            or event.affected_player_id != player_id
+            or event.payment_amount is not None
+            or self._timed_event_source(event) is None
+        ):
+            return 0
+        return min(
+            event.effect.maximum_payment,
+            self.player(player_id).mana_pool.total,
+        )
+
+    def maximum_upkeep_counter_purchase(self, player_id: str) -> int:
+        """Largest affordable counter purchase for the current event."""
+
+        if not self.timed_events:
+            return 0
+        event = self.timed_events[0]
+        if (
+            not isinstance(event.effect, CounterPurchaseUpkeepEffect)
+            or event.affected_player_id != player_id
+            or event.payment_amount is not None
+            or self._timed_event_source(event) is None
+        ):
+            return 0
+        player = self.player(player_id)
+        amount = 0
+        while self.can_pay_mana(
+            player, event.effect.mana_cost_per_counter.scaled(amount + 1)
+        ):
+            amount += 1
+        return amount
+
+    def choose_upkeep_counter_purchase(self, player_id: str, amount: int) -> None:
+        """Choose and pay for counters during a Rock-Hydra-style upkeep."""
+
+        if not self.timed_events or self.stack:
+            raise RuntimeError("there is no counter purchase waiting")
+        event = self.timed_events[0]
+        if not isinstance(event.effect, CounterPurchaseUpkeepEffect):
+            raise RuntimeError("the current upkeep event does not buy counters")
+        player = self.player(player_id)
+        if event.affected_player_id != player.id:
+            raise RuntimeError("only the source's controller chooses this purchase")
+        if event.payment_amount is not None:
+            raise RuntimeError("the counter purchase has already been decided")
+        if self.priority_player_index is None or self.players[self.priority_player_index] is not player:
+            raise RuntimeError("the affected player does not have priority")
+        maximum = self.maximum_upkeep_counter_purchase(player_id)
+        if not 0 <= amount <= maximum:
+            raise ValueError(f"choose a purchase from 0 to {maximum}")
+        if amount:
+            self.pay_mana(player, event.effect.mana_cost_per_counter.scaled(amount))
+        event.payment_amount = amount
+        self.priority_player_index = (self.players.index(player) + 1) % len(self.players)
+        self.consecutive_passes = 0
+
+    def choose_partial_upkeep_payment(self, player_id: str, amount: int) -> None:
+        """Commit a possibly partial payment for a Power-Leak-style event."""
+
+        if not self.timed_events or self.stack:
+            raise RuntimeError("there is no partial upkeep payment waiting")
+        event = self.timed_events[0]
+        if not isinstance(event.effect, PartialUpkeepDamageEffect):
+            raise RuntimeError("the current upkeep event does not allow partial payment")
+        player = self.player(player_id)
+        if event.affected_player_id != player.id:
+            raise RuntimeError("only the affected player chooses this upkeep payment")
+        if event.payment_amount is not None:
+            raise RuntimeError("the upkeep payment has already been decided")
+        if (
+            self.priority_player_index is None
+            or self.players[self.priority_player_index] is not player
+        ):
+            raise RuntimeError("the affected player does not have priority")
+        maximum = self.maximum_partial_upkeep_payment(player_id)
+        if not 0 <= amount <= maximum:
+            raise ValueError(f"choose a payment from 0 to {maximum}")
+        if amount:
+            self.pay_mana(player, ManaCost(generic=amount))
+        event.payment_amount = amount
+        self.priority_player_index = (
+            self.players.index(player) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
 
     @property
     def upkeep_payment_required(self) -> bool:
@@ -426,7 +625,12 @@ class TurnFlowMixin:
             raise RuntimeError("there is no upkeep payment waiting for a choice")
         event = self.timed_events[0]
         if not isinstance(
-            event.effect, (UpkeepCostEffect, OptionalUpkeepPaymentEffect)
+            event.effect,
+            (
+                UpkeepCostEffect,
+                OptionalUpkeepPaymentEffect,
+                CounterRedemptionUpkeepEffect,
+            ),
         ):
             raise RuntimeError("the current timed event has no upkeep payment")
         if event.payment_decision is not None:
@@ -447,7 +651,8 @@ class TurnFlowMixin:
         if self._timed_event_source(event) is None:
             raise RuntimeError("the upkeep source is no longer in play")
         if pay:
-            self.pay_mana(player, event.effect.mana_cost)
+            if not isinstance(event.effect, CounterRedemptionUpkeepEffect):
+                self.pay_mana(player, event.effect.mana_cost)
             if (
                 isinstance(event.effect, UpkeepCostEffect)
                 and event.effect.failure
@@ -549,6 +754,23 @@ class TurnFlowMixin:
                 event.payment_decision is None
                 and self._timed_event_source(event) is not None
                 and self.legal_upkeep_sacrifices(event.affected_player_id)
+            )
+        if isinstance(event.effect, PartialUpkeepDamageEffect):
+            return bool(
+                event.payment_amount is None
+                and self._timed_event_source(event) is not None
+            )
+        if isinstance(event.effect, CounterRedemptionUpkeepEffect):
+            source = self._timed_event_source(event)
+            return bool(
+                event.payment_decision is None
+                and source is not None
+                and source.counters.get(event.effect.counter_name, 0) > 0
+            )
+        if isinstance(event.effect, CounterPurchaseUpkeepEffect):
+            return bool(
+                event.payment_amount is None
+                and self._timed_event_source(event) is not None
             )
         return bool(
             isinstance(
@@ -661,6 +883,58 @@ class TurnFlowMixin:
             ):
                 attached.tapped = False
             return
+        if isinstance(event.effect, CounterRedemptionUpkeepEffect):
+            if not event.payment_decision:
+                return
+            counters = source.counters.get(event.effect.counter_name, 0)
+            if not counters:
+                return
+            source.counters[event.effect.counter_name] = counters - 1
+            self.player(event.affected_player_id).life += event.effect.life_gain
+            return
+        if isinstance(event.effect, PartialUpkeepDamageEffect):
+            unpaid = event.effect.maximum_payment - (event.payment_amount or 0)
+            damage = unpaid * event.effect.damage_per_unpaid
+            if damage:
+                affected_player = self.player(event.affected_player_id)
+                self._begin_damage_incident(DamageIncidentKind.TIMED_EVENT)
+                self._deal_damage(
+                    affected_player,
+                    damage,
+                    event.source_name,
+                    source_card=source,
+                )
+                self._resolve_damage_incident()
+                self.check_state_based_actions()
+            return
+        if isinstance(event.effect, CounterPurchaseUpkeepEffect):
+            amount = event.payment_amount or 0
+            if amount:
+                source.counters[event.effect.counter_name] = (
+                    source.counters.get(event.effect.counter_name, 0) + amount
+                )
+            self.check_state_based_actions()
+            return
+        if isinstance(event.effect, UpkeepHandSizeDamageEffect):
+            if (
+                source.tapped
+                and CardType.ARTIFACT in source.definition.card_types
+            ):
+                return
+            affected_player = self.player(event.affected_player_id)
+            damage = max(0, len(affected_player.hand) - event.effect.threshold)
+            if not damage:
+                return
+            self._begin_damage_incident(DamageIncidentKind.TIMED_EVENT)
+            self._deal_damage(
+                affected_player,
+                damage,
+                event.source_name,
+                source_card=source,
+            )
+            self._resolve_damage_incident()
+            self.check_state_based_actions()
+            return
         if (
             source.tapped
             and CardType.ARTIFACT in source.definition.card_types
@@ -750,67 +1024,17 @@ class TurnFlowMixin:
                     permanent.controller_at_turn_start_id = (
                         permanent.controller_id
                     )
-            restrictions: list[UntapRestrictionEffect] = []
-            for source in self._battlefield_cards():
-                if self.continuous_permanent_is_active(source):
-                    restrictions.extend(source.definition.untap_effects)
-            if any(effect.skip_untap for effect in restrictions):
-                # The scheduled Time Vault untap is also lost when there is no
-                # untap phase at all.
-                self.vaults_untapping_next_turn.pop(self.active_player.id, None)
-                self.check_state_based_actions()
-                return
-            power_ceiling = min(
-                (
-                    effect.maximum_creature_power
-                    for effect in restrictions
-                    if effect.maximum_creature_power is not None
-                ),
-                default=None,
-            )
-            eligible = {
+            self.pending_counter_rewinds = [
                 permanent.id
-                for permanent in self._battlefield_cards()
-                if permanent.controller_id == self.active_player.id
-                and permanent.tapped
-                and self.untaps_during_untap(permanent)
-                and not (
-                    power_ceiling is not None
-                    and CardType.CREATURE in self.card_types(permanent)
-                    and self.creature_power(permanent) > power_ceiling
-                )
-            }
-            caps_by_type: dict[CardType, int] = {}
-            for effect in restrictions:
-                if effect.maximum_untaps is not None:
-                    assert effect.card_type is not None
-                    caps_by_type[effect.card_type] = min(
-                        caps_by_type.get(effect.card_type, effect.maximum_untaps),
-                        effect.maximum_untaps,
-                    )
-            capped_ids = {
-                permanent.id
-                for permanent in self._battlefield_cards()
-                if permanent.id in eligible
-                and any(kind in self.card_types(permanent) for kind in caps_by_type)
-            }
-            selected = eligible - capped_ids
-            if caps_by_type:
-                self.pending_untap_choice = PendingUntapChoice(
-                    self.active_player.id,
-                    frozenset(eligible),
-                    tuple(caps_by_type.items()),
-                    set(selected),
-                )
-                self._continue_untap_choices()
-                if self.pending_untap_choice is not None:
-                    return
-            else:
-                for permanent in self._battlefield_cards():
-                    if permanent.id in selected:
-                        permanent.tapped = False
-                self._finish_untap_processing()
+                for permanent in self.active_player.battlefield
+                if permanent.definition.rewinds_during_untap is not None
+                and permanent.counters.get(
+                    permanent.definition.rewinds_during_untap[0], 0
+                ) < permanent.definition.rewinds_during_untap[1]
+            ]
+            if self.pending_counter_rewinds:
                 return
+            self._process_normal_untap()
         elif phase is TurnPhase.UPKEEP:
             self._queue_upkeep_events()
         elif phase is TurnPhase.DRAW:
@@ -821,6 +1045,74 @@ class TurnFlowMixin:
                         continue
                     for effect in source.definition.draw_phase_effects:
                         self.active_player.draw(effect.amount)
+
+    def _process_normal_untap(self) -> None:
+        """Perform ordinary untapping after any Clockwork choices."""
+
+        phase = self.current_phase
+        assert phase is TurnPhase.UNTAP
+        restrictions: list[UntapRestrictionEffect] = []
+        for source in self._battlefield_cards():
+            if self.continuous_permanent_is_active(source):
+                restrictions.extend(source.definition.untap_effects)
+        if any(effect.skip_untap for effect in restrictions):
+            # The scheduled Time Vault untap is also lost when there is no
+            # untap phase at all.
+            self.vaults_untapping_next_turn.pop(self.active_player.id, None)
+            self.check_state_based_actions()
+            return
+        power_ceiling = min(
+                (
+                    effect.maximum_creature_power
+                    for effect in restrictions
+                    if effect.maximum_creature_power is not None
+                ),
+                default=None,
+            )
+        eligible = {
+                permanent.id
+                for permanent in self._battlefield_cards()
+                if permanent.controller_id == self.active_player.id
+                and permanent.tapped
+                and permanent.id not in self.rewound_during_untap
+                and self.untaps_during_untap(permanent)
+                and not (
+                    power_ceiling is not None
+                    and CardType.CREATURE in self.card_types(permanent)
+                    and self.creature_power(permanent) > power_ceiling
+                )
+        }
+        caps_by_type: dict[CardType, int] = {}
+        for effect in restrictions:
+            if effect.maximum_untaps is not None:
+                assert effect.card_type is not None
+                caps_by_type[effect.card_type] = min(
+                        caps_by_type.get(effect.card_type, effect.maximum_untaps),
+                        effect.maximum_untaps,
+                )
+        capped_ids = {
+                permanent.id
+                for permanent in self._battlefield_cards()
+                if permanent.id in eligible
+                and any(kind in self.card_types(permanent) for kind in caps_by_type)
+        }
+        selected = eligible - capped_ids
+        if caps_by_type:
+            self.pending_untap_choice = PendingUntapChoice(
+                    self.active_player.id,
+                    frozenset(eligible),
+                    tuple(caps_by_type.items()),
+                    set(selected),
+            )
+            self._continue_untap_choices()
+            if self.pending_untap_choice is not None:
+                return
+        else:
+            for permanent in self._battlefield_cards():
+                if permanent.id in selected:
+                    permanent.tapped = False
+            self._finish_untap_processing()
+            return
 
     def _queue_upkeep_events(self) -> None:
         """Collect mandatory upkeep events and open the first response window."""
@@ -833,6 +1125,14 @@ class TurnFlowMixin:
         self.timed_events = []
         for source in battlefield:
             for effect in source.definition.upkeep_effects:
+                if isinstance(effect, UpkeepHandSizeDamageEffect):
+                    if source.controller_id == self.active_player.id:
+                        continue
+                    if (
+                        source.tapped
+                        and CardType.ARTIFACT in source.definition.card_types
+                    ):
+                        continue
                 if isinstance(effect, UpkeepDamageEffect):
                     if (
                         effect.controller_upkeep_only
@@ -911,6 +1211,27 @@ class TurnFlowMixin:
                             continue
                     elif source.controller_id != self.active_player.id:
                         continue
+                elif isinstance(effect, PartialUpkeepDamageEffect):
+                    attached = next(
+                        (
+                            permanent
+                            for permanent in battlefield
+                            if permanent.id == source.enchanted_card_id
+                        ),
+                        None,
+                    )
+                    if (
+                        not effect.attached_permanent_controller
+                        or attached is None
+                        or attached.controller_id != self.active_player.id
+                    ):
+                        continue
+                elif isinstance(effect, CounterPurchaseUpkeepEffect):
+                    if source.controller_id != self.active_player.id:
+                        continue
+                elif isinstance(effect, CounterRedemptionUpkeepEffect):
+                    if source.controller_id != self.active_player.id:
+                        continue
                 if (
                     isinstance(effect, UpkeepCostEffect)
                     and effect.failure
@@ -941,8 +1262,7 @@ class TurnFlowMixin:
 
         for player in self.players:
             mana_burn = player.mana_pool.empty()
-            player.life -= mana_burn
-            if mana_burn:
-                self.events.append(ManaBurnEvent(player.id, mana_burn))
-            if player.life <= 0:
-                player.has_lost = True
+            life_lost, _ = self._lose_life(player, mana_burn)
+            if life_lost:
+                self.events.append(ManaBurnEvent(player.id, life_lost))
+        self.life_loss_prevention.clear()

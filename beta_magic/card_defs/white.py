@@ -225,6 +225,7 @@ def _circle(color: Color) -> CardDefinition:
                 controller_only=True,
             ),
         ),
+        is_circle_of_protection=True,
     )
 
 

@@ -122,7 +122,13 @@ class CharacteristicsMixin:
                 if animated is not None
                 else creature.definition.power or 0
             )
-        return base + creature.plus_one_counters + self._creature_bonus(creature)[0]
+        power = base + creature.plus_one_counters + sum(
+            creature.counters.get(name, 0) * amount
+            for name, amount in creature.definition.counter_power_bonus
+        )
+        for effect in self._continuous_effects_for(creature):
+            power = (power + effect.power) * effect.power_multiplier
+        return power
 
     def creature_toughness(self, creature: Card) -> int:
         """Return current toughness after applying continuous bonuses."""
@@ -152,7 +158,15 @@ class CharacteristicsMixin:
                 if animated is not None
                 else creature.definition.toughness or 0
             )
-        return base + creature.plus_one_counters + self._creature_bonus(creature)[1]
+        return (
+            base
+            + creature.plus_one_counters
+            + sum(
+                creature.counters.get(name, 0) * amount
+                for name, amount in creature.definition.counter_toughness_bonus
+            )
+            + self._creature_bonus(creature)[1]
+        )
 
     def has_summoning_sickness(self, creature: Card) -> bool:
         """Whether a creature began the turn under its current controller."""
@@ -263,12 +277,12 @@ class CharacteristicsMixin:
     def creature_abilities(self, creature: Card) -> frozenset[KeywordAbility]:
         """Return printed and continuously granted keyword abilities."""
 
-        granted = {
-            ability
-            for effect in self._continuous_effects_for(creature)
-            for ability in effect.granted_abilities
-        }
-        return creature.definition.abilities | granted
+        abilities = set(creature.definition.abilities)
+        effects = list(self._continuous_effects_for(creature))
+        for effect in effects:
+            abilities.difference_update(effect.removed_abilities)
+            abilities.update(effect.granted_abilities)
+        return frozenset(abilities)
 
     def activated_abilities(self, card: Card) -> tuple[ActivatedAbility, ...]:
         """Return printed and continuously granted activated abilities."""
@@ -304,8 +318,15 @@ class CharacteristicsMixin:
         yield from self.combat_creature_effects.get(creature.id, ())
         yield from self.temporary_creature_effects.get(creature.id, ())
         attacking = self.combat is not None and creature in self.combat.attackers
-        for player in self.players:
-            for source in player.battlefield:
+        sources = sorted(
+            (
+                source
+                for player in self.players
+                for source in player.battlefield
+            ),
+            key=lambda source: source.battlefield_entry_sequence or 0,
+        )
+        for source in sources:
                 if not self.continuous_permanent_is_active(source):
                     continue
                 for effect in source.definition.continuous_effects:

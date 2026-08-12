@@ -1,6 +1,8 @@
 import unittest
 
 from beta_magic import (
+    CONSERVATOR,
+    GLASSES_OF_URZA,
     GIANT_SPIDER,
     DISRUPTING_SCEPTER,
     ICY_MANIPULATOR,
@@ -14,6 +16,7 @@ from beta_magic import (
     NEVINYRRALS_DISK,
     ROD_OF_RUIN,
     SUNGLASSES_OF_URZA,
+    THE_HIVE,
     UTILITY_ARTIFACTS,
     WEB,
     Card,
@@ -60,6 +63,8 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
         self.assertEqual(
             UTILITY_ARTIFACTS,
             (
+                CONSERVATOR,
+                GLASSES_OF_URZA,
                 DISRUPTING_SCEPTER,
                 ROD_OF_RUIN,
                 JAYEMDAE_TOME,
@@ -72,11 +77,12 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
                 GAUNTLET_OF_MIGHT,
                 HELM_OF_CHATZUK,
                 SUNGLASSES_OF_URZA,
+                THE_HIVE,
             ),
         )
         self.assertEqual(
             [card.mana_cost.compact for card in UTILITY_ARTIFACTS],
-            ["3", "4", "4", "4", "4", "4", "4", "2", "4", "4", "1", "3"],
+            ["4", "1", "3", "4", "4", "4", "4", "4", "4", "2", "4", "4", "1", "3", "5"],
         )
         self.assertEqual(
             (GIANT_SPIDER.power, GIANT_SPIDER.toughness), (2, 4)

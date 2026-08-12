@@ -14,6 +14,7 @@ EXPECTED_NAMES = {
     "Control Magic",
     "Counterspell",
     "Creature Bond",
+    "Drain Power",
     "Feedback",
     "Flight",
     "Jump",
@@ -27,6 +28,8 @@ EXPECTED_NAMES = {
     "Phantasmal Terrain",
     "Phantom Monster",
     "Pirate Ship",
+    "Power Sink",
+    "Power Leak",
     "Prodigal Sorcerer",
     "Psionic Blast",
     "Psychic Venom",
@@ -40,6 +43,7 @@ EXPECTED_NAMES = {
     "Timetwister",
     "Twiddle",
     "Unsummon",
+    "Volcanic Eruption",
     "Wall of Air",
     "Wall of Water",
     "Water Elemental",
@@ -48,7 +52,7 @@ EXPECTED_NAMES = {
 
 class BlueDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_blue_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLUE_CARDS), 37)
+        self.assertEqual(len(BLUE_CARDS), 41)
         self.assertEqual(
             {card.name for card in BLUE_CARDS}, EXPECTED_NAMES
         )

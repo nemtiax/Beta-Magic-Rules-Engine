@@ -84,6 +84,8 @@ Frame {
                 font.bold: true
             }
             CardFlow {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
                 cards: playerData.graveyard
                 interactive: false
                 targetable: zone.targeting
@@ -92,14 +94,31 @@ Frame {
             }
         }
         ColumnLayout {
-            Layout.preferredWidth: 150
+            Layout.preferredWidth: 170
             Label {
                 text: "Set aside · " + playerData.exileCount
                 color: "#e5e9ef"
                 font.bold: true
             }
             CardFlow {
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
                 cards: playerData.exile
+                interactive: false
+                onInspected: function(cardData) { zone.inspected(cardData) }
+            }
+            Label {
+                visible: playerData.anteCount > 0
+                text: "Ante · " + playerData.anteCount
+                color: "#f2c66d"
+                font.bold: true
+            }
+            CardFlow {
+                visible: playerData.anteCount > 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? implicitHeight : 0
+                Layout.minimumHeight: visible ? implicitHeight : 0
+                cards: playerData.ante
                 interactive: false
                 onInspected: function(cardData) { zone.inspected(cardData) }
             }

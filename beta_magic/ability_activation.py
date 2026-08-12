@@ -14,6 +14,8 @@ from .abilities import (
     ActivatedDestroyAllAbility,
     ActivatedDiscardAbility,
     ActivatedDrawAbility,
+    ActivatedCreateTokenAbility,
+    ActivatedEventDrawAbility,
     ActivatedEventLifeGainAbility,
     ActivatedExtraTurnAbility,
     ActivatedInterruptUntapAbility,
@@ -21,6 +23,7 @@ from .abilities import (
     ActivatedLandTypeAbility,
     ActivatedManaAbility,
     ActivatedPreventDamageAbility,
+    ActivatedRevealHandAbility,
     ActivatedPumpAbility,
     ActivatedRedirectDamageAbility,
     ActivatedRegenerationAbility,
@@ -53,6 +56,22 @@ class AbilityActivationMixin:
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
         if isinstance(selected_ability, ActivatedPreventDamageAbility):
+            if (
+                selected_ability.prevents_life_loss
+                and self.pending_damage is None
+            ):
+                player, ability = self._validate_ability_activation(
+                    player_id, card, ability_index
+                )
+                self.pay_mana(player, self.ability_mana_cost(card, ability.mana_cost))
+                if ability.tap_cost:
+                    self._tap_permanent(card)
+                assert ability.amount is not None
+                self.life_loss_prevention[player.id] = (
+                    self.life_loss_prevention.get(player.id, 0) + ability.amount
+                )
+                self.consecutive_passes = 0
+                return None
             player, ability = self._validate_prevention_activation(
                 player_id, card, ability_index
             )
@@ -63,6 +82,7 @@ class AbilityActivationMixin:
                 ability_index=ability_index,
                 source_color=ability.source_color,
                 controller_only=ability.controller_only,
+                prevents_life_loss=ability.prevents_life_loss,
             )
             return None
         if isinstance(selected_ability, ActivatedRedirectDamageAbility):
@@ -77,7 +97,10 @@ class AbilityActivationMixin:
             player, ability, affected_card = self._validate_regeneration_activation(
                 player_id, card, ability_index
             )
-            self.pay_mana(player, ability.mana_cost)
+            if ability.counter_cost is not None:
+                card.counters[ability.counter_cost] -= 1
+            else:
+                self.pay_mana(player, ability.mana_cost)
             self._tap_permanent(affected_card)
             affected_card.damage = 0
             if self.pending_damage is not None:
@@ -138,6 +161,7 @@ class AbilityActivationMixin:
                 raise RuntimeError(f"there are no legal targets for {card.name}")
             return pending
         if isinstance(ability, ActivatedManaAbility):
+            self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
             player.mana_pool.add(ability.color, ability.amount)
@@ -160,6 +184,32 @@ class AbilityActivationMixin:
             self.check_state_based_actions()
             return None
         if isinstance(ability, ActivatedDrawAbility):
+            self.pay_mana(player, ability.mana_cost)
+            if ability.tap_cost:
+                self._tap_permanent(card)
+            self.batch_abilities.append(
+                AbilityOnStack(card, card.name, player.id, ability, ())
+            )
+            self.interruptible_spell_id = None
+            self.priority_player_index = (
+                self.players.index(player) + 1
+            ) % len(self.players)
+            self.consecutive_passes = 0
+            return None
+        if isinstance(ability, ActivatedCreateTokenAbility):
+            self.pay_mana(player, ability.mana_cost)
+            if ability.tap_cost:
+                self._tap_permanent(card)
+            self.batch_abilities.append(
+                AbilityOnStack(card, card.name, player.id, ability, ())
+            )
+            self.interruptible_spell_id = None
+            self.priority_player_index = (
+                self.players.index(player) + 1
+            ) % len(self.players)
+            self.consecutive_passes = 0
+            return None
+        if isinstance(ability, ActivatedRevealHandAbility):
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
@@ -208,12 +258,22 @@ class AbilityActivationMixin:
             ) % len(self.players)
             self.consecutive_passes = 0
             return None
-        if isinstance(ability, ActivatedEventLifeGainAbility):
+        if isinstance(
+            ability, (ActivatedEventLifeGainAbility, ActivatedEventDrawAbility)
+        ):
             opportunity = self._matching_event_opportunities(card, ability)[0]
-            self.pay_mana(player, ability.mana_cost)
+            if isinstance(ability, ActivatedEventLifeGainAbility):
+                self.pay_mana(player, ability.mana_cost)
             self.event_ability_uses.add((card.id, opportunity.id))
             self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, ())
+                AbilityOnStack(
+                    card,
+                    card.name,
+                    player.id,
+                    ability,
+                    (),
+                    event_id=opportunity.id,
+                )
             )
             self.interruptible_spell_id = None
             self.priority_player_index = (
@@ -311,11 +371,14 @@ class AbilityActivationMixin:
                 ActivatedAttackRequirementAbility,
                 ActivatedLandTypeAbility,
                 ActivatedDrawAbility,
+                ActivatedCreateTokenAbility,
+                ActivatedRevealHandAbility,
                 ActivatedExtraTurnAbility,
                 ActivatedUntapAbility,
                 ActivatedInterruptUntapAbility,
                 ActivatedCounterSpellAbility,
                 ActivatedEventLifeGainAbility,
+                ActivatedEventDrawAbility,
                 ActivatedPreventDamageAbility,
                 ActivatedRedirectDamageAbility,
             ),
@@ -363,6 +426,7 @@ class AbilityActivationMixin:
             isinstance(
                 ability,
                 (
+                    ActivatedManaAbility,
                     ActivatedPumpAbility,
                     ActivatedDamageAbility,
                     ActivatedDestroyAbility,
@@ -374,26 +438,37 @@ class AbilityActivationMixin:
                     ActivatedAttackRequirementAbility,
                     ActivatedLandTypeAbility,
                     ActivatedDrawAbility,
+                    ActivatedCreateTokenAbility,
+                    ActivatedRevealHandAbility,
                     ActivatedExtraTurnAbility,
                     ActivatedUntapAbility,
                     ActivatedInterruptUntapAbility,
                     ActivatedCounterSpellAbility,
                     ActivatedEventLifeGainAbility,
+                    ActivatedPreventDamageAbility,
                     ActivatedAnimationAbility,
                 ),
             )
-            and not self.can_pay_mana(player, ability.mana_cost)
+            and not self.can_pay_mana(
+                player, self.ability_mana_cost(card, ability.mana_cost)
+            )
         ):
             raise RuntimeError(
                 f"not enough mana to activate {card.name}: {ability.label}"
             )
-        if isinstance(ability, ActivatedEventLifeGainAbility):
+        if isinstance(
+            ability, (ActivatedEventLifeGainAbility, ActivatedEventDrawAbility)
+        ):
             if card.tapped and CardType.ARTIFACT in card.definition.card_types:
                 raise RuntimeError(f"{card.name} is tapped and cannot be used")
             if not self._matching_event_opportunities(card, ability):
                 raise RuntimeError(f"{card.name} has no matching event to catch")
         has_tap_cost = (
             isinstance(ability, ActivatedManaAbility) and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedPreventDamageAbility) and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedRevealHandAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedDamageAbility) and ability.tap_cost
         ) or (
@@ -408,6 +483,8 @@ class AbilityActivationMixin:
             isinstance(ability, ActivatedTemporaryAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedDrawAbility) and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedCreateTokenAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedExtraTurnAbility) and ability.tap_cost
         ) or (

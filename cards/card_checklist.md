@@ -54,7 +54,7 @@
  - [ ] Copy Artifact
  - [x] Counterspell
  - [x] Creature Bond
- - [ ] Drain Power
+ - [x] Drain Power
  - [x] Feedback
  - [x] Flight
  - [x] Invisibility
@@ -69,8 +69,8 @@
  - [x] Phantasmal Terrain
  - [x] Phantom Monster
  - [x] Pirate Ship
- - [ ] Power Leak
- - [ ] Power Sink
+ - [x] Power Leak
+ - [x] Power Sink
  - [x] Prodigal Sorcerer
  - [x] Psionic Blast
  - [x] Psychic Venom
@@ -86,7 +86,7 @@
  - [x] Twiddle
  - [x] Unsummon
  - [ ] Vesuvan Doppelganger
- - [ ] Volcanic Eruption
+ - [x] Volcanic Eruption
  - [x] Wall of Air
  - [x] Wall of Water
  - [x] Water Elemental
@@ -94,7 +94,7 @@
  - [x] Bad Moon
  - [x] Black Knight
  - [x] Bog Wraith
- - [ ] Contract from Below
+ - [x] Contract from Below
  - [x] Cursed Land
  - [x] Dark Ritual
  - [ ] Darkpact
@@ -108,7 +108,7 @@
  - [x] Evil Presence
  - [x] Fear
  - [x] Frozen Shade
- - [ ] Gloom
+ - [x] Gloom
  - [x] Howl from Beyond
  - [x] Hypnotic Specter
  - [ ] Lich
@@ -124,7 +124,7 @@
  - [x] Royal Assassin
  - [ ] Sacrifice
  - [x] Scathe Zombies
- - [ ] Scavenging Ghoul
+ - [x] Scavenging Ghoul
  - [x] Sengir Vampire
  - [x] Simulacrum
  - [x] Sinkhole
@@ -143,7 +143,7 @@
  - [x] Dwarven Demolition Team
  - [x] Dwarven Warriors
  - [x] Earth Elemental
- - [ ] Earthbind
+ - [x] Earthbind
  - [x] Earthquake
  - [ ] False Orders
  - [x] Fire Elemental
@@ -169,7 +169,7 @@
  - [ ] Raging River
  - [x] Red Elemental Blast
  - [x] Roc of Kher Ridges
- - [ ] Rock Hydra
+ - [x] Rock Hydra
  - [x] Sedge Troll
  - [x] Shatter
  - [x] Shivan Dragon
@@ -183,7 +183,7 @@
  - [x] Wall of Stone
  - [x] Wheel of Fortune
  - [x] Aspect of Wolf
- - [ ] Berserk
+ - [x] Berserk
  - [x] Birds of Paradise
  - [ ] Camouflage
  - [ ] Channel
@@ -191,7 +191,7 @@
  - [x] Craw Wurm
  - [x] Elvish Archers
  - [ ] Fastbond
- - [ ] Fog
+ - [x] Fog
  - [x] Force of Nature
  - [x] Fungusaur
  - [x] Gaea's Liege
@@ -206,7 +206,7 @@
  - [x] Ley Druid
  - [x] Lifeforce
  - [x] Lifelace
- - [ ] Living Artifact
+ - [x] Living Artifact
  - [x] Living Lands
  - [x] Llanowar Elves
  - [x] Lure
@@ -220,7 +220,7 @@
  - [x] Timber Wolves
  - [x] Tranquility
  - [x] Tsunami
- - [ ] Verduran Enchantress
+ - [x] Verduran Enchantress
  - [x] Wall of Brambles
  - [x] Wall of Ice
  - [x] Wall of Wood
@@ -231,11 +231,11 @@
  - [x] Ankh of Mishra
  - [x] Basalt Monolith
  - [x] Black Lotus
- - [ ] Black Vise
- - [ ] Celestial Prism
+ - [x] Black Vise
+ - [x] Celestial Prism
  - [ ] Chaos Orb
- - [ ] Clockwork Beast
- - [ ] Conservator
+ - [x] Clockwork Beast
+ - [x] Conservator
  - [x] Copper Tablet
  - [x] Crystal Rod
  - [ ] Cyclopean Tomb
@@ -243,7 +243,7 @@
  - [x] Disrupting Scepter
  - [ ] Forcefield
  - [x] Gauntlet of Might
- - [ ] Glasses of Urza
+ - [x] Glasses of Urza
  - [x] Helm of Chatzuk
  - [x] Howling Mine
  - [x] Icy Manipulator
@@ -270,7 +270,7 @@
  - [x] Sol Ring
  - [x] Soul Net
  - [x] Sunglasses of Urza
- - [ ] The Hive
+ - [x] The Hive
  - [x] Throne of Bone
  - [x] Time Vault
  - [x] Winter Orb

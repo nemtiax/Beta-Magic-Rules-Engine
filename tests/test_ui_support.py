@@ -20,6 +20,7 @@ from beta_magic import (
     PUMP_CREATURES,
     MANA_ARTIFACTS,
     UTILITY_ARTIFACTS,
+    GLASSES_OF_URZA,
     REACH_CREATURES,
     TARGETED_PUMP_SPELLS,
     LANDWALK_CREATURES,
@@ -276,7 +277,8 @@ class DemoGameTests(unittest.TestCase):
             all_cards = player.library + player.hand
         self.assertEqual(
             len(all_cards),
-            len(ALL_CARDS) + len(BASIC_LANDS) * 4,
+            len([card for card in ALL_CARDS if not card.requires_ante])
+            + len(BASIC_LANDS) * 4,
         )
 
     def test_mana_display_only_lists_nonzero_colors(self) -> None:
@@ -484,6 +486,10 @@ class DemoGameTests(unittest.TestCase):
         )
         self.assertIn(
             PSIONIC_BLAST, [card.definition for card in first.players[0].hand]
+        )
+        self.assertIn(
+            GLASSES_OF_URZA,
+            [card.definition for card in first.players[0].hand],
         )
         self.assertIn(
             LIGHTNING_BOLT, [card.definition for card in first.players[1].hand]

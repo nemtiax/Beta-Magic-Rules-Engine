@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     COPPER_TABLET,
+    BLACK_VISE,
     DISENCHANT,
     TIMED_ARTIFACTS,
     GameState,
@@ -49,7 +50,7 @@ class TimedEventTests(unittest.TestCase):
             self.game.pass_priority(player.id)
 
     def test_copper_tablet_definition(self) -> None:
-        self.assertEqual(TIMED_ARTIFACTS, (COPPER_TABLET,))
+        self.assertEqual(TIMED_ARTIFACTS, (COPPER_TABLET, BLACK_VISE))
         self.assertEqual(COPPER_TABLET.mana_cost.compact, "2")
         self.assertEqual(COPPER_TABLET.upkeep_effects[0].amount, 1)
 

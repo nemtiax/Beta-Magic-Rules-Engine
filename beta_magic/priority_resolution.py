@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Iterable
 from uuid import UUID
 
 from .abilities import (
+    ActivatedManaAbility,
     ActivatedCounterSpellAbility,
     ActivatedAnimationAbility,
     ActivatedAttackRequirementAbility,
@@ -16,6 +17,9 @@ from .abilities import (
     ActivatedDestroyAllAbility,
     ActivatedDiscardAbility,
     ActivatedDrawAbility,
+    ActivatedCreateTokenAbility,
+    ActivatedRevealHandAbility,
+    ActivatedEventDrawAbility,
     ActivatedEventLifeGainAbility,
     ActivatedExtraTurnAbility,
     ActivatedLandTypeAbility,
@@ -40,6 +44,7 @@ from .effects import (
     DestroyTargetsEffect,
     DiscardCardsEffect,
     DiscardHandsAndDrawEffect,
+    DiscardHandAnteAndDrawEffect,
     DrawCardsEffect,
     EffectRecipient,
     ExileTargetsEffect,
@@ -47,6 +52,7 @@ from .effects import (
     GainLifeEffect,
     GlobalDamageEffect,
     MoveTargetsEffect,
+    PreventCombatDamageEffect,
     RegenerateTargetsEffect,
     RetroactiveDamageTransferEffect,
     ReverseDamageEffect,
@@ -57,7 +63,8 @@ from .effects import (
     TemporaryPumpEffect,
     TapLandsAndEmptyManaPoolEffect,
 )
-from .types import CardType, CombatStep, KeywordAbility, Zone
+from .mana import ManaCost
+from .types import CardType, Color, CombatStep, KeywordAbility, Zone
 
 if TYPE_CHECKING:
     from .game import PlayerState
@@ -68,6 +75,21 @@ class PendingDiscardChoice:
     player_id: str
     amount: int
     source_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PendingDrainPowerChoice:
+    caster_id: str
+    land_id: UUID
+    land_name: str
+    mana_options: tuple[tuple[Color, int], ...]
+
+
+@dataclass(slots=True)
+class PendingPowerSinkPayment:
+    target: Card
+    payer_id: str
+    remaining: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +258,120 @@ class PriorityBatchResolutionMixin:
         for card in chosen:
             self._move_card(card, Zone.GRAVEYARD)
         return chosen
+
+    def choose_drain_power_mana(self, player_id: str, color: Color) -> None:
+        """Choose the mana produced by the next dual land drained at resolution."""
+
+        if not self.pending_drain_power_choices:
+            raise RuntimeError("there is no Drain Power mana choice pending")
+        choice = self.pending_drain_power_choices[0]
+        if choice.caster_id != player_id:
+            raise ValueError("only the Drain Power caster may choose the mana")
+        amount = next(
+            (
+                option_amount
+                for option_color, option_amount in choice.mana_options
+                if option_color is color
+            ),
+            None,
+        )
+        if amount is None:
+            raise ValueError(f"{choice.land_name} cannot produce {color.value}")
+        self.player(player_id).mana_pool.add(color, amount)
+        self.pending_drain_power_choices.pop(0)
+
+    def _land_mana_bonus(self) -> int:
+        return sum(
+            effect.amount
+            for owner in self.players
+            for source in owner.battlefield
+            if self.continuous_permanent_is_active(source)
+            for effect in source.definition.land_mana_bonus_effects
+        )
+
+    def power_sink_mana_choices(
+        self,
+    ) -> list[tuple[Card, int, Color, int]]:
+        """Currently usable land modes for a mandatory Power Sink payment."""
+
+        pending = self.pending_power_sink_payment
+        if pending is None:
+            return []
+        payer = self.player(pending.payer_id)
+        bonus = self._land_mana_bonus()
+        return [
+            (land, index, ability.color, ability.amount + bonus)
+            for land in payer.battlefield
+            if CardType.LAND in self.card_types(land) and not land.tapped
+            for index, ability in enumerate(self.activated_abilities(land))
+            if isinstance(ability, ActivatedManaAbility)
+        ]
+
+    def _spend_power_sink_pool(self) -> None:
+        pending = self.pending_power_sink_payment
+        assert pending is not None
+        payer = self.player(pending.payer_id)
+        amount = min(pending.remaining, payer.mana_pool.total)
+        if amount:
+            self.pay_mana(payer, ManaCost(generic=amount))
+            pending.remaining -= amount
+
+    def _finish_power_sink_payment(self, *, countered: bool) -> None:
+        pending = self.pending_power_sink_payment
+        assert pending is not None
+        target = pending.target
+        if countered and target.zone is Zone.STACK:
+            self.stack_spells.pop(target.id, None)
+            self._discard_spell_cast_opportunities(target.id)
+            self._move_card(target, Zone.GRAVEYARD)
+        self.pending_power_sink_payment = None
+        if not any(card.id == self.interruptible_spell_id for card in self.stack):
+            self.interruptible_spell_id = None
+        self.consecutive_passes = 0
+        if self.stack:
+            underlying = self.stack_spells[self.stack[-1].id]
+            self.priority_player_index = self.players.index(
+                self.player(underlying.caster_id)
+            )
+        elif self.event_opportunities:
+            self.priority_player_index = self.active_player_index
+        else:
+            self.priority_player_index = None
+
+    def _continue_power_sink_payment(self) -> None:
+        pending = self.pending_power_sink_payment
+        assert pending is not None
+        self._spend_power_sink_pool()
+        if pending.remaining == 0:
+            self._finish_power_sink_payment(countered=False)
+        elif not self.power_sink_mana_choices():
+            self._finish_power_sink_payment(countered=True)
+
+    def choose_power_sink_mana(
+        self, player_id: str, land_id: UUID, ability_index: int
+    ) -> None:
+        """Tap one land for the mandatory Power Sink payment."""
+
+        pending = self.pending_power_sink_payment
+        if pending is None:
+            raise RuntimeError("there is no Power Sink payment pending")
+        if pending.payer_id != player_id:
+            raise ValueError("only the targeted spell's caster may choose mana")
+        choice = next(
+            (
+                item
+                for item in self.power_sink_mana_choices()
+                if item[0].id == land_id and item[1] == ability_index
+            ),
+            None,
+        )
+        if choice is None:
+            raise ValueError("that land mana ability is not available")
+        land, _, color, amount = choice
+        payer = self.player(player_id)
+        self._tap_permanent(land)
+        payer.mana_pool.add(color, amount)
+        self._continue_power_sink_payment()
 
     def choose_discard(self, player_id: str, cards: Iterable[Card]) -> tuple[Card, ...]:
         """Complete the oldest opponent-chosen discard effect."""
@@ -442,21 +578,31 @@ class PriorityBatchResolutionMixin:
             ),
             None,
         )
+        counter_effect = next(
+            (
+                effect
+                for effect in interrupt.definition.spell_effects
+                if isinstance(effect, CounterTargetSpellEffect)
+            ),
+            None,
+        )
+        power_sink_started = False
         if (
             legal_target
             and target.zone is Zone.STACK
-            and any(
-            isinstance(effect, CounterTargetSpellEffect)
-            for effect in interrupt.definition.spell_effects
-            )
+            and counter_effect is not None
         ):
-            self.stack_spells.pop(target.id, None)
-            self.event_opportunities = [
-                event
-                for event in self.event_opportunities
-                if event.spell_id != target.id
-            ]
-            self._move_card(target, Zone.GRAVEYARD)
+            if counter_effect.power_sink:
+                self.pending_power_sink_payment = PendingPowerSinkPayment(
+                    target=target,
+                    payer_id=self.stack_spells[target.id].caster_id,
+                    remaining=spell.x_value,
+                )
+                power_sink_started = True
+            else:
+                self.stack_spells.pop(target.id, None)
+                self._discard_spell_cast_opportunities(target.id)
+                self._move_card(target, Zone.GRAVEYARD)
         elif (
             legal_target
             and target.zone is Zone.BATTLEFIELD
@@ -493,6 +639,9 @@ class PriorityBatchResolutionMixin:
 
         if interrupt.zone is Zone.STACK:
             self._move_card(interrupt, Zone.GRAVEYARD)
+
+        if power_sink_started:
+            self._continue_power_sink_payment()
 
         if not any(
             card.id == self.interruptible_spell_id for card in self.stack
@@ -532,10 +681,7 @@ class PriorityBatchResolutionMixin:
             and ability.spell_color in self.card_colors(target)
         ):
             self.stack_spells.pop(target.id, None)
-            self.event_opportunities = [
-                event for event in self.event_opportunities
-                if event.spell_id != target.id
-            ]
+            self._discard_spell_cast_opportunities(target.id)
             self._move_card(target, Zone.GRAVEYARD)
         if not any(card.id == self.interruptible_spell_id for card in self.stack):
             self.interruptible_spell_id = None
@@ -586,14 +732,25 @@ class PriorityBatchResolutionMixin:
             )
         legal_abilities = [
             (
-                True
+                (
+                    ability.event_id is not None
+                    and any(
+                        event.id == ability.event_id
+                        for event in self.event_opportunities
+                    )
+                )
+                if isinstance(
+                    ability.ability,
+                    (ActivatedEventLifeGainAbility, ActivatedEventDrawAbility),
+                )
+                else True
                 if isinstance(
                     ability.ability,
                     (
                         ActivatedDestroyAllAbility,
                         ActivatedGlobalDamageAbility,
-                        ActivatedEventLifeGainAbility,
                         ActivatedUntapAbility,
+                        ActivatedCreateTokenAbility,
                     ),
                 )
                 else ability.source.zone is Zone.BATTLEFIELD
@@ -629,6 +786,8 @@ class PriorityBatchResolutionMixin:
             card = spell.card
             if legal[card.id] and card.definition.is_permanent:
                 self._move_card(card, Zone.BATTLEFIELD)
+                if card.definition.x_enters_with_counter is not None:
+                    card.counters[card.definition.x_enters_with_counter] = spell.x_value
                 card.entered_battlefield_turn = self.turn_number
                 card.enchanted_card_id = (
                     spell.targets[0].id
@@ -641,6 +800,18 @@ class PriorityBatchResolutionMixin:
                     and isinstance(spell.targets[0], Card)
                 ):
                     self._tap_permanent(spell.targets[0])
+                if (
+                    card.definition.damages_attached_on_entry
+                    and spell.targets
+                    and isinstance(spell.targets[0], Card)
+                ):
+                    self._deal_damage(
+                        spell.targets[0],
+                        card.definition.damages_attached_on_entry,
+                        card.name,
+                        source_card=card,
+                        source_controller_id=spell.caster_id,
+                    )
                 if (
                     CardType.CREATURE in card.definition.card_types
                     and CardType.ARTIFACT not in card.definition.card_types
@@ -688,9 +859,16 @@ class PriorityBatchResolutionMixin:
                                 ContinuousEffect(
                                     power=power,
                                     toughness=toughness,
+                                    power_multiplier=effect.power_multiplier,
                                     granted_abilities=effect.granted_abilities,
                                 )
                             )
+                            if effect.destroy_at_end_of_turn_if_attacked:
+                                self.destroy_at_end_of_turn_if_attacked.add(
+                                    target.id
+                                )
+                elif isinstance(effect, PreventCombatDamageEffect):
+                    self.prevent_combat_damage_this_turn = True
                 elif isinstance(effect, RegenerateTargetsEffect):
                     pending_regeneration.extend(
                         target
@@ -732,6 +910,16 @@ class PriorityBatchResolutionMixin:
                         player.shuffle_library(self.random)
                     for player in self.players:
                         player.draw(effect.draw_count)
+                elif isinstance(effect, DiscardHandAnteAndDrawEffect):
+                    for discarded in tuple(caster.hand):
+                        self._move_card(discarded, Zone.GRAVEYARD)
+                    if caster.library:
+                        ante_card = caster.library.pop()
+                        ante_card.zone = Zone.ANTE
+                        caster.ante.append(ante_card)
+                    else:
+                        caster.has_lost = True
+                    caster.draw(effect.draw_count)
                 elif isinstance(effect, SirensCallEffect):
                     for creature in tuple(self.active_player.battlefield):
                         if (
@@ -877,14 +1065,57 @@ class PriorityBatchResolutionMixin:
                     for target in spell.targets:
                         if isinstance(target, Card):
                             continue
+                        caster = self.player(spell.caster_id)
                         for owner in self.players:
                             for permanent in tuple(owner.battlefield):
                                 if (
                                     permanent.controller_id == target.id
                                     and CardType.LAND in self.card_types(permanent)
                                 ):
+                                    if permanent.tapped:
+                                        continue
+                                    mana_abilities = tuple(
+                                        ability
+                                        for ability in self.activated_abilities(permanent)
+                                        if isinstance(ability, ActivatedManaAbility)
+                                    )
                                     self._tap_permanent(permanent)
-                        target.mana_pool.empty()
+                                    if not effect.produce_land_mana:
+                                        continue
+                                    bonus = sum(
+                                        bonus_effect.amount
+                                        for bonus_owner in self.players
+                                        for source in bonus_owner.battlefield
+                                        if self.continuous_permanent_is_active(source)
+                                        for bonus_effect in source.definition.land_mana_bonus_effects
+                                    )
+                                    by_color: dict[Color, int] = {}
+                                    for ability in mana_abilities:
+                                        by_color[ability.color] = max(
+                                            by_color.get(ability.color, 0),
+                                            ability.amount + bonus,
+                                        )
+                                    options = tuple(by_color.items())
+                                    if len(options) == 1:
+                                        color, amount = options[0]
+                                        caster.mana_pool.add(color, amount)
+                                    elif options:
+                                        self.pending_drain_power_choices.append(
+                                            PendingDrainPowerChoice(
+                                                caster.id,
+                                                permanent.id,
+                                                permanent.name,
+                                                options,
+                                            )
+                                        )
+                        if effect.transfer_to_caster:
+                            for color in Color:
+                                amount = target.mana_pool.amount(color)
+                                if amount:
+                                    caster.mana_pool.add(color, amount)
+                            target.mana_pool.empty()
+                        else:
+                            target.mana_pool.empty()
 
         for declared, is_legal in zip(abilities, legal_abilities):
             if not is_legal:
@@ -968,6 +1199,22 @@ class PriorityBatchResolutionMixin:
                 self.player(declared.controller_id).draw(
                     declared.ability.amount
                 )
+            elif isinstance(declared.ability, ActivatedCreateTokenAbility):
+                ability = declared.ability
+                token = Card(
+                    ability.token_definition,
+                    owner_id=declared.controller_id,
+                    controller_id=declared.controller_id,
+                    base_controller_id=declared.controller_id,
+                    zone=Zone.BATTLEFIELD,
+                    entered_battlefield_turn=self.turn_number,
+                    is_token=True,
+                )
+                self.battlefield_entry_sequence += 1
+                token.battlefield_entry_sequence = self.battlefield_entry_sequence
+                self.player(declared.controller_id).battlefield.append(token)
+            elif isinstance(declared.ability, ActivatedRevealHandAbility):
+                self._queue_opponent_hand_reveal(declared.controller_id)
             elif isinstance(declared.ability, ActivatedDiscardAbility):
                 for target in declared.targets:
                     if not isinstance(target, Card) and target.hand:
@@ -998,6 +1245,10 @@ class PriorityBatchResolutionMixin:
                 declared.ability, ActivatedEventLifeGainAbility
             ):
                 self.player(declared.controller_id).life += (
+                    declared.ability.amount
+                )
+            elif isinstance(declared.ability, ActivatedEventDrawAbility):
+                self.player(declared.controller_id).draw(
                     declared.ability.amount
                 )
             elif isinstance(declared.ability, ActivatedAnimationAbility):
@@ -1120,6 +1371,8 @@ class PriorityBatchResolutionMixin:
                 self._destroy_permanents(
                     target for target in targets if isinstance(target, Card)
                 )
+            elif isinstance(effect, PreventCombatDamageEffect):
+                self.prevent_combat_damage_this_turn = True
             elif isinstance(effect, DestroyAllEffect):
                 self._destroy_permanents(
                     permanent

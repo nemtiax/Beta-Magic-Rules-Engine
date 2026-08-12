@@ -76,7 +76,7 @@ ENCHANT_CREATURES = (
 
 TARGETED_DAMAGE_SPELLS = _cards("Lightning Bolt", "Psionic Blast")
 RETROACTIVE_DAMAGE_SPELLS = _cards("Reverse Damage", "Simulacrum")
-COUNTERSPELLS = _cards("Counterspell", "Spell Blast")
+COUNTERSPELLS = _cards("Counterspell", "Power Sink", "Spell Blast")
 LACES = _cards(
     "Purelace", "Thoughtlace", "Deathlace", "Chaoslace", "Lifelace"
 )

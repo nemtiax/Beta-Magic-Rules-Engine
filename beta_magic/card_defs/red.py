@@ -11,6 +11,7 @@ from ..abilities import (
 )
 from ..cards import CardDefinition
 from ..effects import (
+    CounterPurchaseUpkeepEffect,
     ContinuousEffect,
     CounterTargetSpellEffect,
     DamageEffect,
@@ -72,6 +73,29 @@ MANA_FLARE = CardDefinition(
     land_mana_bonus_effects=(LandManaBonusEffect(),),
 )
 
+ROCK_HYDRA = CardDefinition(
+    name="Rock Hydra",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{X}{R}{R}"),
+    rules_text=(
+        "Put X +1/+1 counters (heads) on Rock Hydra. Each point of damage "
+        "Rock Hydra suffers destroys one head unless {R} is spent. During "
+        "upkeep, new heads may be grown for {R}{R}{R} apiece."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Hydra",),
+    power=0,
+    toughness=0,
+    x_enters_with_counter="head",
+    counter_power_bonus=(("head", 1),),
+    counter_toughness_bonus=(("head", 1),),
+    damage_absorbing_counter="head",
+    damage_counter_preservation_cost=ManaCost.parse("{R}"),
+    upkeep_effects=(
+        CounterPurchaseUpkeepEffect("head", ManaCost.parse("{R}{R}{R}")),
+    ),
+)
+
 RED_ELEMENTAL_BLAST = CardDefinition(
     name="Red Elemental Blast",
     card_types=frozenset({CardType.INTERRUPT}),
@@ -112,6 +136,29 @@ def _creature(
 
 EARTH_ELEMENTAL = _creature(
     "Earth Elemental", "{3}{R}{R}", "Elemental", 4, 5
+)
+EARTHBIND = CardDefinition(
+    name="Earthbind",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{R}"),
+    rules_text=(
+        "Enchant flying creature. Earthbind deals 2 damage to enchanted "
+        "creature, which loses flying."
+    ),
+    colors=frozenset({Color.RED}),
+    subtypes=("Enchant Flying Creature",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        required_abilities=frozenset({KeywordAbility.FLYING}),
+    ),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            removed_abilities=frozenset({KeywordAbility.FLYING}),
+        ),
+    ),
+    damages_attached_on_entry=2,
 )
 FIRE_ELEMENTAL = _creature(
     "Fire Elemental", "{3}{R}{R}", "Elemental", 5, 4
@@ -573,6 +620,7 @@ RED_CARDS = tuple(
             DWARVEN_WARRIORS,
             DISINTEGRATE,
             EARTH_ELEMENTAL,
+            EARTHBIND,
             EARTHQUAKE,
             FIRE_ELEMENTAL,
             FIREBREATHING,
@@ -592,6 +640,7 @@ RED_CARDS = tuple(
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,
             ROC_OF_KHER_RIDGES,
+            ROCK_HYDRA,
             RED_ELEMENTAL_BLAST,
             SEDGE_TROLL,
             SHATTER,

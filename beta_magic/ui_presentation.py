@@ -7,7 +7,10 @@ from uuid import UUID
 from .abilities import ActivatedRedirectDamageAbility
 from .cards import Card
 from .effects import (
+    CounterPurchaseUpkeepEffect,
+    CounterRedemptionUpkeepEffect,
     OptionalUpkeepPaymentEffect,
+    PartialUpkeepDamageEffect,
     UpkeepCostEffect,
     UpkeepCreatureSacrificeEffect,
 )
@@ -42,7 +45,11 @@ class UiPresentationBuilder:
             upkeep_event is not None
             and isinstance(
                 upkeep_event.effect,
-                (UpkeepCostEffect, OptionalUpkeepPaymentEffect),
+                (
+                    UpkeepCostEffect,
+                    OptionalUpkeepPaymentEffect,
+                    CounterRedemptionUpkeepEffect,
+                ),
             )
             and upkeep_event.payment_decision is None
             and self.game.upkeep_payment_required
@@ -53,6 +60,19 @@ class UiPresentationBuilder:
             and upkeep_event.payment_decision is None
             and self.game.upkeep_payment_required
         )
+        partial_upkeep_required = bool(
+            upkeep_event is not None
+            and isinstance(upkeep_event.effect, PartialUpkeepDamageEffect)
+            and upkeep_event.payment_amount is None
+            and self.game.upkeep_payment_required
+        )
+        counter_purchase_required = bool(
+            upkeep_event is not None
+            and isinstance(upkeep_event.effect, CounterPurchaseUpkeepEffect)
+            and upkeep_event.payment_amount is None
+            and self.game.upkeep_payment_required
+        )
+        counter_damage_choice = self.game.pending_counter_damage_choice
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
         turn_choice = self.game.pending_turn_choice
@@ -66,7 +86,17 @@ class UiPresentationBuilder:
             else None
         )
         untap_choice = self.game.pending_untap_choice
+        counter_rewind = self.game.current_counter_rewind()
         upkeep_land_choice = self.game.pending_upkeep_land_loss
+        hand_reveal = (
+            self.game.pending_hand_reveals[0]
+            if self.game.pending_hand_reveals else None
+        )
+        drain_power_choice = (
+            self.game.pending_drain_power_choices[0]
+            if self.game.pending_drain_power_choices else None
+        )
+        power_sink_payment = self.game.pending_power_sink_payment
         combat_response = bool(
             combat is not None
             and combat.step in {
@@ -93,7 +123,11 @@ class UiPresentationBuilder:
             or self.game.pending_turn_choice
             or self.game.pending_discard_choices
             or self.game.pending_balance is not None
+            or hand_reveal is not None
+            or drain_power_choice is not None
+            or power_sink_payment is not None
             or untap_choice is not None
+            or counter_rewind is not None
             or upkeep_land_choice is not None
             or pending_priority
         )
@@ -186,6 +220,28 @@ class UiPresentationBuilder:
             "effectDiscardRequired": discard_choice is not None,
             "balanceRequired": balance_choice is not None,
             "untapChoiceRequired": untap_choice is not None,
+            "counterRewindRequired": counter_rewind is not None,
+            "counterRewindCanChoose": bool(
+                counter_rewind is not None
+                and perspective.id == self.game.active_player.id
+            ),
+            "counterRewindCard": (
+                counter_rewind.name if counter_rewind is not None else ""
+            ),
+            "counterRewindMaximum": self.game.maximum_counter_rewind(),
+            "counterDamageRequired": counter_damage_choice is not None,
+            "counterDamagePlayer": (
+                counter_damage_choice.controller_id if counter_damage_choice else ""
+            ),
+            "counterDamageCard": (
+                counter_damage_choice.creature_name if counter_damage_choice else ""
+            ),
+            "counterDamageAmount": (
+                counter_damage_choice.absorbed_amount if counter_damage_choice else 0
+            ),
+            "counterDamageMaximum": (
+                counter_damage_choice.maximum_payment if counter_damage_choice else 0
+            ),
             "upkeepLandChoiceRequired": upkeep_land_choice is not None,
             "upkeepLandChoicePlayer": (
                 self.game.player(upkeep_land_choice.chooser_id).name
@@ -433,6 +489,10 @@ class UiPresentationBuilder:
                 else []
             ),
             "choosingPrevention": self.game.pending_prevention is not None,
+            "preventingLifeLoss": (
+                self.game.pending_prevention is not None
+                and self.game.pending_prevention.prevents_life_loss
+            ),
             "choosingRedirection": self.game.pending_redirection is not None,
             "choosingRedirectionAmount": self._choices.redirection_packet_id is not None,
             "redirectionAmount": self._choices.redirection_amount,
@@ -484,6 +544,42 @@ class UiPresentationBuilder:
                 else []
             ),
             "upkeepPaymentRequired": upkeep_payment_required,
+            "upkeepCounterRedemption": bool(
+                upkeep_payment_required
+                and upkeep_event is not None
+                and isinstance(upkeep_event.effect, CounterRedemptionUpkeepEffect)
+            ),
+            "partialUpkeepRequired": partial_upkeep_required,
+            "counterPurchaseRequired": counter_purchase_required,
+            "counterPurchasePlayer": (
+                upkeep_event.affected_player_id
+                if counter_purchase_required and upkeep_event is not None else ""
+            ),
+            "counterPurchaseCard": (
+                upkeep_event.source_name
+                if counter_purchase_required and upkeep_event is not None else ""
+            ),
+            "counterPurchaseMaximum": (
+                self.game.maximum_upkeep_counter_purchase(upkeep_event.affected_player_id)
+                if counter_purchase_required and upkeep_event is not None else 0
+            ),
+            "partialUpkeepPlayer": (
+                upkeep_event.affected_player_id
+                if partial_upkeep_required and upkeep_event is not None
+                else ""
+            ),
+            "partialUpkeepMaximum": (
+                upkeep_event.effect.maximum_payment
+                if partial_upkeep_required and upkeep_event is not None
+                else 0
+            ),
+            "partialUpkeepAffordable": (
+                self.game.maximum_partial_upkeep_payment(
+                    upkeep_event.affected_player_id
+                )
+                if partial_upkeep_required and upkeep_event is not None
+                else 0
+            ),
             "upkeepSacrificeRequired": upkeep_sacrifice_required,
             "upkeepSacrificePlayer": (
                 upkeep_event.affected_player_id
@@ -511,6 +607,70 @@ class UiPresentationBuilder:
             "autoPassingTurn": (
                 self._auto_pass_turns.get(perspective.id)
                 == self.game.turn_number
+            ),
+            "handRevealPending": hand_reveal is not None,
+            "handRevealCanView": (
+                hand_reveal is not None
+                and hand_reveal.viewer_id == perspective.id
+            ),
+            "handRevealViewer": (
+                self.game.player(hand_reveal.viewer_id).name
+                if hand_reveal is not None else ""
+            ),
+            "handRevealTarget": (
+                self.game.player(hand_reveal.target_id).name
+                if hand_reveal is not None else ""
+            ),
+            "handRevealCards": (
+                [self._card_data(card) for card in hand_reveal.cards]
+                if hand_reveal is not None
+                and hand_reveal.viewer_id == perspective.id
+                else []
+            ),
+            "drainPowerChoice": drain_power_choice is not None,
+            "drainPowerCanChoose": (
+                drain_power_choice is not None
+                and drain_power_choice.caster_id == perspective.id
+            ),
+            "drainPowerChooser": (
+                self.game.player(drain_power_choice.caster_id).name
+                if drain_power_choice is not None else ""
+            ),
+            "drainPowerLand": (
+                drain_power_choice.land_name
+                if drain_power_choice is not None else ""
+            ),
+            "drainPowerManaChoices": (
+                [
+                    {"color": color.value, "label": color.value * amount}
+                    for color, amount in drain_power_choice.mana_options
+                ]
+                if drain_power_choice is not None else []
+            ),
+            "powerSinkPayment": power_sink_payment is not None,
+            "powerSinkCanChoose": (
+                power_sink_payment is not None
+                and power_sink_payment.payer_id == perspective.id
+            ),
+            "powerSinkPayer": (
+                self.game.player(power_sink_payment.payer_id).name
+                if power_sink_payment is not None else ""
+            ),
+            "powerSinkRemaining": (
+                power_sink_payment.remaining
+                if power_sink_payment is not None else 0
+            ),
+            "powerSinkManaChoices": (
+                [
+                    {
+                        "landId": str(land.id),
+                        "abilityIndex": ability_index,
+                        "label": f"{land.name} → {color.value * amount}",
+                    }
+                    for land, ability_index, color, amount
+                    in self.game.power_sink_mana_choices()
+                ]
+                if power_sink_payment is not None else []
             ),
             "perspective": self._player_data(perspective, reveal_hand=True),
             "opponent": self._player_data(opponent, reveal_hand=False),
@@ -566,6 +726,8 @@ class UiPresentationBuilder:
             "graveyardCount": len(player.graveyard),
             "exile": [self._card_data(card) for card in player.exile[-5:]],
             "exileCount": len(player.exile),
+            "ante": [self._card_data(card) for card in player.ante],
+            "anteCount": len(player.ante),
         }
 
     def _card_data(self, card: Card) -> dict[str, Any]:
@@ -609,6 +771,7 @@ class UiPresentationBuilder:
         return {
             "id": str(card.id),
             "name": card.name,
+            "isToken": card.is_token,
             "background": background,
             "foreground": foreground,
             "tapped": card.tapped,
@@ -661,6 +824,11 @@ class UiPresentationBuilder:
                 else -1
             ),
             "damage": card.damage,
+            "counters": [
+                {"name": name, "amount": amount}
+                for name, amount in card.counters.items()
+                if amount
+            ],
             "manaCost": (
                 card.definition.mana_cost.compact
                 or (

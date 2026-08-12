@@ -100,7 +100,7 @@ than silently filled in with modern behavior.
 
 Implemented foundations include:
 
-- player zones, ownership and control, drawing, life totals, and loss state;
+- player zones (including optional ante), ownership and control, drawing, life totals, and loss state;
 - the Beta turn sequence and combat substeps;
 - lands, mana pools, mana burn, colored costs, and `{X}` costs;
 - casting, targeting, 1993 fast-effect batches, interrupts, and responses;

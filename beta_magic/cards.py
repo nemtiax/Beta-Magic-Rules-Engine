@@ -18,11 +18,14 @@ from .abilities import (
     ActivatedDestroyAbility,
     ActivatedDestroyAllAbility,
     ActivatedDrawAbility,
+    ActivatedCreateTokenAbility,
+    ActivatedRevealHandAbility,
     ActivatedDiscardAbility,
     ActivatedAttackRequirementAbility,
     ActivatedLandTypeAbility,
     ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
+    ActivatedEventDrawAbility,
     ActivatedManaAbility,
     ActivatedPreventDamageAbility,
     ActivatedRedirectDamageAbility,
@@ -45,6 +48,7 @@ from .effects import (
     DamageEffect,
     ReverseDamageEffect,
     RetroactiveDamageTransferEffect,
+    PreventCombatDamageEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
     DrawCardsEffect,
@@ -52,6 +56,7 @@ from .effects import (
     DiscardCardsEffect,
     DiscardHandsAndDrawEffect,
     ShuffleHandAndGraveyardEffect,
+    DiscardHandAnteAndDrawEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
     BalanceEffect,
@@ -72,6 +77,9 @@ from .effects import (
     LandTapManaEffect,
     ManaPaymentEffect,
     OptionalUpkeepPaymentEffect,
+    PartialUpkeepDamageEffect,
+    CounterPurchaseUpkeepEffect,
+    CounterRedemptionUpkeepEffect,
     UpkeepCreatureSacrificeEffect,
     SetTappedEffect,
     AddManaEffect,
@@ -82,6 +90,7 @@ from .effects import (
     TemporaryPumpEffect,
     UpkeepCostEffect,
     UpkeepDamageEffect,
+    UpkeepHandSizeDamageEffect,
     UpkeepDamageRecipient,
     UpkeepEffect,
     UntapRestrictionEffect,
@@ -116,6 +125,7 @@ class CardDefinition:
     continuous_effects: tuple[ContinuousEffect, ...] = ()
     target_requirement: TargetRequirement | None = None
     spell_effects: tuple[SpellEffect, ...] = ()
+    requires_ante: bool = False
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
     draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
     untap_effects: tuple[UntapRestrictionEffect, ...] = ()
@@ -126,6 +136,9 @@ class CardDefinition:
     land_mana_bonus_effects: tuple[LandManaBonusEffect, ...] = ()
     land_tap_mana_effects: tuple[LandTapManaEffect, ...] = ()
     mana_payment_effects: tuple[ManaPaymentEffect, ...] = ()
+    increases_white_spell_cost: int = 0
+    increases_circle_activation_cost: int = 0
+    is_circle_of_protection: bool = False
     prevention_amount: int = 0
     casting_modes: tuple[str, ...] = ()
     casting_mode_target_zones: tuple[Zone, ...] = ()
@@ -143,9 +156,20 @@ class CardDefinition:
     untaps_normally: bool = True
     may_skip_turn_to_untap: bool = False
     taps_attached_on_entry: bool = False
+    damages_attached_on_entry: int = 0
     destroy_at_end_of_turn_if_no_creatures: bool = False
     lures_blockers: bool = False
     tap_abilities_require_paid_upkeep: bool = False
+    initial_counters: tuple[tuple[str, int], ...] = ()
+    counter_power_bonus: tuple[tuple[str, int], ...] = ()
+    counter_toughness_bonus: tuple[tuple[str, int], ...] = ()
+    x_enters_with_counter: str | None = None
+    damage_absorbing_counter: str | None = None
+    damage_counter_preservation_cost: ManaCost | None = None
+    counters_on_controller_life_loss: str | None = None
+    collects_creature_deaths_at_end_counter: str | None = None
+    loses_counter_when_declared_for_combat: str | None = None
+    rewinds_during_untap: tuple[str, int] | None = None
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -218,6 +242,10 @@ class CardDefinition:
             raise ValueError("attached tap-mana effects require an attachment target")
         if self.taps_attached_on_entry and self.target_requirement is None:
             raise ValueError("tapping an attachment target requires a target")
+        if self.damages_attached_on_entry < 0:
+            raise ValueError("attachment entry damage cannot be negative")
+        if self.damages_attached_on_entry and self.target_requirement is None:
+            raise ValueError("attachment entry damage requires a target")
         if self.lures_blockers and self.target_requirement is None:
             raise ValueError("a blocking lure requires an attachment target")
         if self.tap_abilities_require_paid_upkeep and not self.upkeep_effects:
@@ -329,8 +357,10 @@ class Card:
     chosen_land_subtype: str | None = None
     color_override: Color | None = None
     plus_one_counters: int = 0
+    counters: dict[str, int] = field(default_factory=dict)
     summoned_turn: int | None = None
     land_type_marks: dict[UUID, tuple[str, int]] = field(default_factory=dict)
+    is_token: bool = False
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
@@ -344,6 +374,10 @@ class Card:
             raise ValueError("damage cannot be negative")
         if self.plus_one_counters < 0:
             raise ValueError("+1/+1 counters cannot be negative")
+        if any(amount < 0 for amount in self.counters.values()):
+            raise ValueError("counter amounts cannot be negative")
+        if self.zone is Zone.BATTLEFIELD and not self.counters:
+            self.counters = dict(self.definition.initial_counters)
         if self.zone is not Zone.BATTLEFIELD and self.tapped:
             raise ValueError("only a permanent on the battlefield can be tapped")
 
@@ -362,8 +396,11 @@ __all__ = [
     "ActivatedDestroyAbility",
     "ActivatedDestroyAllAbility",
     "ActivatedDrawAbility",
+    "ActivatedCreateTokenAbility",
+    "ActivatedRevealHandAbility",
     "ActivatedExtraTurnAbility",
     "ActivatedEventLifeGainAbility",
+    "ActivatedEventDrawAbility",
     "ActivatedManaAbility",
     "ActivatedPreventDamageAbility",
     "ActivatedRedirectDamageAbility",
@@ -384,12 +421,14 @@ __all__ = [
     "DamageEffect",
     "ReverseDamageEffect",
     "RetroactiveDamageTransferEffect",
+    "PreventCombatDamageEffect",
     "DestroyAllEffect",
     "DestroyTargetsEffect",
     "DrawCardsEffect",
     "DrawPhaseEffect",
     "DiscardCardsEffect",
     "DiscardHandsAndDrawEffect",
+    "DiscardHandAnteAndDrawEffect",
     "UntapRestrictionEffect",
     "ExtraTurnEffect",
     "BlazeOfGloryEffect",
@@ -405,6 +444,9 @@ __all__ = [
     "MoveTargetsEffect",
     "ExileTargetsEffect",
     "OptionalUpkeepPaymentEffect",
+    "PartialUpkeepDamageEffect",
+    "CounterPurchaseUpkeepEffect",
+    "CounterRedemptionUpkeepEffect",
     "SetTappedEffect",
     "AddManaEffect",
     "TapLandsAndEmptyManaPoolEffect",
@@ -414,6 +456,7 @@ __all__ = [
     "TemporaryPumpEffect",
     "UpkeepCostEffect",
     "UpkeepDamageEffect",
+    "UpkeepHandSizeDamageEffect",
     "UpkeepDamageRecipient",
     "UpkeepEffect",
     "UpkeepFailure",

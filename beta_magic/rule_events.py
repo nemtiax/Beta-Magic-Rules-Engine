@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from uuid import UUID, uuid4
 
-from .types import Color
+from .types import CardType, Color
 
 
 class RuleEventKind(str, Enum):
@@ -26,6 +26,8 @@ class RuleEventOpportunity:
     label: str
     spell_id: UUID | None = None
     spell_colors: frozenset[Color] = field(default_factory=frozenset)
+    spell_card_types: frozenset[CardType] = field(default_factory=frozenset)
+    spell_caster_id: str | None = None
     card_id: UUID | None = None
     damage: int = 0
     life_gain: int = 0

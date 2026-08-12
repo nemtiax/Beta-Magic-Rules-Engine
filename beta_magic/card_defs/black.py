@@ -15,6 +15,7 @@ from ..effects import (
     ContinuousEffect,
     AttachedLandTypeEffect,
     DestroyTargetsEffect,
+    DiscardHandAnteAndDrawEffect,
     EffectScope,
     MoveTargetsEffect,
     RetroactiveDamageTransferEffect,
@@ -41,6 +42,20 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 DEATHLACE = lace("Deathlace", Color.BLACK)
+
+CONTRACT_FROM_BELOW = CardDefinition(
+    name="Contract from Below",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{B}"),
+    rules_text=(
+        "Discard your current hand and draw eight new cards, adding the first "
+        "drawn to your ante. Remove this card from your deck before playing "
+        "if you are not playing for ante."
+    ),
+    colors=frozenset({Color.BLACK}),
+    spell_effects=(DiscardHandAnteAndDrawEffect(7),),
+    requires_ante=True,
+)
 
 DEATHGRIP = CardDefinition(
     name="Deathgrip",
@@ -193,6 +208,25 @@ SCATHE_ZOMBIES = CardDefinition(
     toughness=2,
 )
 
+SCAVENGING_GHOUL = CardDefinition(
+    name="Scavenging Ghoul",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{B}"),
+    rules_text=(
+        "At the end of each turn, put one corpse counter on Scavenging Ghoul "
+        "for each other creature destroyed without regenerating that turn. "
+        "Remove a corpse counter: Regenerate Scavenging Ghoul."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Ghoul",),
+    power=2,
+    toughness=2,
+    activated_abilities=(
+        ActivatedRegenerationAbility(ManaCost(), counter_cost="corpse"),
+    ),
+    collects_creature_deaths_at_end_counter="corpse",
+)
+
 BLACK_KNIGHT = CardDefinition(
     name="Black Knight",
     card_types=frozenset({CardType.CREATURE}),
@@ -234,6 +268,19 @@ FROZEN_SHADE = CardDefinition(
     activated_abilities=(
         ActivatedPumpAbility(ManaCost.parse("{B}"), power=1, toughness=1),
     ),
+)
+
+GLOOM = CardDefinition(
+    name="Gloom",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{2}{B}"),
+    rules_text=(
+        "White spells cost 3 more mana to cast. Circles of Protection cost "
+        "3 more mana to use."
+    ),
+    colors=frozenset({Color.BLACK}),
+    increases_white_spell_cost=3,
+    increases_circle_activation_cost=3,
 )
 
 NIGHTMARE = CardDefinition(
@@ -581,6 +628,7 @@ BLACK_CARDS = tuple(
             BAD_MOON,
             BLACK_KNIGHT,
             BOG_WRAITH,
+            CONTRACT_FROM_BELOW,
             CURSED_LAND,
             DARK_RITUAL,
             DEATHLACE,
@@ -590,6 +638,7 @@ BLACK_CARDS = tuple(
             EVIL_PRESENCE,
             FEAR,
             FROZEN_SHADE,
+            GLOOM,
             HOWL_FROM_BEYOND,
             HYPNOTIC_SPECTER,
             LORD_OF_THE_PIT,
@@ -602,6 +651,7 @@ BLACK_CARDS = tuple(
             RAISE_DEAD,
             ROYAL_ASSASSIN,
             SCATHE_ZOMBIES,
+            SCAVENGING_GHOUL,
             SENGIR_VAMPIRE,
             SIMULACRUM,
             SINKHOLE,

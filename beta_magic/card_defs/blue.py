@@ -16,9 +16,11 @@ from ..effects import (
     EffectRecipient,
     EffectScope,
     ExtraTurnEffect,
+    GlobalDamageEffect,
     LandhomeRequirement,
     MoveTargetsEffect,
     PermanentTappedEffect,
+    PartialUpkeepDamageEffect,
     DestroyTargetsEffect,
     SetTappedEffect,
     ShuffleHandAndGraveyardEffect,
@@ -393,6 +395,28 @@ FEEDBACK = CardDefinition(
     ),
 )
 
+POWER_LEAK = CardDefinition(
+    name="Power Leak",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text=(
+        "Enchanted enchantment costs 2 extra mana during upkeep. Its "
+        "controller takes 1 damage for each unpaid mana."
+    ),
+    colors=frozenset({Color.BLUE}),
+    subtypes=("Enchant Enchantment",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.ENCHANTMENT}),
+    ),
+    upkeep_effects=(
+        PartialUpkeepDamageEffect(
+            maximum_payment=2,
+            attached_permanent_controller=True,
+        ),
+    ),
+)
+
 ANCESTRAL_RECALL = CardDefinition(
     name="Ancestral Recall",
     card_types=frozenset({CardType.INSTANT}),
@@ -439,6 +463,19 @@ SPELL_BLAST = CardDefinition(
     colors=frozenset({Color.BLUE}),
     target_requirement=_SPELL_BEING_CAST,
     spell_effects=(CounterTargetSpellEffect(x_equals_target_cost=True),),
+)
+
+POWER_SINK = CardDefinition(
+    name="Power Sink",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{X}{U}"),
+    rules_text=(
+        "Target spell is countered unless its caster pays X additional mana. "
+        "That player must use available mana in their pool and from lands."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=_SPELL_BEING_CAST,
+    spell_effects=(CounterTargetSpellEffect(power_sink=True),),
 )
 
 JUMP = CardDefinition(
@@ -494,6 +531,24 @@ MANA_SHORT = CardDefinition(
     spell_effects=(TapLandsAndEmptyManaPoolEffect(),),
 )
 
+DRAIN_POWER = CardDefinition(
+    name="Drain Power",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{U}{U}"),
+    rules_text=(
+        "Tap all lands controlled by target opponent. Add all mana those "
+        "lands produce and all mana in that player's pool to your pool."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(players=True, opponent_only=True),
+    spell_effects=(
+        TapLandsAndEmptyManaPoolEffect(
+            transfer_to_caster=True,
+            produce_land_mana=True,
+        ),
+    ),
+)
+
 PSIONIC_BLAST = CardDefinition(
     name="Psionic Blast",
     card_types=frozenset({CardType.INSTANT}),
@@ -541,6 +596,27 @@ TIMETWISTER = CardDefinition(
     spell_effects=(ShuffleHandAndGraveyardEffect(7),),
 )
 
+VOLCANIC_ERUPTION = CardDefinition(
+    name="Volcanic Eruption",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{X}{U}{U}{U}"),
+    rules_text=(
+        "Destroy X target Mountains. Volcanic Eruption deals X damage to "
+        "each creature and each player."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+        required_land_subtypes=frozenset({"Mountain"}),
+        count_equals_x=True,
+    ),
+    spell_effects=(
+        DestroyTargetsEffect(),
+        GlobalDamageEffect(amount_per_x=1),
+    ),
+)
+
 SIRENS_CALL = CardDefinition(
     name="Siren's Call",
     card_types=frozenset({CardType.INSTANT}),
@@ -565,6 +641,7 @@ BLUE_CARDS = tuple(
             CONTROL_MAGIC,
             COUNTERSPELL,
             CREATURE_BOND,
+            DRAIN_POWER,
             FEEDBACK,
             FLIGHT,
             INVISIBILITY,
@@ -578,7 +655,9 @@ BLUE_CARDS = tuple(
             PHANTASMAL_TERRAIN,
             PHANTOM_MONSTER,
             PIRATE_SHIP,
+            POWER_LEAK,
             PRODIGAL_SORCERER,
+            POWER_SINK,
             PSIONIC_BLAST,
             PSYCHIC_VENOM,
             SEA_SERPENT,
@@ -591,6 +670,7 @@ BLUE_CARDS = tuple(
             TIMETWISTER,
             TWIDDLE,
             UNSUMMON,
+            VOLCANIC_ERUPTION,
             WALL_OF_AIR,
             WALL_OF_WATER,
             WATER_ELEMENTAL,

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from random import Random
-from typing import Iterable
+from typing import Callable, Iterable
 from uuid import UUID
 
 from .ability_activation import AbilityActivationMixin
 from .abilities import (
+    ActivatedEventDrawAbility,
     ActivatedEventLifeGainAbility,
 )
 from .cards import Card, CardDefinition
@@ -25,6 +26,7 @@ from .incident_resolution import (
     DamageDestructionMixin,
     PendingPrevention,
     PendingRedirection,
+    PendingCounterDamageChoice,
 )
 from .turn_flow import (
     PendingTimedEvent,
@@ -55,6 +57,8 @@ from .priority_resolution import (
     BalanceChoice,
     PendingBalance,
     PendingDiscardChoice,
+    PendingDrainPowerChoice,
+    PendingPowerSinkPayment,
     PriorityBatchResolutionMixin,
 )
 from .mana import ManaCost, ManaPool
@@ -78,6 +82,7 @@ class PlayerState:
     battlefield: list[Card] = field(default_factory=list)
     graveyard: list[Card] = field(default_factory=list)
     exile: list[Card] = field(default_factory=list)
+    ante: list[Card] = field(default_factory=list)
     mana_pool: ManaPool = field(default_factory=ManaPool)
     has_lost: bool = False
 
@@ -102,6 +107,7 @@ class PlayerState:
             Zone.BATTLEFIELD: self.battlefield,
             Zone.GRAVEYARD: self.graveyard,
             Zone.EXILE: self.exile,
+            Zone.ANTE: self.ante,
         }
         try:
             return zones[zone]
@@ -128,20 +134,29 @@ class PlayerState:
         return drawn
 
     def move_card(self, card: Card, destination: Zone) -> None:
+        source_zone = card.zone
         source = self.cards_in(card.zone)
         if card not in source:
             raise ValueError(f"{card.name} is not in its recorded {card.zone.value}")
         target = self.cards_in(destination)
         source.remove(card)
+
+        token_leaves_battlefield = (
+            card.is_token
+            and source_zone is Zone.BATTLEFIELD
+            and destination is not Zone.BATTLEFIELD
+        )
         card.zone = destination
         if destination is not Zone.BATTLEFIELD:
             card.tapped = False
             card.damage = 0
             card.plus_one_counters = 0
+            card.counters.clear()
             card.controller_id = card.owner_id
             card.summoned_turn = None
             card.enchanted_card_id = None
-        target.append(card)
+        if not token_leaves_battlefield:
+            target.append(card)
 
     @property
     def discard_required(self) -> int:
@@ -162,6 +177,28 @@ class PlayerState:
                 card.tapped = False
 
 
+@dataclass(frozen=True, slots=True)
+class PendingHandReveal:
+    """A resolved look effect waiting for its viewer to dismiss the snapshot."""
+
+    viewer_id: str
+    target_id: str
+    cards: tuple[Card, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AnteAward:
+    """A completed duel's ante disposition for an external collection layer."""
+
+    winner_id: str | None
+    card_ids: tuple[UUID, ...]
+    original_owner_ids: tuple[str, ...]
+
+    @property
+    def is_draw(self) -> bool:
+        return self.winner_id is None
+
+
 @dataclass(slots=True)
 class GameState(
     TargetingCastingMixin,
@@ -173,6 +210,11 @@ class GameState(
     CharacteristicsMixin,
 ):
     players: list[PlayerState]
+    ante_enabled: bool = False
+    ante_award: AnteAward | None = None
+    ante_award_hook: Callable[[AnteAward], None] | None = field(
+        default=None, repr=False, compare=False
+    )
     active_player_index: int = 0
     turn_number: int = 0
     status: GameStatus = GameStatus.NOT_STARTED
@@ -186,13 +228,17 @@ class GameState(
     attacks_this_turn: int = 0
     attack_requirements: dict[UUID, AttackRequirement] = field(default_factory=dict)
     attacked_this_turn: set[UUID] = field(default_factory=set)
+    prevent_combat_damage_this_turn: bool = False
     vampire_damage_marks: dict[UUID, set[UUID]] = field(default_factory=dict)
+    creature_deaths_this_turn: int = 0
     player_damage_history: list[PlayerDamageRecord] = field(default_factory=list)
     combat: CombatState | None = None
     pending_cast: PendingCast | None = None
     pending_activation: PendingActivation | None = None
     pending_prevention: PendingPrevention | None = None
+    life_loss_prevention: dict[str, int] = field(default_factory=dict)
     pending_redirection: PendingRedirection | None = None
+    pending_counter_damage_choice: PendingCounterDamageChoice | None = None
     batch_abilities: list[AbilityOnStack] = field(default_factory=list)
     interrupt_abilities: list[AbilityOnStack] = field(default_factory=list)
     events: list[GameEvent] = field(default_factory=list)
@@ -204,6 +250,7 @@ class GameState(
     )
     ability_activations_this_turn: dict[UUID, int] = field(default_factory=dict)
     destroy_at_end_of_turn: set[UUID] = field(default_factory=set)
+    destroy_at_end_of_turn_if_attacked: set[UUID] = field(default_factory=set)
     disintegrated_this_turn: set[UUID] = field(default_factory=set)
     timed_events: list[PendingTimedEvent] = field(default_factory=list)
     pending_damage: DamageIncident | None = None
@@ -224,6 +271,8 @@ class GameState(
     next_natural_player_index: int = 1
     pending_turn_choice: PendingTurnChoice | None = None
     pending_untap_choice: PendingUntapChoice | None = None
+    pending_counter_rewinds: list[UUID] = field(default_factory=list)
+    rewound_during_untap: set[UUID] = field(default_factory=set)
     pending_upkeep_land_loss: PendingUpkeepLandLossChoice | None = None
     pending_phase_advance: TurnPhase | None = None
     vaults_untapping_next_turn: dict[str, set[UUID]] = field(
@@ -233,6 +282,11 @@ class GameState(
     unpaid_tap_upkeep_ids: set[UUID] = field(default_factory=set)
     pending_discard_choices: list[PendingDiscardChoice] = field(default_factory=list)
     pending_balance: PendingBalance | None = None
+    pending_hand_reveals: list[PendingHandReveal] = field(default_factory=list)
+    pending_drain_power_choices: list[PendingDrainPowerChoice] = field(
+        default_factory=list
+    )
+    pending_power_sink_payment: PendingPowerSinkPayment | None = None
     random: Random = field(default_factory=Random, repr=False)
 
     def __post_init__(self) -> None:
@@ -280,6 +334,74 @@ class GameState(
         """Pay a cost using all currently active mana substitutions."""
 
         player.mana_pool.pay(cost, self._mana_payment_substitutions(player))
+
+    def spell_mana_cost(self, card: Card, x_value: int = 0) -> ManaCost:
+        """Return a spell's payable cost after battlefield surcharges."""
+
+        cost = card.definition.mana_cost.with_x(x_value)
+        surcharge = sum(
+            permanent.definition.increases_white_spell_cost
+            for owner in self.players
+            for permanent in owner.battlefield
+            if self.continuous_permanent_is_active(permanent)
+            and Color.WHITE in self.card_colors(card)
+        )
+        return ManaCost(
+            generic=cost.generic + surcharge,
+            white=cost.white,
+            blue=cost.blue,
+            black=cost.black,
+            red=cost.red,
+            green=cost.green,
+            x_symbols=cost.x_symbols,
+        )
+
+    def ability_mana_cost(self, source: Card, base_cost: ManaCost) -> ManaCost:
+        """Return an activated ability cost after card-specific surcharges."""
+
+        surcharge = (
+            sum(
+                permanent.definition.increases_circle_activation_cost
+                for owner in self.players
+                for permanent in owner.battlefield
+                if self.continuous_permanent_is_active(permanent)
+            )
+            if source.definition.is_circle_of_protection
+            else 0
+        )
+        return ManaCost(
+            generic=base_cost.generic + surcharge,
+            white=base_cost.white,
+            blue=base_cost.blue,
+            black=base_cost.black,
+            red=base_cost.red,
+            green=base_cost.green,
+            x_symbols=base_cost.x_symbols,
+        )
+
+    def _lose_life(self, player: PlayerState, amount: int) -> tuple[int, int]:
+        """Apply direct life loss, consuming any Conservator-style prevention."""
+
+        if amount < 0:
+            raise ValueError("life loss cannot be negative")
+        prevented = min(amount, self.life_loss_prevention.get(player.id, 0))
+        remaining = self.life_loss_prevention.get(player.id, 0) - prevented
+        if remaining:
+            self.life_loss_prevention[player.id] = remaining
+        else:
+            self.life_loss_prevention.pop(player.id, None)
+        lost = amount - prevented
+        player.life -= lost
+        if lost:
+            for permanent in player.battlefield:
+                counter_name = permanent.definition.counters_on_controller_life_loss
+                if counter_name is not None:
+                    permanent.counters[counter_name] = (
+                        permanent.counters.get(counter_name, 0) + lost
+                    )
+        if player.life <= 0:
+            player.has_lost = True
+        return lost, prevented
 
     @staticmethod
     def _damage_source_key(source_id: UUID | None, source_name: str) -> str:
@@ -355,6 +477,16 @@ class GameState(
                 f"{self.player(choice.player_id).name} must choose permanents "
                 f"to untap under the {choice.card_type.value} limit first"
             )
+        if self.pending_counter_damage_choice is not None:
+            raise RuntimeError(
+                f"{self.player(self.pending_counter_damage_choice.controller_id).name} "
+                "must choose how many damage counters to preserve first"
+            )
+        if self.pending_counter_rewinds:
+            raise RuntimeError(
+                f"{self.active_player.name} must choose whether to rewind "
+                "Clockwork Beast first"
+            )
         if self.pending_upkeep_land_loss is not None:
             choice = self.pending_upkeep_land_loss
             raise RuntimeError(
@@ -373,6 +505,24 @@ class GameState(
                 f"{self.player(choice.player_id).name} must choose "
                 f"{choice.amount} {choice.category} card(s) for Balance first"
             )
+        if self.pending_hand_reveals:
+            reveal = self.pending_hand_reveals[0]
+            raise RuntimeError(
+                f"{self.player(reveal.viewer_id).name} must finish looking at "
+                f"{self.player(reveal.target_id).name}'s hand first"
+            )
+        if self.pending_drain_power_choices:
+            choice = self.pending_drain_power_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.caster_id).name} must choose mana for "
+                f"{choice.land_name} first"
+            )
+        if self.pending_power_sink_payment is not None:
+            payment = self.pending_power_sink_payment
+            raise RuntimeError(
+                f"{self.player(payment.payer_id).name} must finish paying "
+                f"Power Sink first"
+            )
         if self.pending_damage is not None and not allow_damage:
             raise RuntimeError("finish resolving the pending damage incident first")
         if self.pending_destruction is not None and not allow_damage:
@@ -390,6 +540,26 @@ class GameState(
                 "both players must pass priority on the pending rules event"
             )
 
+    def finish_hand_reveal(self, player_id: str) -> None:
+        """Dismiss the oldest resolved private hand snapshot."""
+
+        if not self.pending_hand_reveals:
+            raise RuntimeError("there is no revealed hand to dismiss")
+        reveal = self.pending_hand_reveals[0]
+        if reveal.viewer_id != player_id:
+            raise ValueError("only the player looking at the hand may dismiss it")
+        self.pending_hand_reveals.pop(0)
+
+    def _queue_opponent_hand_reveal(self, viewer_id: str) -> None:
+        """Snapshot the next opponent's hand for a resolved look effect."""
+
+        viewer = self.player(viewer_id)
+        viewer_index = self.players.index(viewer)
+        target = self.players[(viewer_index + 1) % len(self.players)]
+        self.pending_hand_reveals.append(
+            PendingHandReveal(viewer.id, target.id, tuple(target.hand))
+        )
+
     def _locate_card(self, card: Card) -> tuple[PlayerState | None, list[Card]]:
         if card in self.stack:
             return None, self.stack
@@ -400,6 +570,7 @@ class GameState(
                 Zone.BATTLEFIELD,
                 Zone.GRAVEYARD,
                 Zone.EXILE,
+                Zone.ANTE,
             ):
                 cards = player.cards_in(zone)
                 if card in cards:
@@ -455,6 +626,12 @@ class GameState(
         else:
             target = self.player(card.owner_id).cards_in(destination)
 
+        token_leaves_battlefield = (
+            card.is_token
+            and source_zone is Zone.BATTLEFIELD
+            and destination is not Zone.BATTLEFIELD
+        )
+
         card.zone = destination
         if destination is not Zone.BATTLEFIELD:
             card.tapped = False
@@ -468,11 +645,15 @@ class GameState(
             card.chosen_land_subtype = None
             card.color_override = None
             card.plus_one_counters = 0
+            card.counters.clear()
             card.summoned_turn = None
             card.land_type_marks.clear()
-        target.append(card)
+        if not token_leaves_battlefield:
+            target.append(card)
         if destination is Zone.BATTLEFIELD and card.definition.enters_tapped:
             card.tapped = True
+        if destination is Zone.BATTLEFIELD:
+            card.counters = dict(card.definition.initial_counters)
         self.events.append(
             CardMovedEvent(card.id, card.name, source_zone, destination)
         )
@@ -496,10 +677,11 @@ class GameState(
             and destination is Zone.GRAVEYARD
             and was_creature
         ):
+            self.creature_deaths_this_turn += 1
             divisor = card.definition.owner_life_loss_on_death_divisor
             if divisor is not None:
                 owner = self.player(card.owner_id)
-                owner.life -= (owner.life + divisor - 1) // divisor
+                self._lose_life(owner, (owner.life + divisor - 1) // divisor)
             self._record_creature_death_opportunity(
                 card,
                 prior_controller_id=prior_controller_id,
@@ -518,6 +700,7 @@ class GameState(
             self.combat_creature_effects.pop(card.id, None)
             self.ability_activations_this_turn.pop(card.id, None)
             self.destroy_at_end_of_turn.discard(card.id)
+            self.destroy_at_end_of_turn_if_attacked.discard(card.id)
             self.disintegrated_this_turn.discard(card.id)
             self.unpaid_tap_upkeep_ids.discard(card.id)
             attachments = [
@@ -633,10 +816,19 @@ class GameState(
     def _record_spell_cast_opportunity(self, spell: Card) -> None:
         """Expose one catchable event for a successfully cast spell."""
 
+        caster_id = spell.controller_id or spell.owner_id
         matching = any(
-            isinstance(ability, ActivatedEventLifeGainAbility)
-            and ability.spell_color is not None
-            and ability.spell_color in self.card_colors(spell)
+            (
+                isinstance(ability, ActivatedEventLifeGainAbility)
+                and ability.spell_color is not None
+                and ability.spell_color in self.card_colors(spell)
+            )
+            or (
+                isinstance(ability, ActivatedEventDrawAbility)
+                and CardType.ENCHANTMENT in spell.definition.card_types
+                and permanent.id != spell.id
+                and permanent.controller_id == caster_id
+            )
             for player in self.players
             for permanent in player.battlefield
             for ability in self.activated_abilities(permanent)
@@ -649,6 +841,8 @@ class GameState(
                 f"{spell.name} was cast",
                 spell_id=spell.id,
                 spell_colors=self.card_colors(spell),
+                spell_card_types=spell.definition.card_types,
+                spell_caster_id=caster_id,
             )
         )
         if self.priority_player_index is None:
@@ -661,12 +855,23 @@ class GameState(
     def _refresh_spell_cast_opportunity(self, spell: Card) -> None:
         """Re-evaluate color-sensitive cast events after a Lace resolves."""
 
-        self.event_opportunities = [
-            event
-            for event in self.event_opportunities
-            if event.spell_id != spell.id
-        ]
+        self._discard_spell_cast_opportunities(spell.id)
         self._record_spell_cast_opportunity(spell)
+
+    def _discard_spell_cast_opportunities(self, spell_id: UUID) -> None:
+        """Invalidate cast-event claims when a spell is changed or countered."""
+
+        removed = {
+            event.id
+            for event in self.event_opportunities
+            if event.spell_id == spell_id
+        }
+        self.event_opportunities = [
+            event for event in self.event_opportunities if event.id not in removed
+        ]
+        self.event_ability_uses = {
+            use for use in self.event_ability_uses if use[1] not in removed
+        }
 
     def _record_creature_death_opportunity(
         self,
@@ -855,7 +1060,9 @@ class GameState(
             self.consecutive_passes = 0
 
     def _matching_event_opportunities(
-        self, source: Card, ability: ActivatedEventLifeGainAbility
+        self,
+        source: Card,
+        ability: ActivatedEventLifeGainAbility | ActivatedEventDrawAbility,
     ) -> list[RuleEventOpportunity]:
         return [
             event
@@ -864,10 +1071,17 @@ class GameState(
             and (
                 (
                     event.kind is RuleEventKind.SPELL_CAST
-                    and ability.spell_color in event.spell_colors
+                    and (
+                        isinstance(ability, ActivatedEventLifeGainAbility)
+                        and ability.spell_color in event.spell_colors
+                        or isinstance(ability, ActivatedEventDrawAbility)
+                        and CardType.ENCHANTMENT in event.spell_card_types
+                        and event.spell_caster_id == source.controller_id
+                    )
                 )
                 or (
                     event.kind is RuleEventKind.CREATURE_DEATH
+                    and isinstance(ability, ActivatedEventLifeGainAbility)
                     and ability.creature_death
                 )
             )
@@ -997,6 +1211,11 @@ class GameState(
         """Repeatedly remove creatures with nonpositive or lethally damaged toughness."""
 
         while True:
+            # Existing engine fixtures commonly use empty libraries as compact
+            # test scaffolds. Ante games opt into complete duel finalization;
+            # non-ante callers may invoke ``finish_game`` explicitly.
+            if self.ante_enabled and self._finish_if_players_lost():
+                return
             doomed = [
                 card
                 for player in self.players
@@ -1022,6 +1241,44 @@ class GameState(
             for creature in doomed:
                 if creature.zone is Zone.BATTLEFIELD:
                     self._put_creature_in_graveyard(creature)
+
+    def concede(self, player_id: str) -> None:
+        """Concede the duel and award the ante to the remaining player."""
+
+        if self.status is not GameStatus.IN_PROGRESS:
+            raise RuntimeError("only an active duel can be conceded")
+        self.player(player_id).has_lost = True
+        self._finish_if_players_lost()
+
+    def finish_game(self) -> AnteAward:
+        """Finalize the current loss state and publish the ante disposition."""
+
+        if not any(player.has_lost for player in self.players):
+            raise RuntimeError("the duel has no losing player")
+        self._finish_if_players_lost()
+        assert self.ante_award is not None
+        return self.ante_award
+
+    def _finish_if_players_lost(self) -> bool:
+        """Finish a decided duel and publish its ante disposition once."""
+
+        if self.status is not GameStatus.IN_PROGRESS:
+            return self.status is GameStatus.FINISHED
+        if not any(player.has_lost for player in self.players):
+            return False
+        survivors = [player for player in self.players if not player.has_lost]
+        winner_id = survivors[0].id if len(survivors) == 1 else None
+        self.status = GameStatus.FINISHED
+        self.priority_player_index = None
+        cards = tuple(card for player in self.players for card in player.ante)
+        self.ante_award = AnteAward(
+            winner_id,
+            tuple(card.id for card in cards),
+            tuple(card.owner_id for card in cards),
+        )
+        if self.ante_award_hook is not None:
+            self.ante_award_hook(self.ante_award)
+        return True
 
     def put_permanent_in_graveyard(self, permanent: Card) -> None:
         """Move a permanent to its owner's graveyard, then update battlefield state."""
@@ -1053,6 +1310,7 @@ class GameState(
                 Zone.BATTLEFIELD,
                 Zone.GRAVEYARD,
                 Zone.EXILE,
+                Zone.ANTE,
             ):
                 for card in player.cards_in(zone):
                     if card.id in seen:
