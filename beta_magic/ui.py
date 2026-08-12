@@ -270,6 +270,7 @@ class GameViewModel(QObject):
                 *player.battlefield,
                 *player.graveyard,
                 *player.exile,
+                *player.ante,
             )
         )
         return next(
@@ -1195,6 +1196,85 @@ class GameViewModel(QObject):
             self.stateChanged.emit()
             return
         self._run(lambda: self.game.discard(cards[0]), f"Discarded {cards[0].name}.")
+
+    @Slot(bool)
+    def chooseDemonicAttorney(self, concede: bool) -> None:
+        if not self.game.pending_demonic_attorney_choices:
+            self._tell_current("There is no Demonic Attorney choice pending.")
+            self.stateChanged.emit()
+            return
+        player = self.game.players[self.perspective_index]
+        message = (
+            f"{player.name} conceded to Demonic Attorney."
+            if concede
+            else "Each player added a card to the ante."
+        )
+        self._run(
+            lambda: self.game.choose_demonic_attorney(
+                player.id, concede=concede
+            ),
+            message,
+        )
+
+    @Slot(str, int)
+    def moveNaturalSelectionCard(self, card_id: str, delta: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.move_natural_selection_card(
+                player.id, UUID(card_id), delta
+            ),
+            "Adjusted the proposed library order.",
+        )
+
+    @Slot(bool)
+    def chooseNaturalSelection(self, shuffle: bool) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.choose_natural_selection(
+                player.id, shuffle=shuffle
+            ),
+            (
+                "Shuffled the selected library."
+                if shuffle
+                else "Reordered the top of the selected library."
+            ),
+        )
+
+    @Slot(str)
+    def setLibrarySearchFilter(self, text: str) -> None:
+        self._choices.library_search_filter = text
+        selected = self._choices.library_search_selected_id
+        if selected is not None and all(
+            card.id != selected
+            for card in self.game.legal_library_search_cards()
+            if text.casefold().strip() in card.name.casefold()
+        ):
+            self._choices.library_search_selected_id = None
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def selectLibrarySearchCard(self, card_id: str) -> None:
+        candidate = self._card_by_id(UUID(card_id))
+        if candidate not in self.game.legal_library_search_cards():
+            self._tell_current("Choose an eligible card from the library.")
+        else:
+            self._choices.library_search_selected_id = candidate.id
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmLibrarySearch(self) -> None:
+        selected = self._choices.library_search_selected_id
+        card = self._card_by_id(selected) if selected is not None else None
+        if card is None:
+            self._tell_current("Select a card to put into your hand.")
+            self.stateChanged.emit()
+            return
+        player = self.game.players[self.perspective_index]
+        if self._run(
+            lambda: self.game.choose_library_search_card(player.id, card),
+            "Searched the library and chose a card privately.",
+        ):
+            self._choices.clear_library_search()
 
     @Slot()
     def chooseBalanceSelected(self) -> None:

@@ -21,7 +21,7 @@ def _cards(*names: str) -> tuple[CardDefinition, ...]:
 VERDANT_TIDES_DECK = _cards(
     "War Mammoth", "Mox Sapphire", "Wall of Brambles", "Shanodin Dryads",
     "Sol Ring", "Forest", "Birds of Paradise", "Island", "Lord of Atlantis",
-    "Prodigal Sorcerer", "Elvish Archers", "Forest", "Island", "Giant Growth",
+    "Prodigal Sorcerer", "Giant Growth", "Forest", "Island", "Natural Selection",
     "Tropical Island", "Flight", "Llanowar Elves", "Tranquility",
     "Psionic Blast", "Glasses of Urza",
 )
@@ -45,7 +45,7 @@ RADIANT_CHARGE_DECK = _cards(
 MOONLIT_HORDE_DECK = _cards(
     "Drudge Skeletons", "Uthden Troll", "Bog Wraith", "Will-o'-the-Wisp",
     "Firebreathing", "Royal Assassin", "Wall of Bone", "Plague Rats",
-    "Swamp", "Mountain", "Nightmare", "Swamp", "Mons's Goblin Raiders",
+    "Swamp", "Mountain", "Nightmare", "Swamp", "Demonic Tutor",
     "Orcish Oriflamme", "Mountain", "Unholy Strength", "Badlands",
     "Bad Moon", "Weakness", "Frozen Shade",
 )

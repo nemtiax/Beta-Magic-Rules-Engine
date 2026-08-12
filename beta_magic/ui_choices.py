@@ -23,6 +23,8 @@ class TransientChoiceState:
     redirection_packet_id: UUID | None = None
     redirection_amount: int = 1
     redirection_maximum: int = 1
+    library_search_filter: str = ""
+    library_search_selected_id: UUID | None = None
 
     def reset(self) -> None:
         self.x_card_id = None
@@ -36,6 +38,7 @@ class TransientChoiceState:
         self.redirection_packet_id = None
         self.redirection_amount = 1
         self.redirection_maximum = 1
+        self.clear_library_search()
 
     def begin_x(self, card: Card, maximum: int) -> None:
         self.x_card_id = card.id
@@ -79,3 +82,7 @@ class TransientChoiceState:
 
     def clear_redirection_amount(self) -> None:
         self.redirection_packet_id = None
+
+    def clear_library_search(self) -> None:
+        self.library_search_filter = ""
+        self.library_search_selected_id = None

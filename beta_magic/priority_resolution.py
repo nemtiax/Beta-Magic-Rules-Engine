@@ -45,6 +45,9 @@ from .effects import (
     DiscardCardsEffect,
     DiscardHandsAndDrawEffect,
     DiscardHandAnteAndDrawEffect,
+    DemonicAttorneyEffect,
+    NaturalSelectionEffect,
+    LibrarySearchEffect,
     DrawCardsEffect,
     EffectRecipient,
     ExileTargetsEffect,
@@ -62,6 +65,7 @@ from .effects import (
     BlazeOfGloryEffect,
     TemporaryPumpEffect,
     TapLandsAndEmptyManaPoolEffect,
+    SwapLibraryTopWithAnteEffect,
 )
 from .mana import ManaCost
 from .types import CardType, Color, CombatStep, KeywordAbility, Zone
@@ -93,6 +97,29 @@ class PendingPowerSinkPayment:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingDemonicAttorneyChoice:
+    caster_id: str
+    opponent_id: str
+
+
+@dataclass(slots=True)
+class PendingNaturalSelectionChoice:
+    chooser_id: str
+    target_player_id: str
+    card_ids_top_first: list[UUID]
+
+
+@dataclass(frozen=True, slots=True)
+class PendingLibrarySearchChoice:
+    chooser_id: str
+    library_player_id: str
+    source_name: str
+    card_types: frozenset[CardType]
+    destination: Zone
+
+
+
+@dataclass(frozen=True, slots=True)
 class BalanceChoice:
     player_id: str
     category: str
@@ -116,6 +143,104 @@ class PendingBalance:
 
 class PriorityBatchResolutionMixin:
     """Coordinate priority, interrupts, and simultaneous fast-effect batches."""
+
+    def choose_demonic_attorney(self, player_id: str, *, concede: bool) -> None:
+        """Resolve the opponent's choice after Demonic Attorney resolves."""
+
+        if not self.pending_demonic_attorney_choices:
+            raise RuntimeError("there is no Demonic Attorney choice pending")
+        choice = self.pending_demonic_attorney_choices[0]
+        if player_id != choice.opponent_id:
+            raise ValueError("only the caster's opponent may make this choice")
+        self.pending_demonic_attorney_choices.pop(0)
+        if concede:
+            self.concede(player_id)
+            return
+        for player in self.players:
+            if not player.library:
+                player.has_lost = True
+                continue
+            card = player.library.pop()
+            card.zone = Zone.ANTE
+            player.ante.append(card)
+        self.check_state_based_actions()
+
+    def move_natural_selection_card(
+        self, player_id: str, card_id: UUID, delta: int
+    ) -> None:
+        """Move one inspected card one position in the proposed order."""
+
+        if not self.pending_natural_selection_choices:
+            raise RuntimeError("there is no Natural Selection choice pending")
+        choice = self.pending_natural_selection_choices[0]
+        if player_id != choice.chooser_id:
+            raise ValueError("only the Natural Selection caster may reorder cards")
+        if delta not in {-1, 1}:
+            raise ValueError("cards may only move one position at a time")
+        try:
+            index = choice.card_ids_top_first.index(card_id)
+        except ValueError as error:
+            raise ValueError("that card is not among the inspected cards") from error
+        destination = index + delta
+        if not 0 <= destination < len(choice.card_ids_top_first):
+            return
+        choice.card_ids_top_first[index], choice.card_ids_top_first[destination] = (
+            choice.card_ids_top_first[destination],
+            choice.card_ids_top_first[index],
+        )
+
+    def choose_natural_selection(self, player_id: str, *, shuffle: bool) -> None:
+        """Commit the proposed top-three order or shuffle the target library."""
+
+        if not self.pending_natural_selection_choices:
+            raise RuntimeError("there is no Natural Selection choice pending")
+        choice = self.pending_natural_selection_choices[0]
+        if player_id != choice.chooser_id:
+            raise ValueError("only the Natural Selection caster may decide")
+        target = self.player(choice.target_player_id)
+        inspected = [
+            next((card for card in target.library if card.id == card_id), None)
+            for card_id in choice.card_ids_top_first
+        ]
+        if any(card is None for card in inspected):
+            raise RuntimeError("an inspected card is no longer in that library")
+        self.pending_natural_selection_choices.pop(0)
+        if shuffle:
+            target.shuffle_library(self.random)
+            return
+        cards = [card for card in inspected if card is not None]
+        for card in cards:
+            target.library.remove(card)
+        # Libraries store their top card at the end of the list.
+        target.library.extend(reversed(cards))
+
+    def legal_library_search_cards(self) -> tuple[Card, ...]:
+        """Return current legal cards for the oldest private library search."""
+
+        if not self.pending_library_search_choices:
+            return ()
+        choice = self.pending_library_search_choices[0]
+        return tuple(
+            card
+            for card in self.player(choice.library_player_id).library
+            if not choice.card_types
+            or choice.card_types.issubset(card.definition.card_types)
+        )
+
+    def choose_library_search_card(self, player_id: str, card: Card) -> None:
+        """Finish a search, move the private choice, then shuffle the library."""
+
+        if not self.pending_library_search_choices:
+            raise RuntimeError("there is no library search pending")
+        choice = self.pending_library_search_choices[0]
+        if player_id != choice.chooser_id:
+            raise ValueError("only the searching player may choose a card")
+        if card not in self.legal_library_search_cards():
+            raise ValueError("that card is not eligible for this library search")
+        library_player = self.player(choice.library_player_id)
+        self.pending_library_search_choices.pop(0)
+        self._move_card(card, choice.destination)
+        library_player.shuffle_library(self.random)
 
     __slots__ = ()
 
@@ -920,6 +1045,55 @@ class PriorityBatchResolutionMixin:
                     else:
                         caster.has_lost = True
                     caster.draw(effect.draw_count)
+                elif isinstance(effect, SwapLibraryTopWithAnteEffect):
+                    # The library-card requirement is checked when Darkpact is
+                    # cast. Keep resolution robust if a future effect empties
+                    # that library during the same batch.
+                    if caster.library:
+                        target = next(
+                            item for item in spell.targets if isinstance(item, Card)
+                        )
+                        ante_player = next(
+                            player for player in self.players if target in player.ante
+                        )
+                        replacement = caster.library.pop()
+                        ante_player.ante.remove(target)
+                        target.owner_id = caster.id
+                        target.controller_id = caster.id
+                        target.zone = Zone.LIBRARY
+                        caster.library.append(target)
+                        replacement.owner_id = ante_player.id
+                        replacement.controller_id = ante_player.id
+                        replacement.zone = Zone.ANTE
+                        ante_player.ante.append(replacement)
+                elif isinstance(effect, DemonicAttorneyEffect):
+                    opponent = next(
+                        player for player in self.players if player.id != caster.id
+                    )
+                    self.pending_demonic_attorney_choices.append(
+                        PendingDemonicAttorneyChoice(caster.id, opponent.id)
+                    )
+                elif isinstance(effect, NaturalSelectionEffect):
+                    target = next(
+                        item for item in spell.targets if not isinstance(item, Card)
+                    )
+                    self.pending_natural_selection_choices.append(
+                        PendingNaturalSelectionChoice(
+                            caster.id,
+                            target.id,
+                            [card.id for card in reversed(target.library[-3:])],
+                        )
+                    )
+                elif isinstance(effect, LibrarySearchEffect):
+                    self.pending_library_search_choices.append(
+                        PendingLibrarySearchChoice(
+                            caster.id,
+                            caster.id,
+                            spell.card.name,
+                            effect.card_types,
+                            effect.destination,
+                        )
+                    )
                 elif isinstance(effect, SirensCallEffect):
                     for creature in tuple(self.active_player.battlefield):
                         if (

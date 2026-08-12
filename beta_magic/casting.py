@@ -32,6 +32,7 @@ from .effects import (
     RetroactiveDamageTransferEffect,
     TemporaryPumpEffect,
     PreventCombatDamageEffect,
+    SwapLibraryTopWithAnteEffect,
 )
 from .types import (
     BASIC_LAND_SUBTYPES,
@@ -256,6 +257,11 @@ class TargetingCastingMixin:
             raise ValueError("X cannot be negative")
         if card.definition.requires_ante and not self.ante_enabled:
             raise RuntimeError(f"{card.name} cannot be used when not playing for ante")
+        if any(
+            isinstance(effect, SwapLibraryTopWithAnteEffect)
+            for effect in card.definition.spell_effects
+        ) and not self._caster_for(card).library:
+            raise RuntimeError(f"{card.name} requires a card in your library")
         if not card.definition.mana_cost.x_symbols and x_value:
             raise ValueError(f"{card.name} has no X in its mana cost")
         caster = self._caster_for(card)

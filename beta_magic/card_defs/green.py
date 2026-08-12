@@ -21,6 +21,7 @@ from ..effects import (
     GainLifeEffect,
     GlobalDamageEffect,
     MoveTargetsEffect,
+    NaturalSelectionEffect,
     PreventCombatDamageEffect,
     TemporaryPumpEffect,
     UpkeepCostEffect,
@@ -41,6 +42,19 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 LIFELACE = lace("Lifelace", Color.GREEN)
+
+FASTBOND = CardDefinition(
+    name="Fastbond",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "You may put as many lands into play as you want each turn. Fastbond "
+        "does 1 damage to you for every land beyond the first that you play "
+        "in a single turn. Lands may only be played when otherwise legal."
+    ),
+    colors=frozenset({Color.GREEN}),
+    fastbond_damage=1,
+)
 
 LIVING_ARTIFACT = CardDefinition(
     name="Living Artifact",
@@ -72,6 +86,19 @@ LURE = CardDefinition(
     subtypes=("Enchant Creature",),
     target_requirement=_CREATURE_IN_PLAY,
     lures_blockers=True,
+)
+
+NATURAL_SELECTION = CardDefinition(
+    name="Natural Selection",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Look at the top three cards of any player's library. You may "
+        "rearrange those three cards or shuffle the entire library."
+    ),
+    colors=frozenset({Color.GREEN}),
+    target_requirement=TargetRequirement(players=True),
+    spell_effects=(NaturalSelectionEffect(),),
 )
 
 VERDURAN_ENCHANTRESS = CardDefinition(
@@ -599,6 +626,7 @@ GREEN_CARDS = tuple(
             FORCE_OF_NATURE,
             FOG,
             FUNGUSAUR,
+            FASTBOND,
             GAEAS_LIEGE,
             GIANT_GROWTH,
             GIANT_SPIDER,
@@ -613,6 +641,7 @@ GREEN_CARDS = tuple(
             LIVING_LANDS,
             LIVING_ARTIFACT,
             LURE,
+            NATURAL_SELECTION,
             REGENERATION,
             REGROWTH,
             SCRYB_SPRITES,

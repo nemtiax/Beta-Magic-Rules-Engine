@@ -406,6 +406,251 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: demonicAttorneyPicker
+        anchors.centerIn: parent
+        implicitWidth: 430
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.demonicAttorneyChoice
+        title: "Demonic Attorney"
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: gameState.canChooseDemonicAttorney
+                      ? "Concede the game, or have each player ante the unseen top card of their library."
+                      : "Waiting for " + gameState.demonicAttorneyOpponent
+                        + " to answer Demonic Attorney."
+                color: "#ffffff"
+            }
+            RowLayout {
+                visible: gameState.canChooseDemonicAttorney
+                Layout.alignment: Qt.AlignRight
+                Button {
+                    text: "Add to ante"
+                    onClicked: gameBridge.chooseDemonicAttorney(false)
+                }
+                Button {
+                    text: "Concede"
+                    onClicked: gameBridge.chooseDemonicAttorney(true)
+                }
+            }
+            Button {
+                visible: !gameState.canChooseDemonicAttorney
+                text: "Switch to " + gameState.demonicAttorneyOpponent
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: naturalSelectionPicker
+        anchors.centerIn: parent
+        width: Math.min(650, window.width - 48)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.naturalSelectionChoice
+        title: "Natural Selection — " + gameState.naturalSelectionTarget
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: "#ffffff"
+                text: gameState.canChooseNaturalSelection
+                      ? "Cards are shown top to bottom. Adjust the order, keep it as shown, or shuffle the entire library."
+                      : "Waiting for " + gameState.naturalSelectionChooser
+                        + " to inspect the library."
+            }
+            Repeater {
+                model: gameState.canChooseNaturalSelection
+                       ? gameState.naturalSelectionCards : []
+                delegate: Frame {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    background: Rectangle {
+                        color: "#202832"
+                        border.color: "#536171"
+                        radius: 7
+                    }
+                    RowLayout {
+                        anchors.fill: parent
+                        Label {
+                            text: (index + 1) + (index === 0 ? " · TOP" : "")
+                            color: index === 0 ? "#ffd978" : "#aeb8c3"
+                            font.bold: true
+                            Layout.preferredWidth: 58
+                        }
+                        CardItem {
+                            cardData: modelData
+                            interactive: false
+                            onInspected: function(cardData) {
+                                window.inspectedCard = cardData
+                            }
+                        }
+                        Label {
+                            text: modelData.name
+                            color: "#ffffff"
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+                        Button {
+                            text: "↑"
+                            enabled: index > 0
+                            onClicked: gameBridge.moveNaturalSelectionCard(
+                                modelData.id, -1
+                            )
+                        }
+                        Button {
+                            text: "↓"
+                            enabled: index + 1 < gameState.naturalSelectionCards.length
+                            onClicked: gameBridge.moveNaturalSelectionCard(
+                                modelData.id, 1
+                            )
+                        }
+                    }
+                }
+            }
+            Label {
+                visible: gameState.canChooseNaturalSelection
+                         && gameState.naturalSelectionCards.length === 0
+                text: "That library is empty."
+                color: "#ffd978"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    visible: !gameState.canChooseNaturalSelection
+                    text: "Switch to " + gameState.naturalSelectionChooser
+                    onClicked: gameBridge.switchPerspective()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    visible: gameState.canChooseNaturalSelection
+                    text: "Shuffle library"
+                    onClicked: gameBridge.chooseNaturalSelection(true)
+                }
+                Button {
+                    visible: gameState.canChooseNaturalSelection
+                    text: "Use this order"
+                    onClicked: gameBridge.chooseNaturalSelection(false)
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: librarySearchPicker
+        anchors.centerIn: parent
+        width: Math.min(900, window.width - 48)
+        height: Math.min(690, window.height - 48)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.librarySearchPending
+        title: gameState.librarySearchSource + " — search library"
+        onOpened: {
+            librarySearchField.text = ""
+            librarySearchField.forceActiveFocus()
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                visible: !gameState.canSearchLibrary
+                text: gameState.librarySearchChooser
+                      + " is searching their library privately."
+                color: "#ffd978"
+                Layout.fillWidth: true
+            }
+            Button {
+                visible: !gameState.canSearchLibrary
+                text: "Switch to " + gameState.librarySearchChooser
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+            TextField {
+                id: librarySearchField
+                visible: gameState.canSearchLibrary
+                Layout.fillWidth: true
+                placeholderText: "Filter card names…"
+                onTextChanged: gameBridge.setLibrarySearchFilter(text)
+                Keys.onReturnPressed: {
+                    if (gameState.librarySearchSelectedId)
+                        gameBridge.confirmLibrarySearch()
+                }
+            }
+            Label {
+                visible: gameState.canSearchLibrary
+                text: gameState.librarySearchShown + " of "
+                      + gameState.librarySearchTotal + " cards shown"
+                color: "#bfc7d1"
+            }
+            ScrollView {
+                visible: gameState.canSearchLibrary
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                Flow {
+                    width: librarySearchPicker.availableWidth - 24
+                    spacing: 9
+                    Repeater {
+                        model: gameState.librarySearchCards
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 116
+                            height: 76
+                            radius: 8
+                            color: "transparent"
+                            border.width: gameState.librarySearchSelectedId
+                                          === modelData.id ? 4 : 0
+                            border.color: "#ffd54a"
+                            CardItem {
+                                anchors.centerIn: parent
+                                cardData: modelData
+                                interactive: false
+                                selectionOnly: true
+                                onSelected: function(cardId) {
+                                    gameBridge.selectLibrarySearchCard(cardId)
+                                }
+                                onInspected: function(cardData) {
+                                    window.inspectedCard = cardData
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Label {
+                visible: gameState.canSearchLibrary
+                         && gameState.librarySearchShown === 0
+                text: "No cards match this filter."
+                color: "#ffd978"
+            }
+            RowLayout {
+                visible: gameState.canSearchLibrary
+                Layout.fillWidth: true
+                Label {
+                    text: gameState.librarySearchSelectedId
+                          ? "One card selected" : "Select one card"
+                    color: gameState.librarySearchSelectedId
+                           ? "#ffd978" : "#bfc7d1"
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Choose card"
+                    enabled: !!gameState.librarySearchSelectedId
+                    onClicked: gameBridge.confirmLibrarySearch()
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: landTypePicker
         anchors.centerIn: parent
         implicitWidth: 360

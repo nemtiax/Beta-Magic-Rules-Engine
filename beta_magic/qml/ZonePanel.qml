@@ -26,6 +26,7 @@ Frame {
         GridLayout {
             columns: 1
             Layout.fillWidth: true
+            Layout.minimumWidth: 480
             Label {
                 Layout.row: zone.frontAtBottom ? 3 : 0
                 text: "In play · creatures and other permanents"
@@ -68,6 +69,7 @@ Frame {
                 cards: playerData.battlefieldLands
                 interactive: zone.interactive
                 selectionOnly: zone.selectionOnly
+                targetable: zone.targeting
                 onSelected: function(cardId) { zone.selected(cardId) }
                 onActivated: function(cardId) { zone.activated(cardId) }
                 onAbilityActivated: function(cardId, abilityIndex) {
@@ -77,7 +79,12 @@ Frame {
             }
         }
         ColumnLayout {
-            Layout.preferredWidth: 280
+            Layout.preferredWidth: 220
+            Layout.minimumWidth: 180
+            Layout.maximumWidth: 240
+            Layout.fillWidth: false
+            Layout.alignment: Qt.AlignTop
+            spacing: 7
             Label {
                 text: "Graveyard · " + playerData.graveyardCount
                 color: "#e5e9ef"
@@ -92,9 +99,11 @@ Frame {
                 onSelected: function(cardId) { zone.selected(cardId) }
                 onInspected: function(cardData) { zone.inspected(cardData) }
             }
-        }
-        ColumnLayout {
-            Layout.preferredWidth: 170
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: "#39434f"
+            }
             Label {
                 text: "Set aside · " + playerData.exileCount
                 color: "#e5e9ef"
@@ -106,6 +115,12 @@ Frame {
                 cards: playerData.exile
                 interactive: false
                 onInspected: function(cardData) { zone.inspected(cardData) }
+            }
+            Rectangle {
+                visible: playerData.anteCount > 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 1 : 0
+                color: "#39434f"
             }
             Label {
                 visible: playerData.anteCount > 0
@@ -120,6 +135,8 @@ Frame {
                 Layout.minimumHeight: visible ? implicitHeight : 0
                 cards: playerData.ante
                 interactive: false
+                targetable: zone.targeting
+                onSelected: function(cardId) { zone.selected(cardId) }
                 onInspected: function(cardData) { zone.inspected(cardData) }
             }
         }

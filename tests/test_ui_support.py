@@ -135,6 +135,8 @@ from beta_magic.ui import (
     parse_args,
 )
 from beta_magic.card_defs import HILL_GIANT
+from beta_magic.card_defs.green import NATURAL_SELECTION
+from beta_magic.card_defs.black import DEMONIC_TUTOR
 
 
 class DemoGameTests(unittest.TestCase):
@@ -467,6 +469,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertIn(BIRDS_OF_PARADISE, VERDANT_TIDES_DECK)
         self.assertIn(PRODIGAL_SORCERER, VERDANT_TIDES_DECK)
         self.assertIn(WALL_OF_BRAMBLES, VERDANT_TIDES_DECK)
+        self.assertIn(NATURAL_SELECTION, VERDANT_TIDES_DECK)
         self.assertIn(ORCISH_ARTILLERY, STONEFIRE_DECK)
         self.assertIn(TUNNEL, STONEFIRE_DECK)
         self.assertIn(
@@ -837,6 +840,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertIn(UTHDEN_TROLL, MOONLIT_HORDE_DECK)
         self.assertIn(WILL_O_THE_WISP, MOONLIT_HORDE_DECK)
         self.assertIn(WALL_OF_BONE, MOONLIT_HORDE_DECK)
+        self.assertIn(DEMONIC_TUTOR, MOONLIT_HORDE_DECK)
         self.assertIn(
             HOLY_STRENGTH, [card.definition for card in first.players[0].hand]
         )

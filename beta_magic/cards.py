@@ -57,6 +57,10 @@ from .effects import (
     DiscardHandsAndDrawEffect,
     ShuffleHandAndGraveyardEffect,
     DiscardHandAnteAndDrawEffect,
+    SwapLibraryTopWithAnteEffect,
+    DemonicAttorneyEffect,
+    NaturalSelectionEffect,
+    LibrarySearchEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
     BalanceEffect,
@@ -126,6 +130,7 @@ class CardDefinition:
     target_requirement: TargetRequirement | None = None
     spell_effects: tuple[SpellEffect, ...] = ()
     requires_ante: bool = False
+    fastbond_damage: int = 0
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
     draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
     untap_effects: tuple[UntapRestrictionEffect, ...] = ()
@@ -176,6 +181,8 @@ class CardDefinition:
             raise ValueError("a card must have a name")
         if not self.card_types:
             raise ValueError("a card must have at least one card type")
+        if self.fastbond_damage < 0:
+            raise ValueError("Fastbond damage cannot be negative")
         has_one_stat = (self.power is None) != (self.toughness is None)
         if has_one_stat:
             raise ValueError("power and toughness must be specified together")
@@ -429,6 +436,10 @@ __all__ = [
     "DiscardCardsEffect",
     "DiscardHandsAndDrawEffect",
     "DiscardHandAnteAndDrawEffect",
+    "SwapLibraryTopWithAnteEffect",
+    "DemonicAttorneyEffect",
+    "NaturalSelectionEffect",
+    "LibrarySearchEffect",
     "UntapRestrictionEffect",
     "ExtraTurnEffect",
     "BlazeOfGloryEffect",

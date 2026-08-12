@@ -97,6 +97,30 @@ class UiPresentationBuilder:
             if self.game.pending_drain_power_choices else None
         )
         power_sink_payment = self.game.pending_power_sink_payment
+        demonic_attorney_choice = (
+            self.game.pending_demonic_attorney_choices[0]
+            if self.game.pending_demonic_attorney_choices else None
+        )
+        natural_selection_choice = (
+            self.game.pending_natural_selection_choices[0]
+            if self.game.pending_natural_selection_choices else None
+        )
+        library_search_choice = (
+            self.game.pending_library_search_choices[0]
+            if self.game.pending_library_search_choices else None
+        )
+        legal_search_cards = (
+            self.game.legal_library_search_cards()
+            if library_search_choice is not None else ()
+        )
+        search_filter = self._choices.library_search_filter.casefold().strip()
+        filtered_search_cards = sorted(
+            (
+                card for card in legal_search_cards
+                if not search_filter or search_filter in card.name.casefold()
+            ),
+            key=lambda card: (card.name.casefold(), str(card.id)),
+        )
         combat_response = bool(
             combat is not None
             and combat.step in {
@@ -126,6 +150,9 @@ class UiPresentationBuilder:
             or hand_reveal is not None
             or drain_power_choice is not None
             or power_sink_payment is not None
+            or demonic_attorney_choice is not None
+            or natural_selection_choice is not None
+            or library_search_choice is not None
             or untap_choice is not None
             or counter_rewind is not None
             or upkeep_land_choice is not None
@@ -217,6 +244,64 @@ class UiPresentationBuilder:
             "activePlayer": self.game.active_player.name,
             "message": self._message,
             "timeVaultChoice": turn_choice is not None,
+            "demonicAttorneyChoice": demonic_attorney_choice is not None,
+            "demonicAttorneyOpponent": (
+                self.game.player(demonic_attorney_choice.opponent_id).name
+                if demonic_attorney_choice is not None else ""
+            ),
+            "canChooseDemonicAttorney": bool(
+                demonic_attorney_choice is not None
+                and demonic_attorney_choice.opponent_id == perspective.id
+            ),
+            "naturalSelectionChoice": natural_selection_choice is not None,
+            "naturalSelectionChooser": (
+                self.game.player(natural_selection_choice.chooser_id).name
+                if natural_selection_choice is not None else ""
+            ),
+            "naturalSelectionTarget": (
+                self.game.player(natural_selection_choice.target_player_id).name
+                if natural_selection_choice is not None else ""
+            ),
+            "canChooseNaturalSelection": bool(
+                natural_selection_choice is not None
+                and natural_selection_choice.chooser_id == perspective.id
+            ),
+            "naturalSelectionCards": (
+                [
+                    self._card_data(self._card_by_id(card_id))
+                    for card_id in natural_selection_choice.card_ids_top_first
+                    if self._card_by_id(card_id) is not None
+                ]
+                if natural_selection_choice is not None
+                and natural_selection_choice.chooser_id == perspective.id
+                else []
+            ),
+            "librarySearchPending": library_search_choice is not None,
+            "librarySearchSource": (
+                library_search_choice.source_name
+                if library_search_choice is not None else ""
+            ),
+            "librarySearchChooser": (
+                self.game.player(library_search_choice.chooser_id).name
+                if library_search_choice is not None else ""
+            ),
+            "canSearchLibrary": bool(
+                library_search_choice is not None
+                and library_search_choice.chooser_id == perspective.id
+            ),
+            "librarySearchFilter": self._choices.library_search_filter,
+            "librarySearchTotal": len(legal_search_cards),
+            "librarySearchShown": len(filtered_search_cards),
+            "librarySearchSelectedId": (
+                str(self._choices.library_search_selected_id)
+                if self._choices.library_search_selected_id is not None else ""
+            ),
+            "librarySearchCards": (
+                [self._card_data(card) for card in filtered_search_cards]
+                if library_search_choice is not None
+                and library_search_choice.chooser_id == perspective.id
+                else []
+            ),
             "effectDiscardRequired": discard_choice is not None,
             "balanceRequired": balance_choice is not None,
             "untapChoiceRequired": untap_choice is not None,

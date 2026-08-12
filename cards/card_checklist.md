@@ -97,12 +97,12 @@
  - [x] Contract from Below
  - [x] Cursed Land
  - [x] Dark Ritual
- - [ ] Darkpact
+ - [x] Darkpact
  - [x] Deathgrip
  - [x] Deathlace
- - [ ] Demonic Attorney
+ - [x] Demonic Attorney
  - [x] Demonic Hordes
- - [ ] Demonic Tutor
+ - [x] Demonic Tutor
  - [ ] Drain Life
  - [x] Drudge Skeletons
  - [x] Evil Presence
@@ -190,7 +190,7 @@
  - [x] Cockatrice
  - [x] Craw Wurm
  - [x] Elvish Archers
- - [ ] Fastbond
+ - [x] Fastbond
  - [x] Fog
  - [x] Force of Nature
  - [x] Fungusaur
@@ -210,7 +210,7 @@
  - [x] Living Lands
  - [x] Llanowar Elves
  - [x] Lure
- - [ ] Natural Selection
+ - [x] Natural Selection
  - [x] Regeneration
  - [x] Regrowth
  - [x] Scryb Sprites

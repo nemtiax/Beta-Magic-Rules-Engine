@@ -233,6 +233,29 @@ class DiscardHandAnteAndDrawEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class SwapLibraryTopWithAnteEffect:
+    """Permanently exchange the caster's library top with an ante card."""
+
+
+@dataclass(frozen=True, slots=True)
+class DemonicAttorneyEffect:
+    """Ask the opponent to concede or make every player add to the ante."""
+
+
+@dataclass(frozen=True, slots=True)
+class NaturalSelectionEffect:
+    """Inspect and reorder a library's top three cards, or shuffle it."""
+
+
+@dataclass(frozen=True, slots=True)
+class LibrarySearchEffect:
+    """Search the caster's library for a card matching reusable constraints."""
+
+    card_types: frozenset[CardType] = field(default_factory=frozenset)
+    destination: Zone = Zone.HAND
+
+
+@dataclass(frozen=True, slots=True)
 class SirensCallEffect:
     """Apply Beta Siren's Call to the active player's current creatures."""
 
@@ -652,6 +675,10 @@ SpellEffect = (
     | DiscardHandsAndDrawEffect
     | ShuffleHandAndGraveyardEffect
     | DiscardHandAnteAndDrawEffect
+    | SwapLibraryTopWithAnteEffect
+    | DemonicAttorneyEffect
+    | NaturalSelectionEffect
+    | LibrarySearchEffect
     | SirensCallEffect
     | BlazeOfGloryEffect
     | BalanceEffect
@@ -766,6 +793,10 @@ __all__ = [
     "DiscardHandsAndDrawEffect",
     "ShuffleHandAndGraveyardEffect",
     "DiscardHandAnteAndDrawEffect",
+    "SwapLibraryTopWithAnteEffect",
+    "DemonicAttorneyEffect",
+    "NaturalSelectionEffect",
+    "LibrarySearchEffect",
     "SirensCallEffect",
     "BlazeOfGloryEffect",
     "BalanceEffect",

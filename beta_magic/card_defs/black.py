@@ -16,6 +16,9 @@ from ..effects import (
     AttachedLandTypeEffect,
     DestroyTargetsEffect,
     DiscardHandAnteAndDrawEffect,
+    DemonicAttorneyEffect,
+    LibrarySearchEffect,
+    SwapLibraryTopWithAnteEffect,
     EffectScope,
     MoveTargetsEffect,
     RetroactiveDamageTransferEffect,
@@ -55,6 +58,48 @@ CONTRACT_FROM_BELOW = CardDefinition(
     colors=frozenset({Color.BLACK}),
     spell_effects=(DiscardHandAnteAndDrawEffect(7),),
     requires_ante=True,
+)
+
+DARKPACT = CardDefinition(
+    name="Darkpact",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{B}{B}{B}"),
+    rules_text=(
+        "Without looking at it first, swap the top card of your library with "
+        "either card of the ante; this swap is permanent. You must have a card "
+        "in your library to cast this spell. Remove this card from your deck "
+        "before playing if you are not playing for ante."
+    ),
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(zone=Zone.ANTE),
+    spell_effects=(SwapLibraryTopWithAnteEffect(),),
+    requires_ante=True,
+)
+
+DEMONIC_ATTORNEY = CardDefinition(
+    name="Demonic Attorney",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{1}{B}{B}"),
+    rules_text=(
+        "If opponent doesn't concede the game immediately, each player must "
+        "ante an additional card from the top of their library. Remove this "
+        "card from your deck before playing if you are not playing for ante."
+    ),
+    colors=frozenset({Color.BLACK}),
+    spell_effects=(DemonicAttorneyEffect(),),
+    requires_ante=True,
+)
+
+DEMONIC_TUTOR = CardDefinition(
+    name="Demonic Tutor",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{1}{B}"),
+    rules_text=(
+        "Search your library for one card and put it into your hand. "
+        "Reshuffle your library afterwards. Do not reveal the chosen card."
+    ),
+    colors=frozenset({Color.BLACK}),
+    spell_effects=(LibrarySearchEffect(),),
 )
 
 DEATHGRIP = CardDefinition(
@@ -630,10 +675,13 @@ BLACK_CARDS = tuple(
             BOG_WRAITH,
             CONTRACT_FROM_BELOW,
             CURSED_LAND,
+            DARKPACT,
             DARK_RITUAL,
             DEATHLACE,
             DEATHGRIP,
             DEMONIC_HORDES,
+            DEMONIC_ATTORNEY,
+            DEMONIC_TUTOR,
             DRUDGE_SKELETONS,
             EVIL_PRESENCE,
             FEAR,

@@ -58,6 +58,9 @@ from .priority_resolution import (
     PendingBalance,
     PendingDiscardChoice,
     PendingDrainPowerChoice,
+    PendingDemonicAttorneyChoice,
+    PendingNaturalSelectionChoice,
+    PendingLibrarySearchChoice,
     PendingPowerSinkPayment,
     PriorityBatchResolutionMixin,
 )
@@ -287,6 +290,15 @@ class GameState(
         default_factory=list
     )
     pending_power_sink_payment: PendingPowerSinkPayment | None = None
+    pending_demonic_attorney_choices: list[PendingDemonicAttorneyChoice] = field(
+        default_factory=list
+    )
+    pending_natural_selection_choices: list[PendingNaturalSelectionChoice] = field(
+        default_factory=list
+    )
+    pending_library_search_choices: list[PendingLibrarySearchChoice] = field(
+        default_factory=list
+    )
     random: Random = field(default_factory=Random, repr=False)
 
     def __post_init__(self) -> None:
@@ -522,6 +534,24 @@ class GameState(
             raise RuntimeError(
                 f"{self.player(payment.payer_id).name} must finish paying "
                 f"Power Sink first"
+            )
+        if self.pending_demonic_attorney_choices:
+            choice = self.pending_demonic_attorney_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.opponent_id).name} must answer "
+                "Demonic Attorney first"
+            )
+        if self.pending_natural_selection_choices:
+            choice = self.pending_natural_selection_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must finish "
+                "Natural Selection first"
+            )
+        if self.pending_library_search_choices:
+            choice = self.pending_library_search_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must finish searching "
+                f"for {choice.source_name} first"
             )
         if self.pending_damage is not None and not allow_damage:
             raise RuntimeError("finish resolving the pending damage incident first")
@@ -776,7 +806,7 @@ class GameState(
         self.check_state_based_actions()
 
     def play_land(self, card: Card) -> None:
-        """Play the active player's one land for the turn."""
+        """Play a land, applying the shared normal/Fastbond allowance."""
 
         self._require_no_pending_action()
         if self.status is not GameStatus.IN_PROGRESS:
@@ -792,7 +822,12 @@ class GameState(
             raise RuntimeError(
                 f"{self.players[self.priority_player_index].name} has priority"
             )
-        if self.lands_played_this_turn:
+        fastbonds = tuple(
+            permanent
+            for permanent in self.active_player.battlefield
+            if permanent.definition.fastbond_damage
+        )
+        if self.lands_played_this_turn and not fastbonds:
             raise RuntimeError("the active player has already played a land this turn")
         if card not in self.active_player.hand:
             raise ValueError("the land must be in the active player's hand")
@@ -802,7 +837,19 @@ class GameState(
         card.controller_id = self.active_player.id
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
+        is_additional_land = self.lands_played_this_turn > 0
         self.lands_played_this_turn += 1
+        if is_additional_land:
+            self._begin_damage_incident(DamageIncidentKind.RULE_EVENT)
+            for fastbond in fastbonds:
+                self._deal_damage(
+                    self.active_player,
+                    fastbond.definition.fastbond_damage,
+                    fastbond.name,
+                    source_card=fastbond,
+                    source_controller_id=self.active_player.id,
+                )
+            self._resolve_damage_incident()
         self.check_state_based_actions()
 
     def tap_land_for_mana(self, player_id: str, card: Card) -> None:
