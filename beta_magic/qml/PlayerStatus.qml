@@ -67,7 +67,7 @@ Frame {
         Button {
             visible: playerData.legalTarget
             Layout.fillWidth: true
-            text: "Target player"
+            text: playerData.selectedTarget ? "Remove target" : "Target player"
             onClicked: status.targeted(playerData.id)
         }
     }

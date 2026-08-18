@@ -357,6 +357,165 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: islandSanctuaryPicker
+        anchors.centerIn: parent
+        width: 420
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.drawSkipChoice
+        title: "Island Sanctuary"
+        onOpened: sanctuarySkipAmount.value = gameState.drawSkipMaximum
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: gameState.drawSkipPlayer === gameState.perspective.id
+                      ? "Choose how many of your " + gameState.drawSkipTotal
+                        + " draw-phase draw(s) to skip. Skipping at least one protects you until your next turn."
+                      : "Waiting for the active player to choose their draws."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            SpinBox {
+                id: sanctuarySkipAmount
+                visible: gameState.drawSkipPlayer === gameState.perspective.id
+                from: 0
+                to: gameState.drawSkipMaximum
+                value: gameState.drawSkipMaximum
+                editable: false
+                Layout.alignment: Qt.AlignHCenter
+            }
+            Button {
+                visible: sanctuarySkipAmount.visible
+                text: sanctuarySkipAmount.value
+                      ? "Skip " + sanctuarySkipAmount.value + " draw"
+                        + (sanctuarySkipAmount.value === 1 ? "" : "s")
+                      : "Draw all cards"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.chooseDrawSkips(sanctuarySkipAmount.value)
+            }
+            Button {
+                visible: gameState.drawSkipPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: netherShadowPicker
+        anchors.centerIn: parent
+        width: 440
+        modal: false
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.graveyardReturnChoice
+        title: "Nether Shadow"
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.graveyardReturnPlayer === gameState.perspective.id
+                      ? "Return an eligible Nether Shadow for BB, or finish making returns for this upkeep. You may activate mana abilities first."
+                      : "Waiting for the active player to choose a graveyard return."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.graveyardReturnPlayer === gameState.perspective.id
+                       ? gameState.graveyardReturnCards : []
+                Button {
+                    required property var modelData
+                    text: "Return " + modelData.name + " (BB)"
+                    Layout.fillWidth: true
+                    onHoveredChanged: {
+                        if (hovered)
+                            window.inspectedCard = modelData
+                    }
+                    onClicked: gameBridge.returnGraveyardCard(modelData.id)
+                }
+            }
+            Button {
+                visible: gameState.graveyardReturnPlayer === gameState.perspective.id
+                text: "No more returns"
+                Layout.fillWidth: true
+                onClicked: gameBridge.finishGraveyardReturns()
+            }
+            Button {
+                visible: gameState.graveyardReturnPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: graveyardOrderPicker
+        anchors.centerIn: parent
+        width: 480
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.graveyardOrderChoice
+        title: "Order simultaneous graveyard cards"
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.graveyardOrderPlayer === gameState.perspective.id
+                      ? "Arrange these cards from bottom to top. The final row will be the top card of your graveyard."
+                      : "Waiting for the graveyard's owner to choose an order."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.graveyardOrderPlayer === gameState.perspective.id
+                       ? gameState.graveyardOrderCards : []
+                RowLayout {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    Label {
+                        text: (index === 0 ? "Bottom: " : index === gameState.graveyardOrderCards.length - 1 ? "Top: " : "") + modelData.name
+                        color: "#ffffff"
+                        Layout.fillWidth: true
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered: window.inspectedCard = modelData
+                        }
+                    }
+                    Button {
+                        text: "Down"
+                        enabled: index > 0
+                        onClicked: gameBridge.moveGraveyardOrderCard(modelData.id, -1)
+                    }
+                    Button {
+                        text: "Up"
+                        enabled: index < gameState.graveyardOrderCards.length - 1
+                        onClicked: gameBridge.moveGraveyardOrderCard(modelData.id, 1)
+                    }
+                }
+            }
+            Button {
+                visible: gameState.graveyardOrderPlayer === gameState.perspective.id
+                text: "Confirm order"
+                Layout.fillWidth: true
+                onClicked: gameBridge.confirmGraveyardOrder()
+            }
+            Button {
+                visible: gameState.graveyardOrderPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
         id: xPicker
         anchors.centerIn: parent
         implicitWidth: 360
@@ -400,6 +559,60 @@ ApplicationWindow {
                 Button {
                     text: gameState.xIsAbility ? "Activate" : "Cast"
                     onClicked: gameBridge.confirmXCast()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: channelPicker
+        anchors.centerIn: parent
+        implicitWidth: 360
+        modal: true
+        title: "Channel life into mana"
+        onOpened: channelAmount.value = 1
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: "Pay life to add colorless mana (maximum "
+                      + gameState.channelMaximum + ")."
+                color: "#ffffff"
+            }
+            RowLayout {
+                Button {
+                    text: "\u2212"
+                    enabled: channelAmount.value > 1
+                    onClicked: channelAmount.value--
+                }
+                SpinBox {
+                    id: channelAmount
+                    from: 1
+                    to: Math.max(1, gameState.channelMaximum)
+                    value: 1
+                    editable: true
+                }
+                Button {
+                    text: "+"
+                    enabled: channelAmount.value < gameState.channelMaximum
+                    onClicked: channelAmount.value++
+                }
+            }
+            Label {
+                text: "Life after payment: "
+                      + (gameState.perspective.life - channelAmount.value)
+                color: "#ffd978"
+            }
+            RowLayout {
+                Button { text: "Cancel"; onClicked: channelPicker.close() }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Convert"
+                    enabled: gameState.canChannel
+                    onClicked: {
+                        gameBridge.channelMana(channelAmount.value)
+                        channelPicker.close()
+                    }
                 }
             }
         }
@@ -964,7 +1177,13 @@ ApplicationWindow {
                     Layout.preferredHeight: 200
                     playerData: gameState.opponent
                     interactive: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
+                                 || gameState.canChooseLich || gameState.canChooseKudzu
+                                 || gameState.canChooseClone
+                                 || gameState.canChooseDoppelganger
                     selectionOnly: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
+                                   || gameState.canChooseLich || gameState.canChooseKudzu
+                                   || gameState.canChooseClone
+                                   || gameState.canChooseDoppelganger
                     targeting: gameState.targeting
                     frontAtBottom: true
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }
@@ -1012,6 +1231,19 @@ ApplicationWindow {
                                 onClicked: gameBridge.chooseBalanceSelected()
                             }
                             Button {
+                                visible: gameState.canChooseLich
+                                text: "Destroy " + gameState.lichChoiceCount
+                                      + " for Lich"
+                                onClicked: gameBridge.chooseLichSelected()
+                            }
+                            Label {
+                                visible: gameState.lichChoiceRequired
+                                         && !gameState.canChooseLich
+                                text: gameState.lichChoicePlayer
+                                      + " chooses cards for Lich"
+                                color: "#ffd978"
+                            }
+                            Button {
                                 visible: gameState.canChooseUntap
                                 text: "Untap " + gameState.untapChoiceCount + " "
                                       + gameState.untapChoiceType
@@ -1023,11 +1255,47 @@ ApplicationWindow {
                                 text: "Choose land"
                                 onClicked: gameBridge.chooseUpkeepLand()
                             }
+                            Button {
+                                visible: gameState.canChannel
+                                text: "Channel mana"
+                                onClicked: channelPicker.open()
+                            }
                             Label {
                                 visible: gameState.upkeepLandChoiceRequired
                                 text: gameState.upkeepLandChoicePlayer
                                       + " chooses a land for "
                                       + gameState.upkeepLandChoiceSource
+                                color: "#ffd978"
+                            }
+                            Label {
+                                visible: gameState.kudzuChoiceRequired
+                                text: gameState.canChooseKudzu
+                                      ? "Choose a land for Kudzu"
+                                      : gameState.kudzuChoicePlayer
+                                        + " chooses a land for Kudzu"
+                                color: "#ffd978"
+                            }
+                            Label {
+                                visible: gameState.cloneChoiceRequired
+                                text: gameState.canChooseClone
+                                      ? "Choose a creature for "
+                                        + gameState.creatureCopyChoiceSource
+                                      : gameState.cloneChoicePlayer
+                                        + " chooses a creature for "
+                                        + gameState.creatureCopyChoiceSource
+                                color: "#ffd978"
+                            }
+                            Button {
+                                visible: gameState.canChooseDoppelganger
+                                text: "Keep current form"
+                                onClicked: gameBridge.keepDoppelgangerForm()
+                            }
+                            Label {
+                                visible: gameState.doppelgangerChoiceRequired
+                                text: gameState.canChooseDoppelganger
+                                      ? "Choose a different creature, or keep current form"
+                                      : gameState.doppelgangerChoicePlayer
+                                        + " chooses a Doppelganger form"
                                 color: "#ffd978"
                             }
                             Label {
@@ -1129,6 +1397,92 @@ ApplicationWindow {
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
+                        }
+                        RowLayout {
+                            visible: gameState.canChooseFireball
+                            Layout.fillWidth: true
+                            spacing: 7
+                            Label {
+                                text: "Fireball X=" + gameState.fireballX
+                                      + (gameState.fireballTargetCount
+                                         ? " · " + gameState.fireballDamageEach
+                                           + " each" : " · choose targets")
+                                color: "#ffd978"
+                                font.bold: true
+                            }
+                            Button {
+                                text: "−"
+                                enabled: gameState.fireballX > 0
+                                onClicked: gameBridge.adjustFireballX(-1)
+                            }
+                            Button {
+                                text: "+"
+                                enabled: gameState.fireballX
+                                         < gameState.fireballXMaximum
+                                onClicked: gameBridge.adjustFireballX(1)
+                            }
+                            ListView {
+                                model: gameState.fireballTargets
+                                orientation: ListView.Horizontal
+                                spacing: 5
+                                clip: true
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 38
+                                delegate: Button {
+                                    required property var modelData
+                                    text: modelData.name + " ×"
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "Remove this target"
+                                    onClicked: gameBridge.removeFireballTarget(
+                                                   modelData.key)
+                                }
+                            }
+                            Button {
+                                text: "Cancel"
+                                onClicked: gameBridge.cancelFireball()
+                            }
+                            Button {
+                                text: "Cast Fireball"
+                                enabled: gameState.fireballTargetCount > 0
+                                onClicked: gameBridge.confirmFireball()
+                            }
+                        }
+                        RowLayout {
+                            visible: gameState.canChooseFork
+                            Layout.fillWidth: true
+                            spacing: 7
+                            Label {
+                                text: "Fork " + gameState.forkOriginalName
+                                      + (gameState.forkOriginalName === "Fireball"
+                                         ? " · X=" + gameState.forkX : "")
+                                color: "#ffd978"
+                                font.bold: true
+                            }
+                            ListView {
+                                model: gameState.forkTargets
+                                orientation: ListView.Horizontal
+                                spacing: 5
+                                clip: true
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 38
+                                delegate: Button {
+                                    required property var modelData
+                                    text: modelData.name + " ×"
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "Remove this target"
+                                    onClicked: gameBridge.removeForkTarget(
+                                                   modelData.key)
+                                }
+                            }
+                            Button {
+                                text: "Cancel"
+                                onClicked: gameBridge.cancelFork()
+                            }
+                            Button {
+                                text: "Cast Fork"
+                                enabled: gameState.forkTargetCount > 0
+                                onClicked: gameBridge.confirmFork()
+                            }
                         }
                         Label {
                             visible: !!gameState.message
@@ -1262,7 +1616,9 @@ ApplicationWindow {
                     Layout.preferredHeight: 200
                     playerData: gameState.perspective
                     interactive: true
-                    selectionOnly: gameState.settingBlockers
+                    selectionOnly: gameState.settingBlockers || gameState.canChooseLich
+                                   || gameState.canChooseKudzu || gameState.canChooseClone
+                                   || gameState.canChooseDoppelganger
                     targeting: gameState.targeting
                     frontAtBottom: false
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }

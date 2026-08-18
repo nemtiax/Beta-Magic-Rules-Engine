@@ -37,6 +37,7 @@ class RuleEventOpportunity:
     affected_player_id: str | None = None
     damage_colors: frozenset[Color] = field(default_factory=frozenset)
     random_discard: int = 0
+    kudzu_land_destruction: bool = False
     id: UUID = field(default_factory=uuid4)
 
 

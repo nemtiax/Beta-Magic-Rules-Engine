@@ -55,7 +55,12 @@ class LandEventArtifactTests(unittest.TestCase):
             or self.game.event_opportunities
             or self.game.pending_damage
             or self.game.pending_destruction
+            or self.game.pending_graveyard_order_choices
         ):
+            if self.game.pending_graveyard_order_choices:
+                choice = self.game.pending_graveyard_order_choices[0]
+                self.game.confirm_graveyard_order(choice.player_id)
+                continue
             player = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(player.id)
 

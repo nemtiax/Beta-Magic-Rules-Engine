@@ -26,6 +26,7 @@ from .effects import (
     AddManaEffect,
     AttachedLandTypeEffect,
     CounterTargetSpellEffect,
+    CopyTargetSpellEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
     ReverseDamageEffect,
@@ -33,6 +34,9 @@ from .effects import (
     TemporaryPumpEffect,
     PreventCombatDamageEffect,
     SwapLibraryTopWithAnteEffect,
+    SacrificeCreatureForManaEffect,
+    DrainLifeEffect,
+    DividedDamageEffect,
 )
 from .types import (
     BASIC_LAND_SUBTYPES,
@@ -59,6 +63,8 @@ class PendingCast:
     chosen_land_subtype: str | None = None
     chosen_mode: str | None = None
     damage_source_key: str | None = None
+    copied_spell_targets: tuple[Card | PlayerState, ...] | None = None
+    copied_spell_x_value: int | None = None
 
 
 @dataclass(slots=True)
@@ -93,6 +99,8 @@ class SpellOnStack:
     x_value: int = 0
     chosen_mode: str | None = None
     damage_source_key: str | None = None
+    copied_spell_targets: tuple[Card | PlayerState, ...] | None = None
+    copied_spell_x_value: int | None = None
 
 
 class TargetingCastingMixin:
@@ -178,7 +186,7 @@ class TargetingCastingMixin:
                 )
             )
             can_resolve_standalone = any(
-                isinstance(effect, AddManaEffect)
+                isinstance(effect, (AddManaEffect, SacrificeCreatureForManaEffect))
                 for effect in card.definition.spell_effects
             )
             if (
@@ -286,17 +294,32 @@ class TargetingCastingMixin:
             return caster
         return self._validate_nonpermanent_cast(card, x_value)
 
-    def maximum_affordable_x(self, card: Card) -> int:
+    def maximum_affordable_x(self, card: Card, target_count: int = 1) -> int:
         """Largest X the card's current holder can pay."""
 
         caster = self._caster_for(card)
         cost = card.definition.mana_cost
         if not cost.x_symbols:
             raise ValueError(f"{card.name} has no X in its mana cost")
-        if not self.can_pay_mana(caster, self.spell_mana_cost(card, 0)):
+        if not self.can_pay_mana(
+            caster, self.spell_mana_cost(card, 0, target_count)
+        ):
             raise RuntimeError(f"not enough mana to cast {card.name}")
-        remaining = caster.mana_pool.total - self.spell_mana_cost(card, 0).mana_value
-        maximum = remaining // cost.x_symbols
+        if any(
+            isinstance(effect, DrainLifeEffect)
+            for effect in card.definition.spell_effects
+        ):
+            maximum = 0
+            while self.can_pay_mana(
+                caster, self.spell_mana_cost(card, maximum + 1, target_count)
+            ):
+                maximum += 1
+        else:
+            remaining = (
+                caster.mana_pool.total
+                - self.spell_mana_cost(card, 0, target_count).mana_value
+            )
+            maximum = remaining // cost.x_symbols
         requirement = card.definition.target_requirement
         if requirement is not None and requirement.count_equals_x:
             maximum = min(maximum, len(self.legal_targets_for(card)))
@@ -490,6 +513,31 @@ class TargetingCastingMixin:
                 ),
             )
         ]
+        if (
+            spell is not None
+            and CardType.ENCHANTMENT in spell.definition.card_types
+            and any(
+                subtype.startswith("Enchant ")
+                for subtype in spell.definition.subtypes
+            )
+        ):
+            legal = [
+                candidate
+                for candidate in legal
+                if not (
+                    CardType.LAND in self.card_types(candidate)
+                    and self.land_is_consecrated(candidate)
+                )
+            ]
+        if spell is not None and any(
+            isinstance(effect, SacrificeCreatureForManaEffect)
+            for effect in spell.definition.spell_effects
+        ):
+            legal = [
+                candidate
+                for candidate in legal
+                if candidate.damage < self.creature_toughness(candidate)
+            ]
         if pending_ability is not None:
             pending_effect = self.activated_abilities(
                 pending_ability.source
@@ -532,9 +580,9 @@ class TargetingCastingMixin:
                 candidate
                 for candidate in legal
                 if candidate.id in self.stack_spells
-                and candidate.definition.mana_cost.with_x(
-                    self.stack_spells[candidate.id].x_value
-                ).mana_value
+                and self.spell_casting_cost_value(
+                    candidate, self.stack_spells[candidate.id].x_value
+                )
                 == declared_x
             ]
         return legal
@@ -552,7 +600,11 @@ class TargetingCastingMixin:
             card,
             check_tapped=check_tapped,
             current_colors=self.card_colors(card),
-            current_card_types=self.card_types(card),
+            current_card_types=(
+                card.definition.card_types
+                if requirement.printed_card_types_only
+                else self.card_types(card)
+            ),
         ):
             return False
         if self._is_protected_from(card, source_colors):
@@ -785,7 +837,10 @@ class TargetingCastingMixin:
         requirement = pending.spell.definition.target_requirement
         assert requirement is not None
         required_count = pending.x_value if requirement.count_equals_x else requirement.count
-        if len(chosen) != required_count:
+        if requirement.any_number:
+            if not chosen:
+                raise ValueError(f"{pending.spell.name} requires at least one target")
+        elif len(chosen) != required_count:
             raise ValueError(
                 f"{pending.spell.name} requires {required_count} target(s)"
             )
@@ -820,9 +875,9 @@ class TargetingCastingMixin:
             target = chosen[0]
             assert isinstance(target, Card)
             target_spell = self.stack_spells[target.id]
-            target_cost = target.definition.mana_cost.with_x(
-                target_spell.x_value
-            ).mana_value
+            target_cost = self.spell_casting_cost_value(
+                target, target_spell.x_value
+            )
             if pending.x_value != target_cost:
                 raise ValueError(
                     f"X must equal {target.name}'s casting cost ({target_cost})"
@@ -833,6 +888,14 @@ class TargetingCastingMixin:
         )
         if caster is not validated_caster:
             raise RuntimeError("the pending spell's caster has changed")
+        final_cost = self.spell_mana_cost(
+            pending.spell, pending.x_value, len(chosen)
+        )
+        if not self.can_pay_mana(caster, final_cost):
+            raise RuntimeError(
+                f"not enough mana to cast {pending.spell.name} with "
+                f"{len(chosen)} targets"
+            )
         self.pending_cast = None
         if self.pending_damage is not None and any(
             isinstance(effect, RetroactiveDamageTransferEffect)
@@ -852,7 +915,122 @@ class TargetingCastingMixin:
             chosen_land_subtype=pending.chosen_land_subtype,
             chosen_mode=pending.chosen_mode,
             damage_source_key=pending.damage_source_key,
+            copied_spell_targets=pending.copied_spell_targets,
+            copied_spell_x_value=pending.copied_spell_x_value,
         )
+
+    def fork_copy_target_options(
+        self, original: Card
+    ) -> tuple[list[Card], list[PlayerState]]:
+        """Return legal new targets for a pending Fork copy."""
+
+        if self.pending_cast is None:
+            raise RuntimeError("Fork is not waiting for a spell choice")
+        if not any(
+            isinstance(effect, CopyTargetSpellEffect)
+            for effect in self.pending_cast.spell.definition.spell_effects
+        ):
+            raise RuntimeError("the pending spell is not Fork")
+        if original.id not in self.stack_spells:
+            raise ValueError("the spell to copy is no longer being cast")
+        state = self.stack_spells[original.id]
+        requirement = original.definition.target_requirement
+        if requirement is None:
+            return [], []
+        caster_id = self.pending_cast.caster_id
+        target_zones = requirement.additional_zones | (
+            frozenset({requirement.zone})
+            if requirement.zone is not None else frozenset()
+        )
+        cards = [
+            candidate
+            for player in self.players
+            for zone in target_zones - {Zone.STACK}
+            for candidate in player.cards_in(zone)
+            if self._requirement_accepts_card(
+                requirement,
+                candidate,
+                caster_id,
+                source_colors=frozenset({Color.RED}),
+            )
+        ]
+        if Zone.STACK in target_zones:
+            cards.extend(
+                candidate for candidate in self.stack
+                if self._requirement_accepts_card(
+                    requirement,
+                    candidate,
+                    caster_id,
+                    source_colors=frozenset({Color.RED}),
+                )
+            )
+        if original.definition.casting_mode_target_zones:
+            mode_index = original.definition.casting_modes.index(state.chosen_mode)
+            required_zone = original.definition.casting_mode_target_zones[mode_index]
+            cards = [candidate for candidate in cards if candidate.zone is required_zone]
+        players = list(self.players) if requirement.players else []
+        if requirement.opponent_only:
+            players = [player for player in players if player.id != caster_id]
+        return cards, players
+
+    def choose_pending_fork_copy(
+        self,
+        original: Card,
+        targets: Iterable[Card | PlayerState],
+        *,
+        x_value: int | None = None,
+    ) -> None:
+        """Record Fork's independently controlled targets before it is cast."""
+
+        if self.pending_cast is None:
+            raise RuntimeError("Fork is not waiting for a spell choice")
+        pending = self.pending_cast
+        if original.id not in self.stack_spells:
+            raise ValueError("the spell to copy is no longer being cast")
+        original_state = self.stack_spells[original.id]
+        requirement = original.definition.target_requirement
+        chosen = tuple(targets)
+        copied_x = original_state.x_value if x_value is None else x_value
+        if copied_x < 0:
+            raise ValueError("a copied X value cannot be negative")
+        if requirement is None:
+            if chosen:
+                raise ValueError(f"{original.name} has no targets")
+        else:
+            required_count = copied_x if requirement.count_equals_x else requirement.count
+            if requirement.any_number:
+                if not chosen:
+                    raise ValueError(f"the {original.name} copy requires a target")
+            elif len(chosen) != required_count:
+                raise ValueError(
+                    f"the {original.name} copy requires {required_count} target(s)"
+                )
+            keys = {
+                ("card", target.id) if isinstance(target, Card)
+                else ("player", target.id)
+                for target in chosen
+            }
+            if len(keys) != len(chosen):
+                raise ValueError("the same target cannot be chosen twice")
+            legal_cards, legal_players = self.fork_copy_target_options(original)
+            if any(
+                target not in (legal_cards if isinstance(target, Card) else legal_players)
+                for target in chosen
+            ):
+                raise ValueError(f"illegal target for the {original.name} copy")
+        if any(
+            isinstance(effect, DividedDamageEffect)
+            for effect in original.definition.spell_effects
+        ):
+            budget = original_state.x_value + max(0, len(original_state.targets) - 1)
+            if copied_x + max(0, len(chosen) - 1) != budget:
+                raise ValueError(
+                    "a Forked Fireball must redistribute the original mana total"
+                )
+        elif copied_x != original_state.x_value:
+            raise ValueError("Fork cannot change the copied spell's X value")
+        pending.copied_spell_targets = chosen
+        pending.copied_spell_x_value = copied_x
 
     def cancel_pending_cast(self) -> None:
         if self.pending_cast is None:
@@ -869,9 +1047,22 @@ class TargetingCastingMixin:
         player = self.active_player
         self.pay_mana(player, self.spell_mana_cost(card))
         card.controller_id = player.id
+        copies_artifact = card.definition.copies_artifact
+        copies_creature = card.definition.copies_creature
+        if copies_artifact or copies_creature:
+            if len(targets) != 1:
+                raise ValueError(f"{card.name} requires exactly one copy choice")
+            if copies_artifact:
+                self._copy_artifact_definition(card, targets[0])
+            else:
+                self._copy_creature_definition(card, targets[0])
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
-        card.enchanted_card_id = targets[0].id if targets else None
+        card.enchanted_card_id = (
+            targets[0].id
+            if targets and not copies_artifact and not copies_creature
+            else None
+        )
         if card.definition.taps_attached_on_entry and targets:
             self._tap_permanent(targets[0])
         card.chosen_land_subtype = chosen_land_subtype
@@ -898,10 +1089,14 @@ class TargetingCastingMixin:
         chosen_land_subtype: str | None = None,
         chosen_mode: str | None = None,
         damage_source_key: str | None = None,
+        copied_spell_targets: tuple[Card | PlayerState, ...] | None = None,
+        copied_spell_x_value: int | None = None,
     ) -> None:
         """Pay for a spell and add it to the current response batch."""
 
-        self.pay_mana(caster, self.spell_mana_cost(card, x_value))
+        self.pay_mana(
+            caster, self.spell_mana_cost(card, x_value, len(targets) or 1)
+        )
         card.controller_id = caster.id
         self._move_card(card, Zone.STACK)
         card.chosen_land_subtype = chosen_land_subtype
@@ -911,7 +1106,8 @@ class TargetingCastingMixin:
         ):
             self.interruptible_spell_id = card.id
         self.stack_spells[card.id] = SpellOnStack(
-            card, caster.id, targets, x_value, chosen_mode, damage_source_key
+            card, caster.id, targets, x_value, chosen_mode, damage_source_key,
+            copied_spell_targets, copied_spell_x_value,
         )
         self.events.append(
             SpellCastEvent(

@@ -18,7 +18,7 @@ from .effects import (
     GlobalLandTypeConversion,
     VariableStatKind,
 )
-from .types import CardType, Color, KeywordAbility
+from .types import CardType, Color, KeywordAbility, Zone
 
 
 _BASIC_LAND_MANA = {
@@ -53,6 +53,20 @@ class CharacteristicsMixin:
             for card_type in effect.granted_card_types
         }
         return card.definition.card_types | granted
+
+    def land_is_consecrated(self, land: Card) -> bool:
+        """Whether an attached Consecrate Land currently protects ``land``."""
+
+        return bool(
+            land.zone is Zone.BATTLEFIELD
+            and CardType.LAND in self.card_types(land)
+            and any(
+                aura.enchanted_card_id == land.id
+                and aura.definition.consecrates_attached_land
+                for player in self.players
+                for aura in player.battlefield
+            )
+        )
 
     def wall_can_attack(self, card: Card) -> bool:
         return any(
@@ -179,6 +193,14 @@ class CharacteristicsMixin:
                 != creature.controller_id
             )
         return creature.entered_battlefield_turn == self.turn_number
+
+    def may_attack_with_summoning_sickness(self, creature: Card) -> bool:
+        """Whether an effect waives sickness only for declaring an attack."""
+
+        return any(
+            effect.may_attack_with_summoning_sickness
+            for effect in self._continuous_effects_for(creature)
+        )
 
     def player_controls_land_subtype(
         self, player_id: str, subtype: str

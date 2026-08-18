@@ -21,6 +21,7 @@ EXPECTED_NAMES = {
     "Circle of Protection: Red",
     "Circle of Protection: White",
     "Conversion",
+    "Consecrate Land",
     "Crusade",
     "Death Ward",
     "Disenchant",
@@ -29,6 +30,7 @@ EXPECTED_NAMES = {
     "Healing Salve",
     "Holy Armor",
     "Holy Strength",
+    "Island Sanctuary",
     "Karma",
     "Lance",
     "Mesa Pegasus",
@@ -54,7 +56,7 @@ EXPECTED_NAMES = {
 
 class WhiteDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_white_cards_are_migrated(self) -> None:
-        self.assertEqual(len(WHITE_CARDS), 43)
+        self.assertEqual(len(WHITE_CARDS), 45)
         self.assertEqual(
             {card.name for card in WHITE_CARDS}, EXPECTED_NAMES
         )

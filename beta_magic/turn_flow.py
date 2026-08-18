@@ -6,7 +6,9 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from .abilities import ActivatedGraveyardReturnAbility
 from .cards import Card
+from .casting import AbilityOnStack
 from .damage import DamageIncidentKind
 from .destruction import DestructionIncident, DestructionTarget
 from .effects import (
@@ -111,6 +113,23 @@ class PendingTurnChoice:
 
 
 @dataclass(slots=True)
+class PendingDrawChoice:
+    """The active player chooses how many Sanctuary draws to decline."""
+
+    player_id: str
+    total_draws: int
+    maximum_skips: int
+
+
+@dataclass(slots=True)
+class PendingGraveyardReturnChoice:
+    """Eligible Nether Shadows awaiting their controller's upkeep choice."""
+
+    player_id: str
+    card_ids: tuple[UUID, ...]
+
+
+@dataclass(slots=True)
 class PendingUntapChoice:
     """The active player must choose permanents allowed by capped untap rules."""
 
@@ -139,10 +158,106 @@ class PendingUpkeepLandLossChoice:
     candidate_ids: frozenset[UUID]
 
 
+@dataclass(frozen=True, slots=True)
+class PendingDoppelgangerChoice:
+    """One optional Vesuvan Doppelganger transformation during upkeep."""
+
+    chooser_id: str
+    doppelganger_id: UUID
+    candidate_ids: tuple[UUID, ...]
+
+
 class TurnFlowMixin:
     """Run turns, phase boundaries, cleanup, and mandatory timed events."""
 
     __slots__ = ()
+
+    def legal_graveyard_returns(self) -> tuple[Card, ...]:
+        choice = self.pending_graveyard_return_choice
+        if choice is None:
+            return ()
+        player = self.player(choice.player_id)
+        return tuple(card for card in player.graveyard if card.id in choice.card_ids)
+
+    def _eligible_upkeep_graveyard_returns(self) -> tuple[Card, ...]:
+        if self.current_phase is not TurnPhase.UPKEEP:
+            return ()
+        graveyard = self.active_player.graveyard
+        eligible: list[Card] = []
+        for index, card in enumerate(graveyard):
+            ability = next(
+                (
+                    item for item in card.definition.activated_abilities
+                    if isinstance(item, ActivatedGraveyardReturnAbility)
+                ),
+                None,
+            )
+            if ability is None:
+                continue
+            creatures_above = sum(
+                CardType.CREATURE in above.definition.card_types
+                for above in graveyard[index + 1:]
+            )
+            if creatures_above >= ability.creatures_required_above:
+                eligible.append(card)
+        return tuple(eligible)
+
+    def _refresh_graveyard_return_choice(self) -> None:
+        if self.graveyard_returns_done_this_upkeep:
+            self.pending_graveyard_return_choice = None
+            return
+        eligible = self._eligible_upkeep_graveyard_returns()
+        self.pending_graveyard_return_choice = (
+            PendingGraveyardReturnChoice(
+                self.active_player.id, tuple(card.id for card in eligible)
+            )
+            if eligible else None
+        )
+
+    def activate_graveyard_return(self, player_id: str, card: Card) -> None:
+        choice = self.pending_graveyard_return_choice
+        if choice is None or choice.player_id != player_id:
+            raise RuntimeError("there is no graveyard return waiting for that player")
+        if card not in self.legal_graveyard_returns():
+            raise ValueError("that card cannot return from this graveyard position")
+        ability = next(
+            item for item in card.definition.activated_abilities
+            if isinstance(item, ActivatedGraveyardReturnAbility)
+        )
+        player = self.player(player_id)
+        self.pay_mana(player, card.definition.mana_cost)
+        self.pending_graveyard_return_choice = None
+        self.batch_abilities.append(
+            AbilityOnStack(card, card.name, player.id, ability, ())
+        )
+        self.priority_player_index = (
+            self.players.index(player) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
+
+    def finish_graveyard_returns(self, player_id: str) -> None:
+        choice = self.pending_graveyard_return_choice
+        if choice is None or choice.player_id != player_id:
+            raise RuntimeError("there is no graveyard return choice to finish")
+        self.pending_graveyard_return_choice = None
+        self.graveyard_returns_done_this_upkeep = True
+
+    def choose_draw_skips(self, player_id: str, amount: int) -> None:
+        """Resolve an Island Sanctuary draw-phase choice."""
+
+        choice = self.pending_draw_choice
+        if choice is None:
+            raise RuntimeError("there is no pending draw choice")
+        if choice.player_id != player_id:
+            raise RuntimeError(f"{self.player(choice.player_id).name} must choose")
+        if not 0 <= amount <= choice.maximum_skips:
+            raise ValueError(
+                f"choose from 0 to {choice.maximum_skips} draw(s) to skip"
+            )
+        self.pending_draw_choice = None
+        if amount:
+            self.island_sanctuary_protected_players.add(player_id)
+        self.active_player.draw(choice.total_draws - amount)
 
     def choose_untap_cards(self, player_id: str, cards: tuple[Card, ...]) -> None:
         """Choose the permanents to untap for the currently capped category."""
@@ -430,6 +545,10 @@ class TurnFlowMixin:
         self.attack_requirements.clear()
         self.attacked_this_turn.clear()
         self.prevent_combat_damage_this_turn = False
+        self.channel_active_players.clear()
+        self.pending_graveyard_return_choice = None
+        self.graveyard_returns_done_this_upkeep = False
+        self.island_sanctuary_protected_players.discard(player_id)
         self._enter_phase(TurnPhase.UNTAP)
 
     def _finish_turn_effects(self) -> None:
@@ -850,7 +969,9 @@ class TurnFlowMixin:
             if not event.payment_decision:
                 return
             if event.effect.benefit is UpkeepBenefit.GAIN_LIFE:
-                self.player(event.affected_player_id).life += event.effect.amount
+                self._gain_life(
+                    self.player(event.affected_player_id), event.effect.amount
+                )
                 return
             assert event.attached_permanent_id is not None
             self.upkeep_payments_this_turn.add(event.source_id)
@@ -890,7 +1011,9 @@ class TurnFlowMixin:
             if not counters:
                 return
             source.counters[event.effect.counter_name] = counters - 1
-            self.player(event.affected_player_id).life += event.effect.life_gain
+            self._gain_life(
+                self.player(event.affected_player_id), event.effect.life_gain
+            )
             return
         if isinstance(event.effect, PartialUpkeepDamageEffect):
             unpaid = event.effect.maximum_payment - (event.payment_amount or 0)
@@ -1019,6 +1142,13 @@ class TurnFlowMixin:
     def _enter_phase(self, phase: TurnPhase) -> None:
         self.current_phase = phase
         if phase is TurnPhase.UNTAP:
+            self.active_player_untapped_lands_at_turn_start = sum(
+                1
+                for permanent in self._battlefield_cards()
+                if permanent.controller_id == self.active_player.id
+                and CardType.LAND in self.card_types(permanent)
+                and not permanent.tapped
+            )
             for player in self.players:
                 for permanent in player.battlefield:
                     permanent.controller_at_turn_start_id = (
@@ -1036,15 +1166,33 @@ class TurnFlowMixin:
                 return
             self._process_normal_untap()
         elif phase is TurnPhase.UPKEEP:
+            self._queue_doppelganger_choices()
+            if self.pending_doppelganger_choices:
+                return
             self._queue_upkeep_events()
+            self._refresh_graveyard_return_choice()
         elif phase is TurnPhase.DRAW:
-            self.active_player.draw()
+            total_draws = 1
             for owner in self.players:
                 for source in tuple(owner.battlefield):
                     if not self.continuous_permanent_is_active(source):
                         continue
                     for effect in source.definition.draw_phase_effects:
-                        self.active_player.draw(effect.amount)
+                        total_draws += effect.amount
+            sanctuary_skips = sum(
+                effect.restricts_attackers_to_flying_or_islandwalk
+                for source in self.active_player.battlefield
+                if self.continuous_permanent_is_active(source)
+                for effect in source.definition.optional_draw_skip_effects
+            )
+            if sanctuary_skips:
+                self.pending_draw_choice = PendingDrawChoice(
+                    self.active_player.id,
+                    total_draws,
+                    min(total_draws, sanctuary_skips),
+                )
+            else:
+                self.active_player.draw(total_draws)
 
     def _process_normal_untap(self) -> None:
         """Perform ordinary untapping after any Clockwork choices."""
@@ -1151,6 +1299,16 @@ class TurnFlowMixin:
                             and CardType.LAND in self.card_types(permanent)
                             and effect.counted_active_player_owned_land_subtype
                             in self.land_subtypes(permanent)
+                        )
+                        if not land_count:
+                            continue
+                        effect = replace(
+                            effect,
+                            amount=effect.amount * land_count,
+                        )
+                    if effect.counted_active_player_untapped_lands_at_turn_start:
+                        land_count = (
+                            self.active_player_untapped_lands_at_turn_start
                         )
                         if not land_count:
                             continue

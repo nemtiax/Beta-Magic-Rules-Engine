@@ -42,14 +42,29 @@ class CombatMixin:
 
     __slots__ = ()
 
+    def _island_sanctuary_allows(self, card: Card, defender_id: str) -> bool:
+        if defender_id not in self.island_sanctuary_protected_players:
+            return True
+        abilities = self.creature_abilities(card)
+        return KeywordAbility.FLYING in abilities or any(
+            ability.landwalk_subtype == "Island" for ability in abilities
+        )
+
     def _can_attack(self, card: Card) -> bool:
         if card not in self.active_player.battlefield:
             return False
         if CardType.CREATURE not in self.card_types(card):
             return False
-        if card.tapped or self.has_summoning_sickness(card):
+        if card.tapped or (
+            self.has_summoning_sickness(card)
+            and not self.may_attack_with_summoning_sickness(card)
+        ):
             return False
         if "Wall" in card.definition.subtypes and not self.wall_can_attack(card):
+            return False
+        if not self._island_sanctuary_allows(
+            card, self.combat.defending_player_id
+        ):
             return False
         return bool(
             card.definition.landhome is None
@@ -234,7 +249,10 @@ class CombatMixin:
                 raise ValueError(f"{card.name} is a Wall and cannot attack")
             if card.tapped:
                 raise ValueError(f"{card.name} is tapped")
-            if self.has_summoning_sickness(card):
+            if (
+                self.has_summoning_sickness(card)
+                and not self.may_attack_with_summoning_sickness(card)
+            ):
                 raise ValueError(f"{card.name} did not begin the turn in play")
             if (
                 card.definition.landhome is not None
@@ -247,6 +265,12 @@ class CombatMixin:
                 raise ValueError(
                     f"{card.name} cannot attack unless the defender "
                     f"controls an {subtype}"
+                )
+            if not self._island_sanctuary_allows(
+                card, self.combat.defending_player_id
+            ):
+                raise ValueError(
+                    f"{card.name} cannot attack through Island Sanctuary"
                 )
 
         declared_bands = [tuple(band) for band in bands]
@@ -279,7 +303,10 @@ class CombatMixin:
             and card.id not in chosen_ids
             and CardType.CREATURE in self.card_types(card)
             and not card.tapped
-            and not self.has_summoning_sickness(card)
+            and (
+                not self.has_summoning_sickness(card)
+                or self.may_attack_with_summoning_sickness(card)
+            )
             and not (
                 "Wall" in card.definition.subtypes
                 and not self.wall_can_attack(card)
@@ -290,6 +317,9 @@ class CombatMixin:
                     self.combat.defending_player_id,
                     card.definition.landhome.land_subtype,
                 )
+            )
+            and self._island_sanctuary_allows(
+                card, self.combat.defending_player_id
             )
         ]
         if required_attackers:

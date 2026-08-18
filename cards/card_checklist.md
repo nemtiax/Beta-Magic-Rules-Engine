@@ -12,7 +12,7 @@
  - [x] Circle of Protection: Green
  - [x] Circle of Protection: Red
  - [x] Circle of Protection: White
- - [ ] Consecrate Land
+ - [x] Consecrate Land
  - [x] Conversion
  - [x] Crusade
  - [x] Death Ward
@@ -23,7 +23,7 @@
  - [x] Healing Salve
  - [x] Holy Armor
  - [x] Holy Strength
- - [ ] Island Sanctuary
+ - [x] Island Sanctuary
  - [x] Karma
  - [x] Lance
  - [x] Mesa Pegasus
@@ -49,9 +49,9 @@
  - [x] Animate Artifact
  - [x] Blue Elemental Blast
  - [x] Braingeyser
- - [ ] Clone
+ - [x] Clone
  - [x] Control Magic
- - [ ] Copy Artifact
+ - [x] Copy Artifact
  - [x] Counterspell
  - [x] Creature Bond
  - [x] Drain Power
@@ -85,7 +85,7 @@
  - [x] Timetwister
  - [x] Twiddle
  - [x] Unsummon
- - [ ] Vesuvan Doppelganger
+ - [x] Vesuvan Doppelganger
  - [x] Volcanic Eruption
  - [x] Wall of Air
  - [x] Wall of Water
@@ -103,7 +103,7 @@
  - [x] Demonic Attorney
  - [x] Demonic Hordes
  - [x] Demonic Tutor
- - [ ] Drain Life
+ - [x] Drain Life
  - [x] Drudge Skeletons
  - [x] Evil Presence
  - [x] Fear
@@ -111,10 +111,10 @@
  - [x] Gloom
  - [x] Howl from Beyond
  - [x] Hypnotic Specter
- - [ ] Lich
+ - [x] Lich
  - [x] Lord of the Pit
  - [x] Mind Twist
- - [ ] Nether Shadow
+ - [x] Nether Shadow
  - [x] Nettling Imp
  - [x] Nightmare
  - [x] Paralyze
@@ -122,7 +122,7 @@
  - [x] Plague Rats
  - [x] Raise Dead
  - [x] Royal Assassin
- - [ ] Sacrifice
+ - [x] Sacrifice
  - [x] Scathe Zombies
  - [x] Scavenging Ghoul
  - [x] Sengir Vampire
@@ -147,10 +147,10 @@
  - [x] Earthquake
  - [ ] False Orders
  - [x] Fire Elemental
- - [ ] Fireball
+ - [x] Fireball
  - [x] Firebreathing
  - [x] Flashfires
- - [ ] Fork
+ - [x] Fork
  - [x] Goblin Balloon Brigade
  - [x] Goblin King
  - [x] Granite Gargoyle
@@ -165,7 +165,7 @@
  - [x] Mons's Goblin Raiders
  - [x] Orcish Artillery
  - [x] Orcish Oriflamme
- - [ ] Power Surge
+ - [x] Power Surge
  - [ ] Raging River
  - [x] Red Elemental Blast
  - [x] Roc of Kher Ridges
@@ -186,7 +186,7 @@
  - [x] Berserk
  - [x] Birds of Paradise
  - [ ] Camouflage
- - [ ] Channel
+ - [x] Channel
  - [x] Cockatrice
  - [x] Craw Wurm
  - [x] Elvish Archers
@@ -200,9 +200,9 @@
  - [x] Grizzly Bears
  - [x] Hurricane
  - [x] Ice Storm
- - [ ] Instill Energy
+ - [x] Instill Energy
  - [x] Ironroot Treefolk
- - [ ] Kudzu
+ - [x] Kudzu
  - [x] Ley Druid
  - [x] Lifeforce
  - [x] Lifelace
@@ -241,7 +241,7 @@
  - [ ] Cyclopean Tomb
  - [x] Dingus Egg
  - [x] Disrupting Scepter
- - [ ] Forcefield
+ - [x] Forcefield
  - [x] Gauntlet of Might
  - [x] Glasses of Urza
  - [x] Helm of Chatzuk

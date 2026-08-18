@@ -47,8 +47,11 @@ class DamagePacket:
     combat: bool = False
     trample: bool = False
     first_strike: bool = False
+    life_gain_player_id: str | None = None
+    life_gain_cap: int | None = None
     prevented: int = 0
     life_loss_prevented: int = 0
+    converted_life_loss: int = 0
     redirected: int = 0
     id: UUID = field(default_factory=uuid4)
 
@@ -60,7 +63,7 @@ class DamagePacket:
             or self.life_loss_prevented < 0
             or self.redirected < 0
             or self.prevented + self.redirected > self.amount
-            or self.life_loss_prevented > self.remaining
+            or self.converted_life_loss < 0
         ):
             raise ValueError(
                 "prevented and redirected damage must fit within the packet"
@@ -74,7 +77,10 @@ class DamagePacket:
     def resulting_life_loss(self) -> int:
         """Life lost by a player after loss-of-life prevention."""
 
-        return self.remaining - self.life_loss_prevented
+        return max(
+            0,
+            self.remaining + self.converted_life_loss - self.life_loss_prevented,
+        )
 
 
 @dataclass(slots=True)
@@ -87,6 +93,7 @@ class DamageIncident:
     regenerated_card_ids: set[UUID] = field(default_factory=set)
     surviving_damage_triggers: dict[UUID, int] = field(default_factory=dict)
     redirected_packets: list[DamagePacket] = field(default_factory=list)
+    life_gain_awarded_by_source: dict[UUID, int] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
     @property

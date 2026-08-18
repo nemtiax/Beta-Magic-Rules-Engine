@@ -45,6 +45,8 @@ from .decks import (
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
 from .effects import (
     AttachedLandTypeEffect,
+    CopyTargetSpellEffect,
+    DividedDamageEffect,
     ReverseDamageEffect,
     UpkeepCreatureSacrificeEffect,
 )
@@ -202,8 +204,15 @@ class GameViewModel(QObject):
                 or self.game.pending_prevention is not None
                 or self.game.pending_redirection is not None
                 or self.game.pending_turn_choice is not None
+                or self.game.pending_draw_choice is not None
+                or self.game.pending_graveyard_return_choice is not None
+                or self.game.pending_graveyard_order_choices
+                or self.game.pending_kudzu_choices
+                or self.game.pending_creature_copy_choices
+                or self.game.pending_doppelganger_choices
                 or self.game.pending_discard_choices
                 or self.game.pending_balance is not None
+                or self.game.pending_lich_choices
                 or self.game.pending_untap_choice is not None
                 or self.game.pending_upkeep_land_loss is not None
             ):
@@ -280,6 +289,58 @@ class GameViewModel(QObject):
 
     @Slot(str)
     def toggleCard(self, card_id: str) -> None:
+        if self._choices.fireball_card_id is not None:
+            card = self._card_by_id(UUID(card_id))
+            if card is None or card not in self._fireball_legal_cards():
+                self._tell_current("Choose a creature or player for Fireball.")
+            else:
+                self._toggle_fireball_target(f"card:{card.id}")
+            self.stateChanged.emit()
+            return
+        if self.game.pending_kudzu_choices:
+            choice = self.game.pending_kudzu_choices[0]
+            land = self._card_by_id(UUID(card_id))
+            if land is None or land.id not in choice.candidate_ids:
+                self._tell_current("Choose a highlighted land for Kudzu.")
+                self.stateChanged.emit()
+                return
+            self._run(
+                lambda: self.game.choose_kudzu_land(choice.chooser_id, land),
+                f"Moved Kudzu to {land.name}.",
+            )
+            return
+        if self.game.pending_creature_copy_choices:
+            choice = self.game.pending_creature_copy_choices[0]
+            source = self._card_by_id(choice.clone_id)
+            creature = self._card_by_id(UUID(card_id))
+            if creature is None or creature.id not in choice.candidate_ids:
+                self._tell_current("Choose a highlighted creature for Clone.")
+                self.stateChanged.emit()
+                return
+            self._run(
+                lambda: self.game.choose_clone_creature(
+                    choice.chooser_id, creature
+                ),
+                f"{source.name if source is not None else 'Copy creature'} "
+                f"entered as {creature.name}.",
+            )
+            return
+        if self.game.pending_doppelganger_choices:
+            choice = self.game.pending_doppelganger_choices[0]
+            creature = self._card_by_id(UUID(card_id))
+            if creature is None or creature.id not in choice.candidate_ids:
+                self._tell_current(
+                    "Choose a highlighted different creature, or keep the current form."
+                )
+                self.stateChanged.emit()
+                return
+            self._run(
+                lambda: self.game.choose_doppelganger_creature(
+                    choice.chooser_id, creature
+                ),
+                f"Vesuvan Doppelganger changed into {creature.name}.",
+            )
+            return
         if (
             self.game.pending_cast is not None
             or self.game.pending_activation is not None
@@ -298,6 +359,17 @@ class GameViewModel(QObject):
                     self.stateChanged.emit()
                 return
             spell = self.game.pending_cast.spell
+            if self._choices.fork_original_spell_id is not None:
+                self._toggle_fork_target(f"card:{target.id}")
+                self.stateChanged.emit()
+                return
+            if any(
+                isinstance(effect, CopyTargetSpellEffect)
+                for effect in spell.definition.spell_effects
+            ):
+                self._begin_fork_targeting(target)
+                self.stateChanged.emit()
+                return
             verb = (
                 "enchanting"
                 if CardType.ENCHANTMENT in spell.definition.card_types
@@ -421,6 +493,25 @@ class GameViewModel(QObject):
                 self.stateChanged.emit()
                 return
             if card.definition.mana_cost.x_symbols:
+                if (
+                    card.definition.target_requirement is not None
+                    and card.definition.target_requirement.any_number
+                ):
+                    try:
+                        maximum = self.game.maximum_affordable_x(card)
+                    except (ValueError, RuntimeError) as error:
+                        self._tell_current(str(error))
+                    else:
+                        self._choices.begin_fireball(card, maximum)
+                        self._prompt(
+                            player.id,
+                            "Choose Fireball targets, then adjust X if desired.",
+                            observer_message=(
+                                f"{player.name} is choosing Fireball targets."
+                            ),
+                        )
+                    self.stateChanged.emit()
+                    return
                 try:
                     maximum = self.game.maximum_affordable_x(card)
                 except (ValueError, RuntimeError) as error:
@@ -911,6 +1002,70 @@ class GameViewModel(QObject):
             action,
         )
 
+    @Slot(int)
+    def chooseDrawSkips(self, amount: int) -> None:
+        choice = self.game.pending_draw_choice
+        if choice is None:
+            return
+        player = self.game.player(choice.player_id)
+        self._run(
+            lambda: self.game.choose_draw_skips(player.id, amount),
+            (
+                f"{player.name} skipped {amount} draw(s) for Island Sanctuary."
+                if amount else f"{player.name} took all draw-phase draws."
+            ),
+        )
+
+    @Slot(str)
+    def returnGraveyardCard(self, card_id: str) -> None:
+        card = self._card_by_id(UUID(card_id))
+        choice = self.game.pending_graveyard_return_choice
+        if card is None or choice is None:
+            return
+        self._run(
+            lambda: self.game.activate_graveyard_return(choice.player_id, card),
+            f"Activated {card.name}'s graveyard return.",
+        )
+
+    @Slot()
+    def finishGraveyardReturns(self) -> None:
+        choice = self.game.pending_graveyard_return_choice
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.finish_graveyard_returns(choice.player_id),
+            "Declined further graveyard returns this upkeep.",
+        )
+
+    @Slot(str, int)
+    def moveGraveyardOrderCard(self, card_id: str, direction: int) -> None:
+        choice = (
+            self.game.pending_graveyard_order_choices[0]
+            if self.game.pending_graveyard_order_choices else None
+        )
+        card = self._card_by_id(UUID(card_id))
+        if choice is None or card is None:
+            return
+        self._run(
+            lambda: self.game.move_graveyard_order_card(
+                choice.player_id, card, direction
+            ),
+            "Adjusted graveyard order.",
+        )
+
+    @Slot()
+    def confirmGraveyardOrder(self) -> None:
+        choice = (
+            self.game.pending_graveyard_order_choices[0]
+            if self.game.pending_graveyard_order_choices else None
+        )
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.confirm_graveyard_order(choice.player_id),
+            "Confirmed graveyard order.",
+        )
+
     @Slot()
     def cancelTarget(self) -> None:
         if (
@@ -927,6 +1082,7 @@ class GameViewModel(QObject):
         else:
             spell_name = self.game.pending_cast.spell.name
             self.game.cancel_pending_cast()
+            self._choices.clear_fork()
             self._message = f"Cancelled casting {spell_name}."
         self.stateChanged.emit()
 
@@ -1088,8 +1244,48 @@ class GameViewModel(QObject):
             f"Paid to preserve {amount} counter(s).",
         )
 
+    @Slot(int)
+    def channelMana(self, amount: int) -> None:
+        player = self.game.players[self.perspective_index]
+        self._run(
+            lambda: self.game.channel_life_for_mana(player.id, amount),
+            f"{player.name} paid {amount} life for {amount} colorless mana.",
+        )
+
+    @Slot()
+    def keepDoppelgangerForm(self) -> None:
+        if not self.game.pending_doppelganger_choices:
+            self._tell_current("There is no Doppelganger choice pending.")
+            self.stateChanged.emit()
+            return
+        choice = self.game.pending_doppelganger_choices[0]
+        self._run(
+            lambda: self.game.choose_doppelganger_creature(
+                choice.chooser_id, None
+            ),
+            "Vesuvan Doppelganger kept its current form.",
+        )
+
     @Slot(str)
     def targetPlayer(self, player_id: str) -> None:
+        if self._choices.fork_original_spell_id is not None:
+            try:
+                self.game.player(player_id)
+            except KeyError:
+                self._tell_current("That player is not in this game.")
+            else:
+                self._toggle_fork_target(f"player:{player_id}")
+            self.stateChanged.emit()
+            return
+        if self._choices.fireball_card_id is not None:
+            try:
+                self.game.player(player_id)
+            except KeyError:
+                self._tell_current("That player is not in this game.")
+            else:
+                self._toggle_fireball_target(f"player:{player_id}")
+            self.stateChanged.emit()
+            return
         if (
             self.game.pending_cast is None
             and self.game.pending_activation is None
@@ -1117,6 +1313,249 @@ class GameViewModel(QObject):
             lambda: self.game.complete_pending_cast((target,)),
             f"Cast {spell.name} targeting {target.name}.",
         )
+
+    def _fork_original(self) -> Card | None:
+        card_id = self._choices.fork_original_spell_id
+        return self._card_by_id(card_id) if card_id is not None else None
+
+    def _can_choose_fork(self) -> bool:
+        pending = self.game.pending_cast
+        return bool(
+            pending is not None
+            and self._fork_original() is not None
+            and pending.caster_id == self.game.players[self.perspective_index].id
+        )
+
+    def _fork_legal_cards(self) -> list[Card]:
+        original = self._fork_original()
+        if original is None or not self._can_choose_fork():
+            return []
+        return self.game.fork_copy_target_options(original)[0]
+
+    @staticmethod
+    def _target_key(target: Card | PlayerState) -> str:
+        return (
+            f"card:{target.id}" if isinstance(target, Card)
+            else f"player:{target.id}"
+        )
+
+    def _begin_fork_targeting(self, original: Card) -> None:
+        if original.id not in self.game.stack_spells:
+            self._tell_current("That spell is no longer being cast.")
+            return
+        state = self.game.stack_spells[original.id]
+        requirement = original.definition.target_requirement
+        if requirement is None:
+            def commit() -> None:
+                self.game.choose_pending_fork_copy(original, ())
+                self.game.complete_pending_cast((original,))
+            self._run(commit, f"Cast Fork copying {original.name}.")
+            return
+        budget = state.x_value + max(0, len(state.targets) - 1)
+        self._choices.begin_fork(
+            original,
+            [self._target_key(target) for target in state.targets],
+            state.x_value,
+            budget,
+        )
+        caster = self.game.player(self.game.pending_cast.caster_id)
+        self._prompt(
+            caster.id,
+            f"Choose targets for Fork's {original.name} copy.",
+            observer_message=f"{caster.name} is choosing targets for Fork's copy.",
+        )
+
+    def _fork_target(self, key: str) -> Card | PlayerState | None:
+        kind, identifier = key.split(":", 1)
+        return (
+            self._card_by_id(UUID(identifier))
+            if kind == "card"
+            else self.game.player(identifier)
+        )
+
+    def _toggle_fork_target(self, key: str) -> None:
+        original = self._fork_original()
+        if original is None or not self._can_choose_fork():
+            self._tell_current("Switch to Fork's caster to choose copy targets.")
+            return
+        target = self._fork_target(key)
+        legal_cards, legal_players = self.game.fork_copy_target_options(original)
+        if target not in (legal_cards if isinstance(target, Card) else legal_players):
+            self._tell_current("That is not a legal target for the copied spell.")
+            return
+        requirement = original.definition.target_requirement
+        assert requirement is not None
+        keys = self._choices.fork_target_keys
+        if key in keys:
+            keys.remove(key)
+        elif requirement.any_number or requirement.count_equals_x:
+            if (
+                requirement.any_number
+                and len(keys) >= self._choices.fork_generic_budget + 1
+            ):
+                self._tell_current(
+                    "The copied Fireball has no mana available for another target."
+                )
+                return
+            if requirement.count_equals_x and len(keys) >= self._choices.fork_x_value:
+                self._tell_current(
+                    f"The copied spell requires exactly {self._choices.fork_x_value} targets."
+                )
+                return
+            keys.append(key)
+        else:
+            keys[:] = [key]
+        if any(
+            isinstance(effect, DividedDamageEffect)
+            for effect in original.definition.spell_effects
+        ):
+            self._choices.fork_x_value = max(
+                0,
+                self._choices.fork_generic_budget - max(0, len(keys) - 1),
+            )
+
+    @Slot(str)
+    def removeForkTarget(self, key: str) -> None:
+        if key in self._choices.fork_target_keys:
+            self._toggle_fork_target(key)
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmFork(self) -> None:
+        original = self._fork_original()
+        if original is None or not self._can_choose_fork():
+            return
+        targets = tuple(
+            target
+            for key in self._choices.fork_target_keys
+            if (target := self._fork_target(key)) is not None
+        )
+        def commit() -> None:
+            self.game.choose_pending_fork_copy(
+                original,
+                targets,
+                x_value=self._choices.fork_x_value,
+            )
+            self.game.complete_pending_cast((original,))
+        if self._run(commit, f"Cast Fork copying {original.name}."):
+            self._choices.clear_fork()
+
+    @Slot()
+    def cancelFork(self) -> None:
+        if self.game.pending_cast is not None:
+            self.game.cancel_pending_cast()
+        self._choices.clear_fork()
+        self._tell_current("Cancelled casting Fork.")
+        self.stateChanged.emit()
+
+    def _fireball_card(self) -> Card | None:
+        card_id = self._choices.fireball_card_id
+        return self._card_by_id(card_id) if card_id is not None else None
+
+    def _can_choose_fireball(self) -> bool:
+        card = self._fireball_card()
+        return bool(
+            card is not None
+            and card in self.game.players[self.perspective_index].hand
+        )
+
+    def _fireball_legal_cards(self) -> list[Card]:
+        card = self._fireball_card()
+        return (
+            self.game.legal_targets_for(card)
+            if card is not None and self._can_choose_fireball()
+            else []
+        )
+
+    def _toggle_fireball_target(self, key: str) -> None:
+        card = self._fireball_card()
+        if card is None or not self._can_choose_fireball():
+            self._tell_current("Switch to Fireball's caster to edit its targets.")
+            return
+        keys = self._choices.fireball_target_keys
+        if key in keys:
+            keys.remove(key)
+        else:
+            target_count = len(keys) + 1
+            try:
+                maximum = self.game.maximum_affordable_x(card, target_count)
+            except (ValueError, RuntimeError) as error:
+                self._tell_current(str(error))
+                return
+            keys.append(key)
+            self._choices.fireball_x_value = min(
+                self._choices.fireball_x_value, maximum
+            )
+        target_count = max(1, len(keys))
+        self._choices.fireball_x_maximum = self.game.maximum_affordable_x(
+            card, target_count
+        )
+
+    @Slot(int)
+    def adjustFireballX(self, delta: int) -> None:
+        if not self._can_choose_fireball():
+            return
+        self._choices.fireball_x_value = max(
+            0,
+            min(
+                self._choices.fireball_x_maximum,
+                self._choices.fireball_x_value + delta,
+            ),
+        )
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def removeFireballTarget(self, key: str) -> None:
+        if key in self._choices.fireball_target_keys:
+            self._toggle_fireball_target(key)
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmFireball(self) -> None:
+        card = self._fireball_card()
+        if card is None or not self._can_choose_fireball():
+            return
+        if not self._choices.fireball_target_keys:
+            self._tell_current("Choose at least one Fireball target.")
+            self.stateChanged.emit()
+            return
+        targets: list[Card | PlayerState] = []
+        for key in self._choices.fireball_target_keys:
+            kind, identifier = key.split(":", 1)
+            target = (
+                self._card_by_id(UUID(identifier))
+                if kind == "card"
+                else self.game.player(identifier)
+            )
+            if target is None:
+                self._tell_current("A chosen Fireball target is no longer available.")
+                self.stateChanged.emit()
+                return
+            targets.append(target)
+        x_value = self._choices.fireball_x_value
+        labels = ", ".join(target.name for target in targets)
+        def commit() -> None:
+            self.game.begin_cast(card, x_value=x_value)
+            try:
+                self.game.complete_pending_cast(tuple(targets))
+            except (ValueError, RuntimeError):
+                if self.game.pending_cast is not None:
+                    self.game.cancel_pending_cast()
+                raise
+
+        if self._run(
+            commit,
+            f"Cast Fireball with X={x_value} targeting {labels}.",
+        ):
+            self._choices.clear_fireball()
+
+    @Slot()
+    def cancelFireball(self) -> None:
+        if not self._can_choose_fireball():
+            return
+        self._choices.clear_fireball()
+        self._message = "Cancelled casting Fireball."
+        self.stateChanged.emit()
 
     def _default_damage_assignments(self) -> dict[Card, dict[Card, int]]:
         return self._combat_ui.default_damage_assignments(self.game)
@@ -1297,6 +1736,23 @@ class GameViewModel(QObject):
         self._run(
             lambda: self.game.choose_balance_cards(choice.player_id, cards),
             "Balance selection recorded; continue with the next prompt.",
+        )
+
+    @Slot()
+    def chooseLichSelected(self) -> None:
+        if not self.game.pending_lich_choices:
+            self._tell_current("There is no pending Lich choice.")
+            self.stateChanged.emit()
+            return
+        choice = self.game.pending_lich_choices[0]
+        cards = tuple(self._selected_cards())
+        if len(cards) != choice.amount:
+            self._tell_current(f"Select exactly {choice.amount} card(s) for Lich.")
+            self.stateChanged.emit()
+            return
+        self._run(
+            lambda: self.game.choose_lich_cards(choice.player_id, cards),
+            "Destroyed the selected cards for Lich.",
         )
 
     @Slot()

@@ -341,6 +341,65 @@ CONTROL_MAGIC = CardDefinition(
     target_requirement=_CREATURE_IN_PLAY,
 )
 
+COPY_ARTIFACT = CardDefinition(
+    name="Copy Artifact",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{U}"),
+    rules_text=(
+        "Choose an artifact in play as this spell is cast. In play, Copy "
+        "Artifact is a blue artifact-enchantment copy of that artifact."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.ARTIFACT}),
+    ),
+    copies_artifact=True,
+)
+
+CLONE = CardDefinition(
+    name="Clone",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{U}"),
+    rules_text=(
+        "As Clone is cast or otherwise brought into play, choose another "
+        "creature in play. Clone copies that creature's normal characteristics."
+    ),
+    colors=frozenset({Color.BLUE}),
+    subtypes=("Clone",),
+    power=0,
+    toughness=0,
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        printed_card_types_only=True,
+    ),
+    copies_creature=True,
+)
+
+VESUVAN_DOPPELGANGER = CardDefinition(
+    name="Vesuvan Doppelganger",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{3}{U}{U}"),
+    rules_text=(
+        "As Vesuvan Doppelganger is cast or otherwise brought into play, "
+        "choose another creature in play. It copies that creature's normal "
+        "characteristics except color and remains blue. During your upkeep, "
+        "you may change it into a different creature in play."
+    ),
+    colors=frozenset({Color.BLUE}),
+    subtypes=("Doppelganger",),
+    power=0,
+    toughness=0,
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        printed_card_types_only=True,
+    ),
+    copies_creature=True,
+    is_vesuvan_doppelganger=True,
+)
+
 PHANTASMAL_TERRAIN = CardDefinition(
     name="Phantasmal Terrain",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -638,7 +697,9 @@ BLUE_CARDS = tuple(
             ANCESTRAL_RECALL,
             BRAINGEYSER,
             BLUE_ELEMENTAL_BLAST,
+            CLONE,
             CONTROL_MAGIC,
+            COPY_ARTIFACT,
             COUNTERSPELL,
             CREATURE_BOND,
             DRAIN_POWER,
@@ -670,6 +731,7 @@ BLUE_CARDS = tuple(
             TIMETWISTER,
             TWIDDLE,
             UNSUMMON,
+            VESUVAN_DOPPELGANGER,
             VOLCANIC_ERUPTION,
             WALL_OF_AIR,
             WALL_OF_WATER,

@@ -26,7 +26,7 @@ class ArtifactDefinitionMigrationTests(unittest.TestCase):
         )
 
     def test_catalog_uses_all_artifact_definitions(self) -> None:
-        self.assertEqual(len(ARTIFACT_CARDS), 42)
+        self.assertEqual(len(ARTIFACT_CARDS), 43)
         for artifact in ARTIFACT_CARDS:
             self.assertIs(CARDS_BY_NAME[artifact.name], artifact)
 

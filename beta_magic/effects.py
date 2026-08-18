@@ -134,6 +134,21 @@ class DamageEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class DividedDamageEffect:
+    """Divide X evenly among distinct targets, rounding each share down."""
+
+
+@dataclass(frozen=True, slots=True)
+class CopyTargetSpellEffect:
+    """Create a red copy of the targeted instant or sorcery spell."""
+
+
+@dataclass(frozen=True, slots=True)
+class DrainLifeEffect:
+    """Deal X damage and gain life from damage actually inflicted."""
+
+
+@dataclass(frozen=True, slots=True)
 class ReverseDamageEffect:
     """Reverse all damage from one chosen source dealt to the caster this turn."""
 
@@ -253,6 +268,13 @@ class LibrarySearchEffect:
 
     card_types: frozenset[CardType] = field(default_factory=frozenset)
     destination: Zone = Zone.HAND
+
+
+@dataclass(frozen=True, slots=True)
+class SacrificeCreatureForManaEffect:
+    """Sacrifice a controlled creature for its printed casting cost in mana."""
+
+    color: Color
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +421,7 @@ class UpkeepDamageEffect:
     controller_upkeep_only: bool = False
     source_tapped: bool | None = None
     counted_active_player_owned_land_subtype: str | None = None
+    counted_active_player_untapped_lands_at_turn_start: bool = False
 
     def __post_init__(self) -> None:
         if self.amount < 1:
@@ -535,6 +558,13 @@ class DrawPhaseEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class OptionalDrawSkipEffect:
+    """Allow one draw-phase draw to be skipped for a turn-long benefit."""
+
+    restricts_attackers_to_flying_or_islandwalk: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class UntapRestrictionEffect:
     """Modify a player's normal untap processing while a permanent is active."""
 
@@ -662,8 +692,16 @@ class DestroyAllEffect:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ChannelEffect:
+    """Let the caster pay life for colorless mana until end of turn."""
+
+
 SpellEffect = (
     DamageEffect
+    | DividedDamageEffect
+    | CopyTargetSpellEffect
+    | DrainLifeEffect
     | ReverseDamageEffect
     | RetroactiveDamageTransferEffect
     | PreventCombatDamageEffect
@@ -679,6 +717,7 @@ SpellEffect = (
     | DemonicAttorneyEffect
     | NaturalSelectionEffect
     | LibrarySearchEffect
+    | SacrificeCreatureForManaEffect
     | SirensCallEffect
     | BlazeOfGloryEffect
     | BalanceEffect
@@ -693,6 +732,7 @@ SpellEffect = (
     | SetTappedEffect
     | AddManaEffect
     | TapLandsAndEmptyManaPoolEffect
+    | ChannelEffect
 )
 
 
@@ -723,6 +763,7 @@ class ContinuousEffect:
     base_power: int | None = None
     base_toughness: int | None = None
     wall_can_attack: bool = False
+    may_attack_with_summoning_sickness: bool = False
     blocking_subtype: str | None = None
     blocking_allowed_colors: frozenset[Color] = field(default_factory=frozenset)
     blocking_allowed_card_types: frozenset[CardType] = field(
@@ -782,6 +823,9 @@ __all__ = [
     "LandTypeEffect",
     "ManaPaymentEffect",
     "DamageEffect",
+    "DividedDamageEffect",
+    "CopyTargetSpellEffect",
+    "DrainLifeEffect",
     "ReverseDamageEffect",
     "RetroactiveDamageTransferEffect",
     "PreventCombatDamageEffect",
@@ -797,6 +841,7 @@ __all__ = [
     "DemonicAttorneyEffect",
     "NaturalSelectionEffect",
     "LibrarySearchEffect",
+    "SacrificeCreatureForManaEffect",
     "SirensCallEffect",
     "BlazeOfGloryEffect",
     "BalanceEffect",
@@ -819,6 +864,7 @@ __all__ = [
     "CounterRedemptionUpkeepEffect",
     "UpkeepCreatureSacrificeEffect",
     "DrawPhaseEffect",
+    "OptionalDrawSkipEffect",
     "UntapRestrictionEffect",
     "UpkeepEffect",
     "DestroyTargetsEffect",
@@ -829,6 +875,7 @@ __all__ = [
     "TapLandsAndEmptyManaPoolEffect",
     "CombatDestructionEffect",
     "DestroyAllEffect",
+    "ChannelEffect",
     "SpellEffect",
     "ContinuousEffect",
     "CreatureBuff",

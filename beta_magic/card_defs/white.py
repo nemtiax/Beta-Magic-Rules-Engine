@@ -18,6 +18,7 @@ from ..effects import (
     ExileTargetsEffect,
     GainLifeEffect,
     MoveTargetsEffect,
+    OptionalDrawSkipEffect,
     OptionalUpkeepPaymentEffect,
     RegenerateTargetsEffect,
     ReverseDamageEffect,
@@ -43,6 +44,24 @@ _WALL_IN_PLAY = TargetRequirement(
 )
 
 PURELACE = lace("Purelace", Color.WHITE)
+
+CONSECRATE_LAND = CardDefinition(
+    name="Consecrate Land",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{W}"),
+    rules_text=(
+        "Enchant land. Destroy all other enchantments on that land. "
+        "The land cannot be destroyed or further enchanted while "
+        "Consecrate Land remains in play."
+    ),
+    colors=frozenset({Color.WHITE}),
+    subtypes=("Enchant Land",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+    ),
+    consecrates_attached_land=True,
+)
 
 BENALISH_HERO = CardDefinition(
     name="Benalish Hero",
@@ -468,6 +487,22 @@ CASTLE = CardDefinition(
     ),
 )
 
+ISLAND_SANCTUARY = CardDefinition(
+    name="Island Sanctuary",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{W}"),
+    rules_text=(
+        "You may decline to draw a card during your draw phase. Until your "
+        "next turn, only creatures with flying or islandwalk may attack you."
+    ),
+    colors=frozenset({Color.WHITE}),
+    optional_draw_skip_effects=(
+        OptionalDrawSkipEffect(
+            restricts_attackers_to_flying_or_islandwalk=True
+        ),
+    ),
+)
+
 HEALING_SALVE = CardDefinition(
     name="Healing Salve",
     card_types=frozenset({CardType.INSTANT}),
@@ -615,6 +650,7 @@ WHITE_CARDS = tuple(
             BLUE_WARD,
             CASTLE,
             CONVERSION,
+            CONSECRATE_LAND,
             *CIRCLES_OF_PROTECTION,
             CRUSADE,
             DEATH_WARD,
@@ -624,6 +660,7 @@ WHITE_CARDS = tuple(
             HEALING_SALVE,
             HOLY_ARMOR,
             HOLY_STRENGTH,
+            ISLAND_SANCTUARY,
             KARMA,
             LANCE,
             MESA_PEGASUS,

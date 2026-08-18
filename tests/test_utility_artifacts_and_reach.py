@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     CONSERVATOR,
+    FORCEFIELD,
     GLASSES_OF_URZA,
     GIANT_SPIDER,
     DISRUPTING_SCEPTER,
@@ -64,6 +65,7 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
             UTILITY_ARTIFACTS,
             (
                 CONSERVATOR,
+                FORCEFIELD,
                 GLASSES_OF_URZA,
                 DISRUPTING_SCEPTER,
                 ROD_OF_RUIN,
@@ -82,7 +84,7 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
         )
         self.assertEqual(
             [card.mana_cost.compact for card in UTILITY_ARTIFACTS],
-            ["4", "1", "3", "4", "4", "4", "4", "4", "4", "2", "4", "4", "1", "3", "5"],
+            ["4", "3", "1", "3", "4", "4", "4", "4", "4", "4", "2", "4", "4", "1", "3", "5"],
         )
         self.assertEqual(
             (GIANT_SPIDER.power, GIANT_SPIDER.toughness), (2, 4)

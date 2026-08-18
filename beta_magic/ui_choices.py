@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from .cards import Card
@@ -25,6 +25,14 @@ class TransientChoiceState:
     redirection_maximum: int = 1
     library_search_filter: str = ""
     library_search_selected_id: UUID | None = None
+    fireball_card_id: UUID | None = None
+    fireball_x_value: int = 0
+    fireball_x_maximum: int = 0
+    fireball_target_keys: list[str] = field(default_factory=list)
+    fork_original_spell_id: UUID | None = None
+    fork_target_keys: list[str] = field(default_factory=list)
+    fork_x_value: int = 0
+    fork_generic_budget: int = 0
 
     def reset(self) -> None:
         self.x_card_id = None
@@ -39,6 +47,8 @@ class TransientChoiceState:
         self.redirection_amount = 1
         self.redirection_maximum = 1
         self.clear_library_search()
+        self.clear_fireball()
+        self.clear_fork()
 
     def begin_x(self, card: Card, maximum: int) -> None:
         self.x_card_id = card.id
@@ -86,3 +96,33 @@ class TransientChoiceState:
     def clear_library_search(self) -> None:
         self.library_search_filter = ""
         self.library_search_selected_id = None
+
+    def begin_fireball(self, card: Card, maximum: int) -> None:
+        self.fireball_card_id = card.id
+        self.fireball_x_value = maximum
+        self.fireball_x_maximum = maximum
+        self.fireball_target_keys.clear()
+
+    def clear_fireball(self) -> None:
+        self.fireball_card_id = None
+        self.fireball_x_value = 0
+        self.fireball_x_maximum = 0
+        self.fireball_target_keys.clear()
+
+    def begin_fork(
+        self,
+        original: Card,
+        target_keys: list[str],
+        x_value: int,
+        generic_budget: int,
+    ) -> None:
+        self.fork_original_spell_id = original.id
+        self.fork_target_keys = target_keys
+        self.fork_x_value = x_value
+        self.fork_generic_budget = generic_budget
+
+    def clear_fork(self) -> None:
+        self.fork_original_spell_id = None
+        self.fork_target_keys.clear()
+        self.fork_x_value = 0
+        self.fork_generic_budget = 0

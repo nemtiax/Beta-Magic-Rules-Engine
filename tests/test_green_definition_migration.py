@@ -9,6 +9,7 @@ EXPECTED_NAMES = {
     "Aspect of Wolf",
     "Berserk",
     "Birds of Paradise",
+    "Channel",
     "Cockatrice",
     "Craw Wurm",
     "Elvish Archers",
@@ -22,7 +23,9 @@ EXPECTED_NAMES = {
     "Grizzly Bears",
     "Hurricane",
     "Ice Storm",
+    "Instill Energy",
     "Ironroot Treefolk",
+    "Kudzu",
     "Llanowar Elves",
     "Lifelace",
     "Lifeforce",
@@ -53,7 +56,7 @@ EXPECTED_NAMES = {
 
 class GreenDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_green_cards_are_migrated(self) -> None:
-        self.assertEqual(len(GREEN_CARDS), 42)
+        self.assertEqual(len(GREEN_CARDS), 45)
         self.assertEqual(
             {card.name for card in GREEN_CARDS}, EXPECTED_NAMES
         )

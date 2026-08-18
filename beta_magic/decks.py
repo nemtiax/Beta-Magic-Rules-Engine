@@ -78,7 +78,7 @@ ELEMENTAL_SURGE_DECK = _cards(
     "Forest", "Mountain", "Grizzly Bears", "Scryb Sprites", "Taiga",
     "Stream of Life", "Hurricane", "Earthquake", "Forest", "Mountain",
     "Grizzly Bears", "Scryb Sprites", "Stream of Life", "Taiga", "Forest",
-    "Grizzly Bears", "Sol Ring", "Scryb Sprites", "Earthquake", "Hurricane",
+    "Grizzly Bears", "Sol Ring", "Scryb Sprites", "Fireball", "Hurricane",
 )
 
 AEGIS_WARDS_DECK = _cards(

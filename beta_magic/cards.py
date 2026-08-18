@@ -14,6 +14,7 @@ from .abilities import (
     ActivatedAbility,
     ActivatedDamageAbility,
     ActivatedGlobalDamageAbility,
+    ActivatedGraveyardReturnAbility,
     ActivatedAnimationAbility,
     ActivatedDestroyAbility,
     ActivatedDestroyAllAbility,
@@ -44,8 +45,10 @@ from .effects import (
     ContinuousEffect,
     CounterTargetSpellEffect,
     ChangeTargetColorEffect,
+    ChannelEffect,
     CreatureBuff,
     DamageEffect,
+    DrainLifeEffect,
     ReverseDamageEffect,
     RetroactiveDamageTransferEffect,
     PreventCombatDamageEffect,
@@ -53,6 +56,7 @@ from .effects import (
     DestroyTargetsEffect,
     DrawCardsEffect,
     DrawPhaseEffect,
+    OptionalDrawSkipEffect,
     DiscardCardsEffect,
     DiscardHandsAndDrawEffect,
     ShuffleHandAndGraveyardEffect,
@@ -61,6 +65,7 @@ from .effects import (
     DemonicAttorneyEffect,
     NaturalSelectionEffect,
     LibrarySearchEffect,
+    SacrificeCreatureForManaEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
     BalanceEffect,
@@ -130,14 +135,22 @@ class CardDefinition:
     target_requirement: TargetRequirement | None = None
     spell_effects: tuple[SpellEffect, ...] = ()
     requires_ante: bool = False
+    copies_artifact: bool = False
+    copies_creature: bool = False
+    is_vesuvan_doppelganger: bool = False
+    consecrates_attached_land: bool = False
+    additional_mana_per_target_beyond_first: int = 0
+    is_lich: bool = False
     fastbond_damage: int = 0
     upkeep_effects: tuple[UpkeepEffect, ...] = ()
     draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
+    optional_draw_skip_effects: tuple[OptionalDrawSkipEffect, ...] = ()
     untap_effects: tuple[UntapRestrictionEffect, ...] = ()
     land_event_effects: tuple[LandEventDamageEffect, ...] = ()
     attached_event_damage_effects: tuple[AttachedEventDamageEffect, ...] = ()
     permanent_tapped_effects: tuple[PermanentTappedEffect, ...] = ()
     attached_tap_mana_effects: tuple[AttachedTapManaEffect, ...] = ()
+    destroys_attached_land_when_tapped: bool = False
     land_mana_bonus_effects: tuple[LandManaBonusEffect, ...] = ()
     land_tap_mana_effects: tuple[LandTapManaEffect, ...] = ()
     mana_payment_effects: tuple[ManaPaymentEffect, ...] = ()
@@ -183,6 +196,8 @@ class CardDefinition:
             raise ValueError("a card must have at least one card type")
         if self.fastbond_damage < 0:
             raise ValueError("Fastbond damage cannot be negative")
+        if self.additional_mana_per_target_beyond_first < 0:
+            raise ValueError("additional target mana cannot be negative")
         has_one_stat = (self.power is None) != (self.toughness is None)
         if has_one_stat:
             raise ValueError("power and toughness must be specified together")
@@ -237,6 +252,8 @@ class CardDefinition:
             raise ValueError("only permanents can supply upkeep effects")
         if self.draw_phase_effects and not self.is_permanent:
             raise ValueError("only permanents can supply draw-phase effects")
+        if self.optional_draw_skip_effects and not self.is_permanent:
+            raise ValueError("only permanents can replace draw-phase draws")
         if self.untap_effects and not self.is_permanent:
             raise ValueError("only permanents can modify untap processing")
         if self.land_event_effects and not self.is_permanent:
@@ -368,6 +385,10 @@ class Card:
     summoned_turn: int | None = None
     land_type_marks: dict[UUID, tuple[str, int]] = field(default_factory=dict)
     is_token: bool = False
+    is_spell_copy: bool = False
+    printed_definition: CardDefinition | None = None
+    copied_card_id: UUID | None = None
+    copied_card_entry_sequence: int | None = None
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
@@ -399,6 +420,7 @@ __all__ = [
     "ActivatedAbility",
     "ActivatedDamageAbility",
     "ActivatedGlobalDamageAbility",
+    "ActivatedGraveyardReturnAbility",
     "ActivatedAnimationAbility",
     "ActivatedDestroyAbility",
     "ActivatedDestroyAllAbility",
@@ -424,8 +446,10 @@ __all__ = [
     "ContinuousEffect",
     "CounterTargetSpellEffect",
     "ChangeTargetColorEffect",
+    "ChannelEffect",
     "CreatureBuff",
     "DamageEffect",
+    "DrainLifeEffect",
     "ReverseDamageEffect",
     "RetroactiveDamageTransferEffect",
     "PreventCombatDamageEffect",
@@ -433,6 +457,7 @@ __all__ = [
     "DestroyTargetsEffect",
     "DrawCardsEffect",
     "DrawPhaseEffect",
+    "OptionalDrawSkipEffect",
     "DiscardCardsEffect",
     "DiscardHandsAndDrawEffect",
     "DiscardHandAnteAndDrawEffect",
@@ -440,6 +465,7 @@ __all__ = [
     "DemonicAttorneyEffect",
     "NaturalSelectionEffect",
     "LibrarySearchEffect",
+    "SacrificeCreatureForManaEffect",
     "UntapRestrictionEffect",
     "ExtraTurnEffect",
     "BlazeOfGloryEffect",

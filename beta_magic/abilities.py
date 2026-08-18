@@ -38,7 +38,9 @@ class TargetRequirement:
     required_abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
     required_land_subtypes: frozenset[str] = field(default_factory=frozenset)
     count_equals_x: bool = False
+    any_number: bool = False
     count: int = 1
+    printed_card_types_only: bool = False
 
     def __post_init__(self) -> None:
         if self.count < 1:
@@ -53,6 +55,8 @@ class TargetRequirement:
             raise ValueError("a target cannot require both owner and controller")
         if self.opponent_only and not self.players:
             raise ValueError("an opponent-only target must accept players")
+        if self.any_number and self.count_equals_x:
+            raise ValueError("a target count cannot be both arbitrary and equal to X")
 
     def accepts_card(
         self,
@@ -455,10 +459,26 @@ class ActivatedUntapAbility:
 
     mana_cost: ManaCost
     tap_cost: bool = False
+    affects_attached_creature: bool = False
+    once_per_turn: bool = False
+    controller_turn_only: bool = False
 
     @property
     def label(self) -> str:
-        return f"Pay {self.mana_cost.compact}: Untap"
+        subject = " enchanted creature" if self.affects_attached_creature else ""
+        cost = f"Pay {self.mana_cost.compact}: " if self.mana_cost.mana_value else ""
+        return f"{cost}Untap{subject}"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedGraveyardReturnAbility:
+    """Return this card from a qualifying graveyard position during upkeep."""
+
+    creatures_required_above: int = 3
+
+    @property
+    def label(self) -> str:
+        return "Return from graveyard during upkeep"
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,10 +552,16 @@ class ActivatedPreventDamageAbility:
     source_color: Color | None = None
     controller_only: bool = False
     prevents_life_loss: bool = False
+    unblocked_combat_only: bool = False
+    leaves_one_life_loss: bool = False
 
     def __post_init__(self) -> None:
         if self.amount is not None and self.amount < 1:
             raise ValueError("a prevention ability must prevent positive damage")
+        if self.leaves_one_life_loss and not self.unblocked_combat_only:
+            raise ValueError(
+                "converting damage to life loss requires an unblocked-combat ability"
+            )
 
     @property
     def label(self) -> str:
@@ -548,6 +574,8 @@ class ActivatedPreventDamageAbility:
         amount = "all" if self.amount is None else str(self.amount)
         if self.prevents_life_loss:
             return f"{cost}: Prevent up to {amount} life loss"
+        if self.leaves_one_life_loss:
+            return f"{cost}: Lose only 1 life to an unblocked creature"
         color = (
             f" from one {self.source_color.name.lower()} source"
             if self.source_color is not None
@@ -622,6 +650,7 @@ BatchActivatedAbility = (
     | ActivatedEventDrawAbility
     | ActivatedAnimationAbility
     | ActivatedGlobalDamageAbility
+    | ActivatedGraveyardReturnAbility
 )
 ActivatedAbility = (
     ActivatedManaAbility
@@ -646,6 +675,7 @@ ActivatedAbility = (
     | ActivatedRegenerationAbility
     | ActivatedLandTypeAbility
     | ActivatedCounterSpellAbility
+    | ActivatedGraveyardReturnAbility
 )
 
 
@@ -673,6 +703,7 @@ __all__ = [
     "ActivatedEventLifeGainAbility",
     "ActivatedEventDrawAbility",
     "ActivatedAnimationAbility",
+    "ActivatedGraveyardReturnAbility",
     "ActivatedPreventDamageAbility",
     "ActivatedRedirectDamageAbility",
     "ActivatedRegenerationAbility",

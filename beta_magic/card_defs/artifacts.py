@@ -361,6 +361,23 @@ CONSERVATOR = CardDefinition(
     ),
 )
 
+FORCEFIELD = CardDefinition(
+    name="Forcefield",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{3}"),
+    rules_text="{1}: Lose only 1 life to an unblocked creature.",
+    activated_abilities=(
+        ActivatedPreventDamageAbility(
+            amount=None,
+            mana_cost=ManaCost.parse("{1}"),
+            tap_cost=False,
+            controller_only=True,
+            unblocked_combat_only=True,
+            leaves_one_life_loss=True,
+        ),
+    ),
+)
+
 GLASSES_OF_URZA = CardDefinition(
     name="Glasses of Urza",
     card_types=frozenset({CardType.ARTIFACT}),
@@ -485,6 +502,7 @@ THE_HIVE = CardDefinition(
 
 UTILITY_ARTIFACTS = (
     CONSERVATOR,
+    FORCEFIELD,
     GLASSES_OF_URZA,
     DISRUPTING_SCEPTER,
     ROD_OF_RUIN,
@@ -631,6 +649,7 @@ __all__ = [
     "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
     "CONSERVATOR",
+    "FORCEFIELD",
     "GLASSES_OF_URZA",
     "JAYEMDAE_TOME",
     "ICY_MANIPULATOR",

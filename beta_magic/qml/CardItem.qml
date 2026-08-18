@@ -18,7 +18,8 @@ Rectangle {
     radius: 7
     color: cardData.background
     border.color: cardData.selected ? "#ffd54a"
-                  : cardData.balanceEligible || cardData.upkeepSacrificeEligible
+                  : cardData.balanceEligible || cardData.lichEligible
+                    || cardData.upkeepSacrificeEligible
                     ? "#7fc8ff"
                   : cardData.combatRole === "attacker" ? "#e58a55"
                   : cardData.combatRole === "blocker" ? "#75b7e8"

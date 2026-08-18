@@ -7,12 +7,14 @@ from ..abilities import (
     ActivatedRegenerationAbility,
     ActivatedInterruptUntapAbility,
     ActivatedLandTypeAbility,
+    ActivatedUntapAbility,
     TargetRequirement,
 )
 from ..cards import CardDefinition
 from ..effects import (
     CounterRedemptionUpkeepEffect,
     CombatDestructionEffect,
+    ChannelEffect,
     AttachedTapManaEffect,
     ContinuousEffect,
     DestroyAllEffect,
@@ -42,6 +44,18 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 LIFELACE = lace("Lifelace", Color.GREEN)
+
+CHANNEL = CardDefinition(
+    name="Channel",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{G}{G}"),
+    rules_text=(
+        "Until end of turn, you may pay 1 life to add {C}. These additions "
+        "are played as interrupts, and the life loss cannot be prevented."
+    ),
+    colors=frozenset({Color.GREEN}),
+    spell_effects=(ChannelEffect(),),
+)
 
 FASTBOND = CardDefinition(
     name="Fastbond",
@@ -202,6 +216,24 @@ WILD_GROWTH = CardDefinition(
         card_types=frozenset({CardType.LAND}),
     ),
     attached_tap_mana_effects=(AttachedTapManaEffect(Color.GREEN),),
+)
+
+KUDZU = CardDefinition(
+    name="Kudzu",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{G}{G}"),
+    rules_text=(
+        "Enchant land. When enchanted land becomes tapped, destroy it; this "
+        "destruction cannot be prevented. That land's former controller must "
+        "move Kudzu to another land, or destroy Kudzu if no legal land remains."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Land",),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.LAND}),
+    ),
+    destroys_attached_land_when_tapped=True,
 )
 
 ASPECT_OF_WOLF = CardDefinition(
@@ -482,6 +514,33 @@ WEB = CardDefinition(
     target_requirement=_CREATURE_IN_PLAY,
 )
 
+INSTILL_ENERGY = CardDefinition(
+    name="Instill Energy",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "Enchanted creature may attack during the turn it comes into play. "
+        "Once during your turn, untap that creature."
+    ),
+    colors=frozenset({Color.GREEN}),
+    subtypes=("Enchant Creature",),
+    target_requirement=_CREATURE_IN_PLAY,
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            may_attack_with_summoning_sickness=True,
+        ),
+    ),
+    activated_abilities=(
+        ActivatedUntapAbility(
+            ManaCost(),
+            affects_attached_creature=True,
+            once_per_turn=True,
+            controller_turn_only=True,
+        ),
+    ),
+)
+
 WANDERLUST = CardDefinition(
     name="Wanderlust",
     card_types=frozenset({CardType.ENCHANTMENT}),
@@ -620,6 +679,7 @@ GREEN_CARDS = tuple(
             ASPECT_OF_WOLF,
             BERSERK,
             BIRDS_OF_PARADISE,
+            CHANNEL,
             COCKATRICE,
             CRAW_WURM,
             ELVISH_ARCHERS,
@@ -633,7 +693,9 @@ GREEN_CARDS = tuple(
             GRIZZLY_BEARS,
             HURRICANE,
             ICE_STORM,
+            INSTILL_ENERGY,
             IRONROOT_TREEFOLK,
+            KUDZU,
             LLANOWAR_ELVES,
             LEY_DRUID,
             LIFELACE,

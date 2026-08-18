@@ -41,6 +41,8 @@ class PendingPrevention:
     source_color: Color | None = None
     controller_only: bool = False
     prevents_life_loss: bool = False
+    unblocked_combat_only: bool = False
+    leaves_one_life_loss: bool = False
     paid: bool = False
 
 
@@ -64,6 +66,15 @@ class PendingCounterDamageChoice:
     counter_name: str
     absorbed_amount: int
     maximum_payment: int
+
+
+@dataclass(frozen=True, slots=True)
+class PendingLichChoice:
+    """Cards one player must destroy after suffering damage with Lich."""
+
+    player_id: str
+    amount: int
+    candidate_ids: frozenset[UUID]
 
 
 class DamageDestructionMixin:
@@ -120,7 +131,9 @@ class DamageDestructionMixin:
                 pending += amount
         self.pay_mana(caster, self.spell_mana_cost(card))
         self._move_card(card, Zone.GRAVEYARD)
-        caster.life += prior * 2 + pending
+        if not self._lich_count(caster.id):
+            caster.life += prior
+        self._gain_life(caster, prior + pending)
         if caster.life > 0:
             caster.has_lost = False
         self.priority_player_index = (
@@ -136,7 +149,8 @@ class DamageDestructionMixin:
         incident = self.pending_damage
         assert incident is not None
         consumed = self._consume_player_damage(caster.id)
-        caster.life += sum(amount for _, amount in consumed)
+        if not self._lich_count(caster.id):
+            caster.life += sum(amount for _, amount in consumed)
         if caster.life > 0:
             caster.has_lost = False
         for record, amount in consumed:
@@ -177,6 +191,8 @@ class DamageDestructionMixin:
                     colors=packet.colors,
                     combat=packet.combat,
                     first_strike=packet.first_strike,
+                    life_gain_player_id=packet.life_gain_player_id,
+                    life_gain_cap=packet.life_gain_cap,
                 )
             )
         self.pay_mana(caster, self.spell_mana_cost(card))
@@ -322,6 +338,8 @@ class DamageDestructionMixin:
                 combat=packet.combat,
                 trample=packet.trample,
                 first_strike=packet.first_strike,
+                life_gain_player_id=packet.life_gain_player_id,
+                life_gain_cap=packet.life_gain_cap,
             )
         )
         self.pending_redirection = None
@@ -419,7 +437,11 @@ class DamageDestructionMixin:
             (candidate for candidate in incident.packets if candidate.id == packet_id),
             None,
         )
-        if packet is None or packet.remaining <= 0:
+        if packet is None or (
+            packet.resulting_life_loss <= 0
+            if pending.prevents_life_loss
+            else packet.remaining <= 0
+        ):
             raise ValueError("that damage packet cannot be prevented")
         if (
             pending.controller_only
@@ -434,6 +456,15 @@ class DamageDestructionMixin:
             and packet.recipient_kind is not DamageRecipientKind.PLAYER
         ):
             raise ValueError("this effect only prevents loss of life by a player")
+        if pending.unblocked_combat_only and not (
+            packet.recipient_kind is DamageRecipientKind.PLAYER
+            and packet.recipient_id == pending.controller_id
+            and packet.combat
+            and not packet.trample
+        ):
+            raise ValueError(
+                "this effect only applies to an unblocked creature damaging you"
+            )
         if (
             pending.source_color is not None
             and pending.source_color not in packet.colors
@@ -464,6 +495,12 @@ class DamageDestructionMixin:
                     self._tap_permanent(pending.source)
             pending.paid = True
             pending.recipient_id = packet.recipient_id
+        if pending.leaves_one_life_loss:
+            prevented = packet.remaining
+            packet.prevented += prevented
+            packet.converted_life_loss += 1
+            self.finish_prevention(player_id)
+            return prevented
         available = (
             packet.resulting_life_loss
             if pending.prevents_life_loss
@@ -492,7 +529,7 @@ class DamageDestructionMixin:
         return [
             packet
             for packet in incident.packets
-            if packet.remaining
+            if (packet.resulting_life_loss if pending.prevents_life_loss else packet.remaining)
             and (
                 not pending.prevents_life_loss
                 or (
@@ -514,6 +551,15 @@ class DamageDestructionMixin:
             and (
                 pending.source_color is None
                 or pending.source_color in packet.colors
+            )
+            and (
+                not pending.unblocked_combat_only
+                or (
+                    packet.recipient_kind is DamageRecipientKind.PLAYER
+                    and packet.recipient_id == pending.controller_id
+                    and packet.combat
+                    and not packet.trample
+                )
             )
         ]
 
@@ -598,6 +644,10 @@ class DamageDestructionMixin:
             if ability.affects_attached_creature
             else card
         )
+        if self.land_is_consecrated(affected_card):
+            raise RuntimeError(
+                f"{affected_card.name} is already protected by Consecrate Land"
+            )
         if in_damage_window and self.creature_toughness(affected_card) <= 0:
             raise RuntimeError("regeneration cannot save a creature with zero toughness")
         if affected_card.id in self.disintegrated_this_turn:
@@ -640,6 +690,8 @@ class DamageDestructionMixin:
             raise RuntimeError("finish choosing damage prevention first")
         if self.pending_redirection is not None:
             raise RuntimeError("finish choosing damage redirection first")
+        if self.pending_lich_choices:
+            raise RuntimeError("finish choosing cards to destroy for Lich first")
         if self.priority_player_index is None:
             raise RuntimeError("the damage window has no priority player")
         player = self.player(player_id)
@@ -696,6 +748,8 @@ class DamageDestructionMixin:
         combat: bool = False,
         trample: bool = False,
         first_strike: bool = False,
+        life_gain_player_id: str | None = None,
+        life_gain_cap: int | None = None,
     ) -> None:
         """Describe damage and add it to the current simultaneous incident."""
 
@@ -717,7 +771,8 @@ class DamageDestructionMixin:
                 recipient_name=recipient.name,
                 source_name=source_card.name if source_card is not None else source,
                 source_id=(
-                    source_card.id if source_card is not None else source_id
+                    source_id if source_id is not None
+                    else source_card.id if source_card is not None else None
                 ),
                 source_controller_id=(
                     source_controller_id
@@ -734,6 +789,8 @@ class DamageDestructionMixin:
                 combat=combat,
                 trample=trample,
                 first_strike=first_strike,
+                life_gain_player_id=life_gain_player_id,
+                life_gain_cap=life_gain_cap,
                 prevented=(
                     amount
                     if isinstance(recipient, Card)
@@ -880,6 +937,8 @@ class DamageDestructionMixin:
         incident = self.pending_damage
         if incident is None:
             return False
+        if self.pending_lich_choices:
+            return True
         if self.pause_for_damage_windows:
             return True
         if incident.step is not DamageResolutionStep.REGENERATION:
@@ -933,6 +992,9 @@ class DamageDestructionMixin:
             redirected = DamageIncident(
                 incident.kind,
                 packets=incident.redirected_packets,
+                life_gain_awarded_by_source=dict(
+                    incident.life_gain_awarded_by_source
+                ),
             )
             self.pending_damage = redirected
             self._resolve_damage_incident()
@@ -986,6 +1048,8 @@ class DamageDestructionMixin:
                         combat=packet.combat,
                         trample=False,
                         first_strike=packet.first_strike,
+                        life_gain_player_id=packet.life_gain_player_id,
+                        life_gain_cap=packet.life_gain_cap,
                     )
                 )
 
@@ -996,6 +1060,7 @@ class DamageDestructionMixin:
         assert incident is not None
         # Creature recipients are handled before players, as required by the
         # FAQ. Packet order remains intact within each recipient category.
+        lich_damage: dict[str, int] = {}
         for packet in sorted(
             incident.packets,
             key=lambda packet: (
@@ -1003,12 +1068,30 @@ class DamageDestructionMixin:
             ),
         ):
             amount = packet.remaining
-            if not amount:
+            if not amount and not packet.resulting_life_loss:
                 continue
+            if packet.life_gain_player_id is not None:
+                source_key = packet.source_id or packet.id
+                already_gained = incident.life_gain_awarded_by_source.get(
+                    source_key, 0
+                )
+                available = (
+                    max(0, packet.life_gain_cap - already_gained)
+                    if packet.life_gain_cap is not None else amount
+                )
+                gained = min(amount, available)
+                self._gain_life(self.player(packet.life_gain_player_id), gained)
+                incident.life_gain_awarded_by_source[source_key] = (
+                    already_gained + gained
+                )
             event_source = "combat" if packet.combat else packet.source_name
             if packet.recipient_kind is DamageRecipientKind.PLAYER:
                 recipient = self.player(str(packet.recipient_id))
                 self._lose_life(recipient, packet.resulting_life_loss)
+                if not amount:
+                    continue
+                if self._lich_count(recipient.id):
+                    lich_damage[recipient.id] = lich_damage.get(recipient.id, 0) + amount
                 self.player_damage_history.append(
                     PlayerDamageRecord(
                         player_id=recipient.id,
@@ -1103,6 +1186,69 @@ class DamageDestructionMixin:
                 if card.id in incident.regenerated_card_ids:
                     self._tap_permanent(card)
                     card.damage = 0
+        for player_id, damage in lich_damage.items():
+            required = damage * self._lich_count(player_id)
+            player = self.player(player_id)
+            candidates = tuple(
+                card
+                for card in player.battlefield
+                if not card.is_token
+                and not (
+                    CardType.CREATURE in self.card_types(card)
+                    and card.damage >= self.creature_toughness(card)
+                )
+            )
+            if len(candidates) < required:
+                player.has_lost = True
+                continue
+            self.pending_lich_choices.append(
+                PendingLichChoice(
+                    player_id,
+                    required,
+                    frozenset(card.id for card in candidates),
+                )
+            )
+
+    def choose_lich_cards(
+        self, player_id: str, cards: tuple[Card, ...]
+    ) -> tuple[Card, ...]:
+        """Destroy the actual nontoken cards demanded by unresolved Lich damage."""
+
+        if not self.pending_lich_choices:
+            raise RuntimeError("there is no Lich choice pending")
+        choice = self.pending_lich_choices[0]
+        if choice.player_id != player_id:
+            raise ValueError("only the damaged player may choose cards for Lich")
+        chosen_ids = frozenset(card.id for card in cards)
+        if len(cards) != choice.amount or len(chosen_ids) != len(cards):
+            raise ValueError(f"choose exactly {choice.amount} cards for Lich")
+        if not chosen_ids.issubset(choice.candidate_ids):
+            raise ValueError("Lich requires nontoken cards that were eligible after damage")
+        current = {
+            card.id: card
+            for player in self.players
+            for card in player.battlefield
+        }
+        if not chosen_ids.issubset(current):
+            raise RuntimeError("one of the chosen Lich cards is no longer in play")
+        self.pending_lich_choices.pop(0)
+        graveyard_lengths = self._graveyard_lengths()
+        for card in cards:
+            if card.zone is Zone.BATTLEFIELD:
+                self._move_card(card, Zone.GRAVEYARD)
+        self._queue_new_graveyard_order_choices(graveyard_lengths)
+        self.check_state_based_actions()
+        if (
+            not self.pending_lich_choices
+            and self.pending_damage is not None
+            and not self._damage_window_requires_priority()
+        ):
+            while (
+                self.pending_damage is not None
+                and not self._damage_window_requires_priority()
+            ):
+                self._advance_damage_resolution()
+        return cards
 
     def _continue_after_damage_incident(self, incident: DamageIncident) -> None:
         """Resume a rule action that was split by interactive damage windows."""
@@ -1134,12 +1280,25 @@ class DamageDestructionMixin:
             or incident.step is not DestructionResolutionStep.WAITING
         ):
             return
+        battlefield = {
+            card.id: card
+            for player in self.players
+            for card in player.battlefield
+        }
+        incident.regenerated_card_ids.update(
+            target.card_id
+            for target in incident.targets
+            if target.card_id in battlefield
+            and self.land_is_consecrated(battlefield[target.card_id])
+        )
         for target in incident.targets:
             if target.card_id in self.disintegrated_this_turn:
                 target.regeneration_allowed = False
         incident.step = DestructionResolutionStep.REGENERATION
         has_regenerable_target = any(
-            target.regeneration_allowed for target in incident.targets
+            target.regeneration_allowed
+            and target.card_id not in incident.regenerated_card_ids
+            for target in incident.targets
         )
         if has_regenerable_target and (
             self.pause_for_damage_windows or self._destruction_can_regenerate()

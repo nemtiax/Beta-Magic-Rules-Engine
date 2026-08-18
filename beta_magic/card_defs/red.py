@@ -14,7 +14,9 @@ from ..effects import (
     CounterPurchaseUpkeepEffect,
     ContinuousEffect,
     CounterTargetSpellEffect,
+    CopyTargetSpellEffect,
     DamageEffect,
+    DividedDamageEffect,
     DestroyAllEffect,
     DestroyTargetsEffect,
     DiscardHandsAndDrawEffect,
@@ -22,6 +24,7 @@ from ..effects import (
     GlobalDamageEffect,
     LandManaBonusEffect,
     PermanentTappedEffect,
+    UpkeepDamageEffect,
     UntapRestrictionEffect,
     VariableCreatureStats,
     VariableStatKind,
@@ -37,6 +40,22 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 CHAOSLACE = lace("Chaoslace", Color.RED)
+
+FORK = CardDefinition(
+    name="Fork",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{R}{R}"),
+    rules_text=(
+        "Copy target sorcery or instant spell. The copy remains red, and "
+        "may have different targets."
+    ),
+    colors=frozenset({Color.RED}),
+    target_requirement=TargetRequirement(
+        zone=Zone.STACK,
+        any_card_types=frozenset({CardType.INSTANT, CardType.SORCERY}),
+    ),
+    spell_effects=(CopyTargetSpellEffect(),),
+)
 
 SMOKE = CardDefinition(
     name="Smoke",
@@ -71,6 +90,24 @@ MANA_FLARE = CardDefinition(
     ),
     colors=frozenset({Color.RED}),
     land_mana_bonus_effects=(LandManaBonusEffect(),),
+)
+
+POWER_SURGE = CardDefinition(
+    name="Power Surge",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{R}{R}"),
+    rules_text=(
+        "During each player's upkeep, Power Surge deals 1 damage to that "
+        "player for each land they controlled untapped at the start of "
+        "the turn."
+    ),
+    colors=frozenset({Color.RED}),
+    upkeep_effects=(
+        UpkeepDamageEffect(
+            amount=1,
+            counted_active_player_untapped_lands_at_turn_start=True,
+        ),
+    ),
 )
 
 ROCK_HYDRA = CardDefinition(
@@ -600,6 +637,26 @@ EARTHQUAKE = CardDefinition(
     ),
 )
 
+FIREBALL = CardDefinition(
+    name="Fireball",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{X}{R}"),
+    rules_text=(
+        "Fireball does X damage total, divided evenly (round down) among "
+        "any number of targets. Pay 1 extra mana for each target beyond "
+        "the first."
+    ),
+    colors=frozenset({Color.RED}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        players=True,
+        any_number=True,
+    ),
+    spell_effects=(DividedDamageEffect(),),
+    additional_mana_per_target_beyond_first=1,
+)
+
 WHEEL_OF_FORTUNE = CardDefinition(
     name="Wheel of Fortune",
     card_types=frozenset({CardType.SORCERY}),
@@ -623,6 +680,8 @@ RED_CARDS = tuple(
             EARTHBIND,
             EARTHQUAKE,
             FIRE_ELEMENTAL,
+            FIREBALL,
+            FORK,
             FIREBREATHING,
             FLASHFIRES,
             GOBLIN_BALLOON_BRIGADE,
@@ -639,6 +698,7 @@ RED_CARDS = tuple(
             MONSS_GOBLIN_RAIDERS,
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,
+            POWER_SURGE,
             ROC_OF_KHER_RIDGES,
             ROCK_HYDRA,
             RED_ELEMENTAL_BLAST,

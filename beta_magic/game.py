@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from random import Random
 from typing import Callable, Iterable
 from uuid import UUID
@@ -27,18 +27,23 @@ from .incident_resolution import (
     PendingPrevention,
     PendingRedirection,
     PendingCounterDamageChoice,
+    PendingLichChoice,
 )
 from .turn_flow import (
+    PendingDrawChoice,
+    PendingGraveyardReturnChoice,
     PendingTimedEvent,
     PendingTurnChoice,
     PendingUntapChoice,
     PendingUpkeepLandLossChoice,
+    PendingDoppelgangerChoice,
     TurnFlowMixin,
 )
 from .effects import (
     ContinuousEffect,
     AttachedEventDamageEffect,
     LandEventDamageEffect,
+    DrainLifeEffect,
 )
 from .events import (
     CardMovedEvent,
@@ -69,6 +74,7 @@ from .rule_events import RuleEventKind, RuleEventOpportunity
 from .types import (
     CardType,
     Color,
+    CombatStep,
     GameStatus,
     TurnPhase,
     Zone,
@@ -149,6 +155,11 @@ class PlayerState:
             and source_zone is Zone.BATTLEFIELD
             and destination is not Zone.BATTLEFIELD
         )
+        spell_copy_leaves_stack = (
+            card.is_spell_copy
+            and source_zone is Zone.STACK
+            and destination is not Zone.STACK
+        )
         card.zone = destination
         if destination is not Zone.BATTLEFIELD:
             card.tapped = False
@@ -158,7 +169,7 @@ class PlayerState:
             card.controller_id = card.owner_id
             card.summoned_turn = None
             card.enchanted_card_id = None
-        if not token_leaves_battlefield:
+        if not token_leaves_battlefield and not spell_copy_leaves_stack:
             target.append(card)
 
     @property
@@ -187,6 +198,32 @@ class PendingHandReveal:
     viewer_id: str
     target_id: str
     cards: tuple[Card, ...]
+
+
+@dataclass(slots=True)
+class PendingGraveyardOrderChoice:
+    """An owner orders cards simultaneously added to their graveyard."""
+
+    player_id: str
+    card_ids_bottom_to_top: list[UUID]
+
+
+@dataclass(frozen=True, slots=True)
+class PendingKudzuChoice:
+    """The destroyed land's former controller must reattach Kudzu."""
+
+    chooser_id: str
+    kudzu_id: UUID
+    candidate_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PendingCreatureCopyChoice:
+    """A Clone entering outside casting must choose its copied creature."""
+
+    chooser_id: str
+    clone_id: UUID
+    candidate_ids: tuple[UUID, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,9 +266,12 @@ class GameState(
     current_phase: TurnPhase | None = None
     lands_played_this_turn: int = 0
     attacks_this_turn: int = 0
+    active_player_untapped_lands_at_turn_start: int = 0
     attack_requirements: dict[UUID, AttackRequirement] = field(default_factory=dict)
     attacked_this_turn: set[UUID] = field(default_factory=set)
     prevent_combat_damage_this_turn: bool = False
+    channel_active_players: set[str] = field(default_factory=set)
+    island_sanctuary_protected_players: set[str] = field(default_factory=set)
     vampire_damage_marks: dict[UUID, set[UUID]] = field(default_factory=dict)
     creature_deaths_this_turn: int = 0
     player_damage_history: list[PlayerDamageRecord] = field(default_factory=list)
@@ -242,6 +282,7 @@ class GameState(
     life_loss_prevention: dict[str, int] = field(default_factory=dict)
     pending_redirection: PendingRedirection | None = None
     pending_counter_damage_choice: PendingCounterDamageChoice | None = None
+    pending_lich_choices: list[PendingLichChoice] = field(default_factory=list)
     batch_abilities: list[AbilityOnStack] = field(default_factory=list)
     interrupt_abilities: list[AbilityOnStack] = field(default_factory=list)
     events: list[GameEvent] = field(default_factory=list)
@@ -273,6 +314,19 @@ class GameState(
     upcoming_turns: list[str] = field(default_factory=list)
     next_natural_player_index: int = 1
     pending_turn_choice: PendingTurnChoice | None = None
+    pending_draw_choice: PendingDrawChoice | None = None
+    pending_graveyard_return_choice: PendingGraveyardReturnChoice | None = None
+    graveyard_returns_done_this_upkeep: bool = False
+    pending_graveyard_order_choices: list[PendingGraveyardOrderChoice] = field(
+        default_factory=list
+    )
+    pending_kudzu_choices: list[PendingKudzuChoice] = field(default_factory=list)
+    pending_creature_copy_choices: list[PendingCreatureCopyChoice] = field(
+        default_factory=list
+    )
+    pending_doppelganger_choices: list[PendingDoppelgangerChoice] = field(
+        default_factory=list
+    )
     pending_untap_choice: PendingUntapChoice | None = None
     pending_counter_rewinds: list[UUID] = field(default_factory=list)
     rewound_during_untap: set[UUID] = field(default_factory=set)
@@ -347,10 +401,28 @@ class GameState(
 
         player.mana_pool.pay(cost, self._mana_payment_substitutions(player))
 
-    def spell_mana_cost(self, card: Card, x_value: int = 0) -> ManaCost:
+    def spell_mana_cost(
+        self, card: Card, x_value: int = 0, target_count: int = 1
+    ) -> ManaCost:
         """Return a spell's payable cost after battlefield surcharges."""
 
-        cost = card.definition.mana_cost.with_x(x_value)
+        drains_life = any(
+            isinstance(effect, DrainLifeEffect)
+            for effect in card.definition.spell_effects
+        )
+        printed = card.definition.mana_cost
+        cost = (
+            ManaCost(
+                generic=printed.generic,
+                white=printed.white,
+                blue=printed.blue,
+                black=printed.black + x_value,
+                red=printed.red,
+                green=printed.green,
+            )
+            if drains_life
+            else printed.with_x(x_value)
+        )
         surcharge = sum(
             permanent.definition.increases_white_spell_cost
             for owner in self.players
@@ -358,8 +430,12 @@ class GameState(
             if self.continuous_permanent_is_active(permanent)
             and Color.WHITE in self.card_colors(card)
         )
+        target_surcharge = (
+            max(0, target_count - 1)
+            * card.definition.additional_mana_per_target_beyond_first
+        )
         return ManaCost(
-            generic=cost.generic + surcharge,
+            generic=cost.generic + surcharge + target_surcharge,
             white=cost.white,
             blue=cost.blue,
             black=cost.black,
@@ -367,6 +443,16 @@ class GameState(
             green=cost.green,
             x_symbols=cost.x_symbols,
         )
+
+    def spell_casting_cost_value(self, card: Card, x_value: int = 0) -> int:
+        """Casting cost used by era effects; Drain Life's extra B is excluded."""
+
+        if any(
+            isinstance(effect, DrainLifeEffect)
+            for effect in card.definition.spell_effects
+        ):
+            return card.definition.mana_cost.with_x(0).mana_value
+        return card.definition.mana_cost.with_x(x_value).mana_value
 
     def ability_mana_cost(self, source: Card, base_cost: ManaCost) -> ManaCost:
         """Return an activated ability cost after card-specific surcharges."""
@@ -391,17 +477,27 @@ class GameState(
             x_symbols=base_cost.x_symbols,
         )
 
-    def _lose_life(self, player: PlayerState, amount: int) -> tuple[int, int]:
+    def _lose_life(
+        self, player: PlayerState, amount: int, *, preventable: bool = True
+    ) -> tuple[int, int]:
         """Apply direct life loss, consuming any Conservator-style prevention."""
 
         if amount < 0:
             raise ValueError("life loss cannot be negative")
-        prevented = min(amount, self.life_loss_prevention.get(player.id, 0))
-        remaining = self.life_loss_prevention.get(player.id, 0) - prevented
-        if remaining:
-            self.life_loss_prevention[player.id] = remaining
-        else:
-            self.life_loss_prevention.pop(player.id, None)
+        if self._lich_count(player.id):
+            # A Lich controller has no life points to lose. Damage still
+            # creates the card-destruction obligation in incident resolution.
+            return 0, 0
+        prevented = (
+            min(amount, self.life_loss_prevention.get(player.id, 0))
+            if preventable else 0
+        )
+        if preventable:
+            remaining = self.life_loss_prevention.get(player.id, 0) - prevented
+            if remaining:
+                self.life_loss_prevention[player.id] = remaining
+            else:
+                self.life_loss_prevention.pop(player.id, None)
         lost = amount - prevented
         player.life -= lost
         if lost:
@@ -414,6 +510,67 @@ class GameState(
         if player.life <= 0:
             player.has_lost = True
         return lost, prevented
+
+    def maximum_channel_mana(self, player_id: str) -> int:
+        """Return how much life the player can currently convert with Channel."""
+
+        player = self.player(player_id)
+        if (
+            player_id not in self.channel_active_players
+            or player.has_lost
+            or self._lich_count(player_id)
+        ):
+            return 0
+        return max(0, player.life)
+
+    def channel_life_for_mana(self, player_id: str, amount: int) -> None:
+        """Use Channel's turn-long interrupt-speed mana action."""
+
+        self._require_no_pending_action(allow_stack=True, allow_damage=True)
+        if self.status is not GameStatus.IN_PROGRESS:
+            raise RuntimeError("Channel can only be used during a game")
+        if self.current_phase is TurnPhase.UNTAP:
+            raise RuntimeError("Channel cannot be used during the Untap phase")
+        if self.combat is not None and self.combat.step in {
+            CombatStep.DECLARE_ATTACKERS,
+            CombatStep.DECLARE_BLOCKERS,
+        }:
+            raise RuntimeError("Channel cannot be used during combat declarations")
+        player = self.player(player_id)
+        if (
+            self.priority_player_index is not None
+            and player is not self.players[self.priority_player_index]
+        ):
+            raise RuntimeError(
+                f"{self.players[self.priority_player_index].name} has priority"
+            )
+        maximum = self.maximum_channel_mana(player_id)
+        if not 1 <= amount <= maximum:
+            raise ValueError(f"choose an amount from 1 to {maximum}")
+        lost, prevented = self._lose_life(player, amount, preventable=False)
+        assert lost == amount and prevented == 0
+        player.mana_pool.colorless += amount
+
+    def _lich_count(self, player_id: str) -> int:
+        """Return the number of Liches currently controlled by one player."""
+
+        return sum(
+            card.definition.is_lich
+            for card in self.player(player_id).battlefield
+            if (card.controller_id or card.owner_id) == player_id
+        )
+
+    def _gain_life(self, player: PlayerState, amount: int) -> int:
+        """Gain life, or draw once per point for each Lich instead."""
+
+        if amount < 0:
+            raise ValueError("life gain cannot be negative")
+        liches = self._lich_count(player.id)
+        if liches:
+            player.draw(amount * liches)
+            return 0
+        player.life += amount
+        return amount
 
     @staticmethod
     def _damage_source_key(source_id: UUID | None, source_name: str) -> str:
@@ -483,6 +640,34 @@ class GameState(
             )
         if self.pending_turn_choice is not None:
             raise RuntimeError("choose whether to skip the upcoming turn first")
+        if self.pending_draw_choice is not None:
+            raise RuntimeError("choose how many draw-phase draws to skip first")
+        if self.pending_graveyard_return_choice is not None:
+            raise RuntimeError("choose whether to return Nether Shadow first")
+        if self.pending_graveyard_order_choices:
+            choice = self.pending_graveyard_order_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.player_id).name} must order cards in their "
+                "graveyard first"
+            )
+        if self.pending_kudzu_choices:
+            choice = self.pending_kudzu_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must move Kudzu to "
+                "another land first"
+            )
+        if self.pending_creature_copy_choices:
+            choice = self.pending_creature_copy_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must choose a creature "
+                "for Clone first"
+            )
+        if self.pending_doppelganger_choices:
+            choice = self.pending_doppelganger_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must choose whether "
+                "to change Vesuvan Doppelganger first"
+            )
         if self.pending_untap_choice is not None:
             choice = self.pending_untap_choice
             raise RuntimeError(
@@ -493,6 +678,12 @@ class GameState(
             raise RuntimeError(
                 f"{self.player(self.pending_counter_damage_choice.controller_id).name} "
                 "must choose how many damage counters to preserve first"
+            )
+        if self.pending_lich_choices:
+            choice = self.pending_lich_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.player_id).name} must choose "
+                f"{choice.amount} card(s) to destroy for Lich first"
             )
         if self.pending_counter_rewinds:
             raise RuntimeError(
@@ -607,6 +798,77 @@ class GameState(
                     return player, cards
         raise ValueError(f"{card.name} is not in a game zone")
 
+    def _graveyard_lengths(self) -> dict[str, int]:
+        return {player.id: len(player.graveyard) for player in self.players}
+
+    def _queue_new_graveyard_order_choices(
+        self, prior_lengths: dict[str, int]
+    ) -> None:
+        """Pause for each owner whose simultaneous move added multiple cards."""
+
+        already_queued = {
+            card_id
+            for choice in self.pending_graveyard_order_choices
+            for card_id in choice.card_ids_bottom_to_top
+        }
+        for player in self.players:
+            added = [
+                card for card in player.graveyard[prior_lengths[player.id]:]
+                if card.id not in already_queued
+            ]
+            if len(added) > 1:
+                self.pending_graveyard_order_choices.append(
+                    PendingGraveyardOrderChoice(
+                        player.id, [card.id for card in added]
+                    )
+                )
+
+    def move_graveyard_order_card(
+        self, player_id: str, card: Card, direction: int
+    ) -> None:
+        """Move one card up or down in the pending bottom-to-top order."""
+
+        if not self.pending_graveyard_order_choices:
+            raise RuntimeError("there is no graveyard order choice")
+        choice = self.pending_graveyard_order_choices[0]
+        if choice.player_id != player_id:
+            raise RuntimeError(f"{self.player(choice.player_id).name} must choose")
+        if direction not in {-1, 1}:
+            raise ValueError("graveyard order movement must be up or down")
+        try:
+            index = choice.card_ids_bottom_to_top.index(card.id)
+        except ValueError as error:
+            raise ValueError("that card is not in the simultaneous group") from error
+        destination = index + direction
+        if not 0 <= destination < len(choice.card_ids_bottom_to_top):
+            return
+        choice.card_ids_bottom_to_top[index], choice.card_ids_bottom_to_top[destination] = (
+            choice.card_ids_bottom_to_top[destination],
+            choice.card_ids_bottom_to_top[index],
+        )
+
+    def confirm_graveyard_order(self, player_id: str) -> None:
+        """Commit the displayed bottom-to-top order to the owner's graveyard."""
+
+        if not self.pending_graveyard_order_choices:
+            raise RuntimeError("there is no graveyard order choice")
+        choice = self.pending_graveyard_order_choices[0]
+        if choice.player_id != player_id:
+            raise RuntimeError(f"{self.player(choice.player_id).name} must choose")
+        player = self.player(player_id)
+        cards = {card.id: card for card in player.graveyard}
+        if not set(choice.card_ids_bottom_to_top) <= cards.keys():
+            raise RuntimeError("a card awaiting graveyard ordering is no longer there")
+        chosen = [cards[card_id] for card_id in choice.card_ids_bottom_to_top]
+        chosen_ids = set(choice.card_ids_bottom_to_top)
+        positions = [
+            index for index, card in enumerate(player.graveyard)
+            if card.id in chosen_ids
+        ]
+        for index, card in zip(positions, chosen):
+            player.graveyard[index] = card
+        self.pending_graveyard_order_choices.pop(0)
+
     def _move_card(
         self,
         card: Card,
@@ -627,6 +889,11 @@ class GameState(
         ):
             destination = Zone.EXILE
         prior_controller_id = card.controller_id or card.owner_id
+        lich_destroyed = bool(
+            card.definition.is_lich
+            and source_zone is Zone.BATTLEFIELD
+            and destination is Zone.GRAVEYARD
+        )
         prior_toughness = self.creature_toughness(card) if was_creature else 0
         creature_bonds = tuple(
             (attachment, effect)
@@ -646,6 +913,11 @@ class GameState(
         )
         source.remove(card)
 
+        if source_zone is Zone.BATTLEFIELD and destination is not Zone.BATTLEFIELD:
+            if card.printed_definition is not None:
+                card.definition = card.printed_definition
+                card.printed_definition = None
+
         if destination is Zone.STACK:
             target = self.stack
         elif destination is Zone.BATTLEFIELD:
@@ -660,6 +932,12 @@ class GameState(
             card.is_token
             and source_zone is Zone.BATTLEFIELD
             and destination is not Zone.BATTLEFIELD
+        )
+
+        spell_copy_leaves_stack = (
+            card.is_spell_copy
+            and source_zone is Zone.STACK
+            and destination is not Zone.STACK
         )
 
         card.zone = destination
@@ -678,15 +956,32 @@ class GameState(
             card.counters.clear()
             card.summoned_turn = None
             card.land_type_marks.clear()
-        if not token_leaves_battlefield:
+            card.copied_card_id = None
+            card.copied_card_entry_sequence = None
+        if not token_leaves_battlefield and not spell_copy_leaves_stack:
             target.append(card)
         if destination is Zone.BATTLEFIELD and card.definition.enters_tapped:
             card.tapped = True
         if destination is Zone.BATTLEFIELD:
             card.counters = dict(card.definition.initial_counters)
+            if card.definition.is_lich:
+                controller = self.player(card.controller_id or card.owner_id)
+                lost = max(0, controller.life)
+                controller.life = 0
+                if lost:
+                    for permanent in controller.battlefield:
+                        counter_name = (
+                            permanent.definition.counters_on_controller_life_loss
+                        )
+                        if counter_name is not None:
+                            permanent.counters[counter_name] = (
+                                permanent.counters.get(counter_name, 0) + lost
+                            )
         self.events.append(
             CardMovedEvent(card.id, card.name, source_zone, destination)
         )
+        if lich_destroyed:
+            self.player(prior_controller_id).has_lost = True
         if was_land and destination is Zone.BATTLEFIELD:
             self._record_land_event_opportunities(
                 card.controller_id or card.owner_id,
@@ -782,6 +1077,186 @@ class GameState(
             desired = desired_controllers[permanent.id]
             if permanent.controller_id != desired:
                 self._change_controller(permanent, desired)
+
+    def _copy_artifact_definition(self, card: Card, target: Card) -> None:
+        """Apply Copy Artifact's battlefield-only copy characteristics."""
+
+        card.printed_definition = card.definition
+        card.definition = replace(
+            target.definition,
+            card_types=(
+                target.definition.card_types
+                | frozenset({CardType.ARTIFACT, CardType.ENCHANTMENT})
+            ),
+            colors=frozenset({Color.BLUE}),
+            copies_artifact=False,
+        )
+
+    def _copy_creature_definition(self, card: Card, target: Card) -> None:
+        """Apply Clone's copyable creature characteristics while in play."""
+
+        source_is_doppelganger = bool(
+            card.definition.is_vesuvan_doppelganger
+            or card.printed_definition is not None
+            and card.printed_definition.is_vesuvan_doppelganger
+        )
+        result_is_doppelganger = bool(
+            source_is_doppelganger
+            or target.definition.is_vesuvan_doppelganger
+        )
+        if card.printed_definition is None:
+            card.printed_definition = card.definition
+        card.definition = replace(
+            target.definition,
+            colors=(
+                frozenset({Color.BLUE})
+                if result_is_doppelganger
+                else self.card_colors(target)
+            ),
+            initial_counters=(),
+            copies_artifact=False,
+            copies_creature=False,
+            is_vesuvan_doppelganger=result_is_doppelganger,
+        )
+        card.copied_card_id = target.id
+        card.copied_card_entry_sequence = target.battlefield_entry_sequence
+
+    def _doppelganger_copy_candidates(self, source: Card) -> tuple[Card, ...]:
+        """Return legal different printed creatures for an upkeep switch."""
+
+        return tuple(
+            candidate
+            for player in self.players
+            for candidate in player.battlefield
+            if candidate is not source
+            and not (
+                candidate.id == source.copied_card_id
+                and candidate.battlefield_entry_sequence
+                == source.copied_card_entry_sequence
+            )
+            and CardType.CREATURE in candidate.definition.card_types
+            and not self._is_protected_from(candidate, frozenset({Color.BLUE}))
+        )
+
+    def _queue_doppelganger_choices(self) -> None:
+        """Offer each active-player Doppelganger one pre-upkeep switch."""
+
+        self.pending_doppelganger_choices = [
+            PendingDoppelgangerChoice(
+                self.active_player.id,
+                permanent.id,
+                tuple(
+                    candidate.id
+                    for candidate in self._doppelganger_copy_candidates(permanent)
+                ),
+            )
+            for permanent in tuple(self.active_player.battlefield)
+            if permanent.definition.is_vesuvan_doppelganger
+        ]
+
+    def choose_doppelganger_creature(
+        self, player_id: str, creature: Card | None
+    ) -> None:
+        """Keep the current form or perform the upkeep copy transition."""
+
+        if not self.pending_doppelganger_choices:
+            raise RuntimeError("there is no pending Doppelganger choice")
+        choice = self.pending_doppelganger_choices[0]
+        if choice.chooser_id != player_id:
+            raise RuntimeError(f"{self.player(choice.chooser_id).name} must choose")
+        source = next(
+            (
+                card
+                for card in self.player(player_id).battlefield
+                if card.id == choice.doppelganger_id
+            ),
+            None,
+        )
+        if source is None or not source.definition.is_vesuvan_doppelganger:
+            self.pending_doppelganger_choices.pop(0)
+        else:
+            if creature is not None and (
+                creature.id not in choice.candidate_ids
+                or creature not in self._doppelganger_copy_candidates(source)
+            ):
+                raise ValueError("Vesuvan Doppelganger cannot copy that creature")
+            self.pending_doppelganger_choices.pop(0)
+            if creature is not None:
+                # The old copied creature is treated as leaving play. Clear
+                # state gained from that form, while leaving external effects,
+                # attachments, damage, and tapped orientation intact.
+                for player in self.players:
+                    for permanent in player.battlefield:
+                        permanent.land_type_marks.pop(source.id, None)
+                source.counters.clear()
+                source.plus_one_counters = 0
+                self.ability_activations_this_turn.pop(source.id, None)
+                self._copy_creature_definition(source, creature)
+                self._reconcile_control_effects()
+                self.check_state_based_actions()
+        if not self.pending_doppelganger_choices:
+            self._queue_upkeep_events()
+            self._refresh_graveyard_return_choice()
+
+    def _creature_copy_candidates(self, clone: Card) -> tuple[Card, ...]:
+        requirement = clone.definition.target_requirement
+        assert requirement is not None
+        return tuple(
+            candidate
+            for player in self.players
+            for candidate in player.battlefield
+            if self._requirement_accepts_card(
+                requirement,
+                candidate,
+                clone.controller_id or clone.owner_id,
+                source_colors=self.card_colors(clone),
+            )
+        )
+
+    def queue_creature_copy_entry(self, clone: Card, controller_id: str) -> bool:
+        """Pause a non-cast Clone entry for its mandatory creature choice."""
+
+        clone.controller_id = controller_id
+        candidates = self._creature_copy_candidates(clone)
+        if not candidates:
+            return False
+        self.pending_creature_copy_choices.append(
+            PendingCreatureCopyChoice(
+                controller_id, clone.id, tuple(card.id for card in candidates)
+            )
+        )
+        return True
+
+    def choose_clone_creature(self, player_id: str, creature: Card) -> None:
+        """Complete a Clone entry that was initiated from a non-stack zone."""
+
+        if not self.pending_creature_copy_choices:
+            raise RuntimeError("there is no pending Clone choice")
+        choice = self.pending_creature_copy_choices[0]
+        if choice.chooser_id != player_id:
+            raise RuntimeError(f"{self.player(choice.chooser_id).name} must choose")
+        clone = next(
+            (
+                card
+                for player in self.players
+                for zone in (Zone.GRAVEYARD, Zone.HAND, Zone.EXILE)
+                for card in player.cards_in(zone)
+                if card.id == choice.clone_id
+            ),
+            None,
+        )
+        if (
+            clone is None
+            or creature.id not in choice.candidate_ids
+            or creature not in self._creature_copy_candidates(clone)
+        ):
+            raise ValueError("Clone cannot copy that creature")
+        self.pending_creature_copy_choices.pop(0)
+        self._copy_creature_definition(clone, creature)
+        self._move_card(clone, Zone.BATTLEFIELD)
+        clone.entered_battlefield_turn = self.turn_number
+        clone.summoned_turn = self.turn_number
+        self.check_state_based_actions()
 
     def _change_controller(self, permanent: Card, controller_id: str) -> None:
         """Transfer a battlefield permanent without changing its owner."""
@@ -1017,6 +1492,19 @@ class GameState(
                             damage_colors=self.card_colors(source),
                         )
                     )
+                if source.definition.destroys_attached_land_when_tapped:
+                    self.event_opportunities.append(
+                        RuleEventOpportunity(
+                            RuleEventKind.PERMANENT_TAPPED,
+                            f"{source.name}: {permanent.name} was tapped",
+                            card_id=permanent.id,
+                            source_id=source.id,
+                            source_name=source.name,
+                            source_controller_id=source.controller_id,
+                            affected_player_id=permanent_controller_id,
+                            kudzu_land_destruction=True,
+                        )
+                    )
         if CardType.LAND in permanent.definition.card_types:
             for player in self.players:
                 for source in player.battlefield:
@@ -1156,6 +1644,11 @@ class GameState(
             event for event in self.event_opportunities
             if event.id in closing and event.random_discard
         ]
+        kudzu_events = [
+            event
+            for event in self.event_opportunities
+            if event.id in closing and event.kudzu_land_destruction
+        ]
         if self.pending_damage is not None:
             closing -= {event.id for event in damaging}
             damaging = []
@@ -1167,7 +1660,9 @@ class GameState(
         }
         for event in life_gaining:
             assert event.affected_player_id is not None
-            self.player(event.affected_player_id).life += event.life_gain
+            self._gain_life(
+                self.player(event.affected_player_id), event.life_gain
+            )
         if damaging:
             self._begin_damage_incident(DamageIncidentKind.RULE_EVENT)
             for event in damaging:
@@ -1186,18 +1681,110 @@ class GameState(
             self._discard_random(
                 self.player(event.affected_player_id), event.random_discard
             )
+        if kudzu_events:
+            self._resolve_kudzu_events(kudzu_events)
         if not self.event_opportunities and self.deferred_damage_continuation:
             incident = self.deferred_damage_continuation
             self.deferred_damage_continuation = None
             self._continue_after_damage_incident(incident)
 
+    def _resolve_kudzu_events(
+        self, events: Iterable[RuleEventOpportunity]
+    ) -> None:
+        """Destroy tapped enchanted lands and queue Kudzu's mandatory moves."""
+
+        pending: list[tuple[Card, str]] = []
+        lands: dict[UUID, Card] = {}
+        battlefield = tuple(
+            card for player in self.players for card in player.battlefield
+        )
+        for event in events:
+            source = next(
+                (card for card in battlefield if card.id == event.source_id), None
+            )
+            land = next(
+                (card for card in battlefield if card.id == event.card_id), None
+            )
+            if source is None or land is None or source.enchanted_card_id != land.id:
+                continue
+            if CardType.LAND not in self.card_types(land):
+                continue
+            chooser_id = land.controller_id or land.owner_id
+            source.enchanted_card_id = None
+            pending.append((source, chooser_id))
+            lands[land.id] = land
+        if lands:
+            # The historical ruling treats Kudzu as destroying itself and says
+            # that this destruction cannot be prevented, so no regeneration
+            # incident is opened for the land.
+            self._destroy_permanents(lands.values())
+        for source, chooser_id in pending:
+            if source.zone is not Zone.BATTLEFIELD:
+                continue
+            self._change_controller(source, chooser_id)
+            candidates = tuple(
+                card.id
+                for player in self.players
+                for card in player.battlefield
+                if CardType.LAND in self.card_types(card)
+                and not self.land_is_consecrated(card)
+                and self._requirement_accepts_card(
+                    source.definition.target_requirement,
+                    card,
+                    chooser_id,
+                    source_colors=self.card_colors(source),
+                )
+            )
+            if candidates:
+                self.pending_kudzu_choices.append(
+                    PendingKudzuChoice(chooser_id, source.id, candidates)
+                )
+            else:
+                self._move_card(source, Zone.GRAVEYARD)
+
+    def choose_kudzu_land(self, player_id: str, land: Card) -> None:
+        """Move the front pending Kudzu to the selected legal land."""
+
+        if not self.pending_kudzu_choices:
+            raise RuntimeError("there is no pending Kudzu choice")
+        choice = self.pending_kudzu_choices[0]
+        if choice.chooser_id != player_id:
+            raise RuntimeError(f"{self.player(choice.chooser_id).name} must choose")
+        source = next(
+            (
+                card
+                for player in self.players
+                for card in player.battlefield
+                if card.id == choice.kudzu_id
+            ),
+            None,
+        )
+        if (
+            source is None
+            or land.id not in choice.candidate_ids
+            or land.zone is not Zone.BATTLEFIELD
+            or CardType.LAND not in self.card_types(land)
+            or self.land_is_consecrated(land)
+            or not self._requirement_accepts_card(
+                source.definition.target_requirement,
+                land,
+                player_id,
+                source_colors=self.card_colors(source),
+            )
+        ):
+            raise ValueError("Kudzu cannot be placed on that land")
+        source.enchanted_card_id = land.id
+        self.pending_kudzu_choices.pop(0)
+
     def _destroy_permanents(self, permanents: Iterable[Card]) -> None:
         """Single resolution hook for future regeneration/replacement handling."""
 
+        graveyard_lengths = self._graveyard_lengths()
         doomed = tuple(
             permanent
             for permanent in permanents
             if permanent.zone is Zone.BATTLEFIELD
+            and not self.land_is_consecrated(permanent)
         )
         land_losses = [
             (
@@ -1220,6 +1807,7 @@ class GameState(
                 sources,
                 RuleEventKind.LAND_LOST,
             )
+        self._queue_new_graveyard_order_choices(graveyard_lengths)
 
     def legal_enchantment_targets(self, card: Card) -> list[Card]:
         """Compatibility wrapper for callers using the older Aura API."""
@@ -1268,6 +1856,7 @@ class GameState(
                 for player in self.players
                 for card in player.battlefield
                 if CardType.CREATURE in self.card_types(card)
+                and not self.land_is_consecrated(card)
                 and (
                     self.creature_toughness(card) <= 0
                     or (
@@ -1285,9 +1874,11 @@ class GameState(
             ]
             if not doomed:
                 return
+            graveyard_lengths = self._graveyard_lengths()
             for creature in doomed:
                 if creature.zone is Zone.BATTLEFIELD:
                     self._put_creature_in_graveyard(creature)
+            self._queue_new_graveyard_order_choices(graveyard_lengths)
 
     def concede(self, player_id: str) -> None:
         """Concede the duel and award the ante to the remaining player."""

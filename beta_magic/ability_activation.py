@@ -10,6 +10,7 @@ from .abilities import (
     ActivatedAttackRequirementAbility,
     ActivatedDamageAbility,
     ActivatedGlobalDamageAbility,
+    ActivatedGraveyardReturnAbility,
     ActivatedDestroyAbility,
     ActivatedDestroyAllAbility,
     ActivatedDiscardAbility,
@@ -55,6 +56,10 @@ class AbilityActivationMixin:
             selected_ability = self.activated_abilities(card)[ability_index]
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
+        if isinstance(selected_ability, ActivatedGraveyardReturnAbility):
+            raise RuntimeError(
+                "use this ability from the graveyard during its upkeep prompt"
+            )
         if isinstance(selected_ability, ActivatedPreventDamageAbility):
             if (
                 selected_ability.prevents_life_loss
@@ -83,6 +88,8 @@ class AbilityActivationMixin:
                 source_color=ability.source_color,
                 controller_only=ability.controller_only,
                 prevents_life_loss=ability.prevents_life_loss,
+                unblocked_combat_only=ability.unblocked_combat_only,
+                leaves_one_life_loss=ability.leaves_one_life_loss,
             )
             return None
         if isinstance(selected_ability, ActivatedRedirectDamageAbility):
@@ -248,9 +255,17 @@ class AbilityActivationMixin:
             self.consecutive_passes = 0
             return None
         if isinstance(ability, ActivatedUntapAbility):
+            affected = (
+                self._attached_creature(card)
+                if ability.affects_attached_creature
+                else card
+            )
             self.pay_mana(player, ability.mana_cost)
             self.batch_abilities.append(
-                AbilityOnStack(card, card.name, player.id, ability, (card,))
+                AbilityOnStack(card, card.name, player.id, ability, (affected,))
+            )
+            self.ability_activations_this_turn[card.id] = (
+                self.ability_activations_this_turn.get(card.id, 0) + 1
             )
             self.interruptible_spell_id = None
             self.priority_player_index = (
@@ -352,6 +367,8 @@ class AbilityActivationMixin:
             raise ValueError(f"{card.name} has no such activated ability")
         try:
             ability = self.activated_abilities(card)[ability_index]
+            if isinstance(ability, ActivatedGraveyardReturnAbility):
+                raise RuntimeError("this ability is used from the graveyard")
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
         if not isinstance(
@@ -509,8 +526,21 @@ class AbilityActivationMixin:
             )
         if has_tap_cost and card.tapped:
             raise RuntimeError(f"{card.name} is already tapped")
-        if isinstance(ability, ActivatedUntapAbility) and not card.tapped:
-            raise RuntimeError(f"{card.name} is already untapped")
+        if isinstance(ability, ActivatedUntapAbility):
+            affected = (
+                self._attached_creature(card)
+                if ability.affects_attached_creature
+                else card
+            )
+            if not affected.tapped:
+                raise RuntimeError(f"{affected.name} is already untapped")
+            if ability.controller_turn_only and player is not self.active_player:
+                raise RuntimeError(f"{card.name} can only be used during your turn")
+            if (
+                ability.once_per_turn
+                and self.ability_activations_this_turn.get(card.id, 0)
+            ):
+                raise RuntimeError(f"{card.name} has already been used this turn")
         if (
             has_tap_cost
             and CardType.CREATURE in card.definition.card_types
@@ -564,6 +594,8 @@ class AbilityActivationMixin:
 
         try:
             ability = self.activated_abilities(card)[ability_index]
+            if isinstance(ability, ActivatedGraveyardReturnAbility):
+                return False
             if isinstance(ability, ActivatedRegenerationAbility):
                 self._validate_regeneration_activation(
                     player_id, card, ability_index

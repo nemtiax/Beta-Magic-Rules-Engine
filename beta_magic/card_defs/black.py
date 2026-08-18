@@ -4,6 +4,7 @@ from ..abilities import (
     ActivatedCounterSpellAbility,
     ActivatedDestroyAbility,
     ActivatedGlobalDamageAbility,
+    ActivatedGraveyardReturnAbility,
     ActivatedAttackRequirementAbility,
     ActivatedPumpAbility,
     ActivatedRegenerationAbility,
@@ -18,6 +19,8 @@ from ..effects import (
     DiscardHandAnteAndDrawEffect,
     DemonicAttorneyEffect,
     LibrarySearchEffect,
+    SacrificeCreatureForManaEffect,
+    DrainLifeEffect,
     SwapLibraryTopWithAnteEffect,
     EffectScope,
     MoveTargetsEffect,
@@ -100,6 +103,24 @@ DEMONIC_TUTOR = CardDefinition(
     ),
     colors=frozenset({Color.BLACK}),
     spell_effects=(LibrarySearchEffect(),),
+)
+
+DRAIN_LIFE = CardDefinition(
+    name="Drain Life",
+    card_types=frozenset({CardType.SORCERY}),
+    mana_cost=ManaCost.parse("{X}{1}{B}"),
+    rules_text=(
+        "Spend only black mana for X. Drain Life deals X damage to any one "
+        "target. Gain life equal to damage inflicted, but no more than a "
+        "target creature's toughness."
+    ),
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        players=True,
+    ),
+    spell_effects=(DrainLifeEffect(),),
 )
 
 DEATHGRIP = CardDefinition(
@@ -618,6 +639,23 @@ SIMULACRUM = CardDefinition(
     spell_effects=(RetroactiveDamageTransferEffect(),),
 )
 
+SACRIFICE = CardDefinition(
+    name="Sacrifice",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{B}"),
+    rules_text=(
+        "Sacrifice one of your creatures without regeneration. Add black mana "
+        "equal to that creature's casting cost."
+    ),
+    colors=frozenset({Color.BLACK}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        controller_only=True,
+    ),
+    spell_effects=(SacrificeCreatureForManaEffect(Color.BLACK),),
+)
+
 MIND_TWIST = CardDefinition(
     name="Mind Twist",
     card_types=frozenset({CardType.SORCERY}),
@@ -626,6 +664,39 @@ MIND_TWIST = CardDefinition(
     colors=frozenset({Color.BLACK}),
     target_requirement=TargetRequirement(players=True, opponent_only=True),
     spell_effects=(DiscardCardsEffect(amount_per_x=1, random=True),),
+)
+
+NETHER_SHADOW = CardDefinition(
+    name="Nether Shadow",
+    card_types=frozenset({CardType.CREATURE}),
+    mana_cost=ManaCost.parse("{B}{B}"),
+    rules_text=(
+        "During your upkeep, if at least three creature cards are above "
+        "Nether Shadow in your graveyard, you may pay its casting cost to "
+        "return it to play. It may attack that turn."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Shadow",),
+    power=1,
+    toughness=1,
+    activated_abilities=(ActivatedGraveyardReturnAbility(),),
+    continuous_effects=(
+        ContinuousEffect(may_attack_with_summoning_sickness=True),
+    ),
+)
+
+LICH = CardDefinition(
+    name="Lich",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{B}{B}{B}{B}"),
+    rules_text=(
+        "You lose all life. If you gain life, draw one card for each life "
+        "instead. For each point of damage you suffer, destroy one of your "
+        "cards in play; creatures destroyed this way cannot regenerate. You "
+        "lose if Lich is destroyed or if you cannot destroy enough cards."
+    ),
+    colors=frozenset({Color.BLACK}),
+    is_lich=True,
 )
 
 FEAR = CardDefinition(
@@ -683,14 +754,17 @@ BLACK_CARDS = tuple(
             DEMONIC_ATTORNEY,
             DEMONIC_TUTOR,
             DRUDGE_SKELETONS,
+            DRAIN_LIFE,
             EVIL_PRESENCE,
             FEAR,
             FROZEN_SHADE,
             GLOOM,
             HOWL_FROM_BEYOND,
             HYPNOTIC_SPECTER,
+            LICH,
             LORD_OF_THE_PIT,
             MIND_TWIST,
+            NETHER_SHADOW,
             NETTLING_IMP,
             NIGHTMARE,
             PARALYZE,
@@ -698,6 +772,7 @@ BLACK_CARDS = tuple(
             PLAGUE_RATS,
             RAISE_DEAD,
             ROYAL_ASSASSIN,
+            SACRIFICE,
             SCATHE_ZOMBIES,
             SCAVENGING_GHOUL,
             SENGIR_VAMPIRE,

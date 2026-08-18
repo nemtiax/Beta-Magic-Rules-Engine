@@ -76,6 +76,12 @@ class UiPresentationBuilder:
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
         turn_choice = self.game.pending_turn_choice
+        draw_choice = self.game.pending_draw_choice
+        graveyard_return_choice = self.game.pending_graveyard_return_choice
+        graveyard_order_choice = (
+            self.game.pending_graveyard_order_choices[0]
+            if self.game.pending_graveyard_order_choices else None
+        )
         discard_choice = (
             self.game.pending_discard_choices[0]
             if self.game.pending_discard_choices else None
@@ -85,9 +91,25 @@ class UiPresentationBuilder:
             if self.game.pending_balance is not None
             else None
         )
+        lich_choice = (
+            self.game.pending_lich_choices[0]
+            if self.game.pending_lich_choices else None
+        )
         untap_choice = self.game.pending_untap_choice
         counter_rewind = self.game.current_counter_rewind()
         upkeep_land_choice = self.game.pending_upkeep_land_loss
+        kudzu_choice = (
+            self.game.pending_kudzu_choices[0]
+            if self.game.pending_kudzu_choices else None
+        )
+        creature_copy_choice = (
+            self.game.pending_creature_copy_choices[0]
+            if self.game.pending_creature_copy_choices else None
+        )
+        doppelganger_choice = (
+            self.game.pending_doppelganger_choices[0]
+            if self.game.pending_doppelganger_choices else None
+        )
         hand_reveal = (
             self.game.pending_hand_reveals[0]
             if self.game.pending_hand_reveals else None
@@ -109,6 +131,77 @@ class UiPresentationBuilder:
             self.game.pending_library_search_choices[0]
             if self.game.pending_library_search_choices else None
         )
+        fireball_card = self._fireball_card()
+        choosing_fireball = fireball_card is not None
+        choosing_fork = self._fork_original() is not None
+        channel_maximum = self.game.maximum_channel_mana(perspective.id)
+        channel_timing_open = bool(
+            self.game.current_phase is not TurnPhase.UNTAP
+            and (
+                self.game.priority_player_index is None
+                or self.game.players[self.game.priority_player_index].id
+                == perspective.id
+            )
+            and not (
+                combat is not None
+                and combat.step in {
+                    CombatStep.DECLARE_ATTACKERS,
+                    CombatStep.DECLARE_BLOCKERS,
+                }
+            )
+        )
+        channel_choice_free = not (
+            self.game.pending_cast
+            or self.game.pending_activation
+            or self.game.pending_prevention
+            or self.game.pending_redirection
+            or self.game.pending_turn_choice
+            or draw_choice is not None
+            or graveyard_return_choice is not None
+            or graveyard_order_choice is not None
+            or self.game.pending_kudzu_choices
+            or self.game.pending_creature_copy_choices
+            or self.game.pending_doppelganger_choices
+            or self.game.pending_discard_choices
+            or self.game.pending_balance is not None
+            or lich_choice is not None
+            or hand_reveal is not None
+            or drain_power_choice is not None
+            or power_sink_payment is not None
+            or demonic_attorney_choice is not None
+            or natural_selection_choice is not None
+            or library_search_choice is not None
+            or choosing_fireball
+            or choosing_fork
+            or untap_choice is not None
+            or counter_rewind is not None
+            or upkeep_land_choice is not None
+        )
+        can_channel = bool(
+            channel_maximum and channel_timing_open and channel_choice_free
+        )
+        can_choose_fireball = self._can_choose_fireball()
+        fireball_targets: list[dict[str, Any]] = []
+        for key in self._choices.fireball_target_keys:
+            kind, identifier = key.split(":", 1)
+            target = (
+                self._card_by_id(UUID(identifier))
+                if kind == "card"
+                else self.game.player(identifier)
+            )
+            if target is not None:
+                fireball_targets.append(
+                    {"key": key, "name": target.name, "kind": kind}
+                )
+        fork_targets: list[dict[str, Any]] = []
+        for key in self._choices.fork_target_keys:
+            kind, identifier = key.split(":", 1)
+            target = (
+                self._card_by_id(UUID(identifier))
+                if kind == "card" else self.game.player(identifier)
+            )
+            if target is not None:
+                fork_targets.append({"key": key, "name": target.name, "kind": kind})
         legal_search_cards = (
             self.game.legal_library_search_cards()
             if library_search_choice is not None else ()
@@ -145,17 +238,23 @@ class UiPresentationBuilder:
             or self.game.pending_prevention
             or self.game.pending_redirection
             or self.game.pending_turn_choice
+            or draw_choice is not None
+            or graveyard_return_choice is not None
+            or graveyard_order_choice is not None
             or self.game.pending_discard_choices
             or self.game.pending_balance is not None
+            or lich_choice is not None
             or hand_reveal is not None
             or drain_power_choice is not None
             or power_sink_payment is not None
             or demonic_attorney_choice is not None
             or natural_selection_choice is not None
             or library_search_choice is not None
+            or choosing_fireball
             or untap_choice is not None
             or counter_rewind is not None
             or upkeep_land_choice is not None
+            or doppelganger_choice is not None
             or pending_priority
         )
         perspective_is_active = self.perspective_index == self.game.active_player_index
@@ -244,6 +343,38 @@ class UiPresentationBuilder:
             "activePlayer": self.game.active_player.name,
             "message": self._message,
             "timeVaultChoice": turn_choice is not None,
+            "drawSkipChoice": draw_choice is not None,
+            "drawSkipPlayer": (
+                draw_choice.player_id if draw_choice is not None else ""
+            ),
+            "drawSkipMaximum": (
+                draw_choice.maximum_skips if draw_choice is not None else 0
+            ),
+            "drawSkipTotal": (
+                draw_choice.total_draws if draw_choice is not None else 0
+            ),
+            "graveyardReturnChoice": graveyard_return_choice is not None,
+            "graveyardReturnPlayer": (
+                graveyard_return_choice.player_id
+                if graveyard_return_choice is not None else ""
+            ),
+            "graveyardReturnCards": (
+                [self._card_data(card) for card in self.game.legal_graveyard_returns()]
+                if graveyard_return_choice is not None else []
+            ),
+            "graveyardOrderChoice": graveyard_order_choice is not None,
+            "graveyardOrderPlayer": (
+                graveyard_order_choice.player_id
+                if graveyard_order_choice is not None else ""
+            ),
+            "graveyardOrderCards": (
+                [
+                    self._card_data(self._card_by_id(card_id))
+                    for card_id in graveyard_order_choice.card_ids_bottom_to_top
+                    if self._card_by_id(card_id) is not None
+                ]
+                if graveyard_order_choice is not None else []
+            ),
             "demonicAttorneyChoice": demonic_attorney_choice is not None,
             "demonicAttorneyOpponent": (
                 self.game.player(demonic_attorney_choice.opponent_id).name
@@ -302,8 +433,35 @@ class UiPresentationBuilder:
                 and library_search_choice.chooser_id == perspective.id
                 else []
             ),
+            "choosingFireball": choosing_fireball,
+            "canChooseFireball": can_choose_fireball,
+            "fireballX": self._choices.fireball_x_value,
+            "fireballXMaximum": self._choices.fireball_x_maximum,
+            "fireballTargets": fireball_targets,
+            "fireballTargetCount": len(fireball_targets),
+            "fireballDamageEach": (
+                self._choices.fireball_x_value // len(fireball_targets)
+                if fireball_targets else 0
+            ),
+            "choosingFork": choosing_fork,
+            "canChooseFork": self._can_choose_fork(),
+            "forkOriginalName": (
+                self._fork_original().name if self._fork_original() is not None else ""
+            ),
+            "forkX": self._choices.fork_x_value,
+            "forkTargets": fork_targets,
+            "forkTargetCount": len(fork_targets),
             "effectDiscardRequired": discard_choice is not None,
             "balanceRequired": balance_choice is not None,
+            "lichChoiceRequired": lich_choice is not None,
+            "lichChoicePlayer": (
+                self.game.player(lich_choice.player_id).name
+                if lich_choice is not None else ""
+            ),
+            "lichChoiceCount": lich_choice.amount if lich_choice is not None else 0,
+            "canChooseLich": bool(
+                lich_choice is not None and lich_choice.player_id == perspective.id
+            ),
             "untapChoiceRequired": untap_choice is not None,
             "counterRewindRequired": counter_rewind is not None,
             "counterRewindCanChoose": bool(
@@ -335,6 +493,39 @@ class UiPresentationBuilder:
             "upkeepLandChoiceSource": (
                 upkeep_land_choice.source_name
                 if upkeep_land_choice is not None else ""
+            ),
+            "kudzuChoiceRequired": kudzu_choice is not None,
+            "kudzuChoicePlayer": (
+                self.game.player(kudzu_choice.chooser_id).name
+                if kudzu_choice is not None else ""
+            ),
+            "canChooseKudzu": bool(
+                kudzu_choice is not None
+                and kudzu_choice.chooser_id == perspective.id
+            ),
+            "cloneChoiceRequired": creature_copy_choice is not None,
+            "cloneChoicePlayer": (
+                self.game.player(creature_copy_choice.chooser_id).name
+                if creature_copy_choice is not None else ""
+            ),
+            "creatureCopyChoiceSource": (
+                self._card_by_id(creature_copy_choice.clone_id).name
+                if creature_copy_choice is not None
+                and self._card_by_id(creature_copy_choice.clone_id) is not None
+                else "copy creature"
+            ),
+            "canChooseClone": bool(
+                creature_copy_choice is not None
+                and creature_copy_choice.chooser_id == perspective.id
+            ),
+            "doppelgangerChoiceRequired": doppelganger_choice is not None,
+            "doppelgangerChoicePlayer": (
+                self.game.player(doppelganger_choice.chooser_id).name
+                if doppelganger_choice is not None else ""
+            ),
+            "canChooseDoppelganger": bool(
+                doppelganger_choice is not None
+                and doppelganger_choice.chooser_id == perspective.id
             ),
             "canChooseUpkeepLand": bool(
                 upkeep_land_choice is not None
@@ -392,6 +583,8 @@ class UiPresentationBuilder:
                 )
             ),
             "canAdvance": can_advance and not choosing_combat_damage,
+            "canChannel": can_channel,
+            "channelMaximum": channel_maximum,
             "advanceLabel": advance_label,
             "canBeginAttack": can_begin_attack,
             "canDeclareAttackers": can_declare_attackers,
@@ -419,7 +612,7 @@ class UiPresentationBuilder:
                 self.game.player(pending_damage_assigners[0]).name
                 if pending_damage_assigners else ""
             ),
-            "priorityRequired": pending_priority,
+            "priorityRequired": pending_priority and lich_choice is None,
             "contextActionsVisible": bool(
                 can_begin_attack
                 or can_declare_attackers
@@ -430,8 +623,15 @@ class UiPresentationBuilder:
                 or upkeep_sacrifice_required
                 or pending_priority
                 or balance_choice is not None
+                or lich_choice is not None
                 or untap_choice is not None
                 or upkeep_land_choice is not None
+                or choosing_fireball
+                or draw_choice is not None
+                or graveyard_return_choice is not None
+                or graveyard_order_choice is not None
+                or can_channel
+                or doppelganger_choice is not None
             ),
             "timeVaultPlayer": (
                 turn_choice.player_name if turn_choice is not None else ""
@@ -452,6 +652,7 @@ class UiPresentationBuilder:
             "targeting": (
                 self.game.pending_cast is not None
                 or self.game.pending_activation is not None
+                or can_choose_fireball
             ),
             "choosingX": self._choices.x_card_id is not None,
             "choosingLandType": self._choices.land_type_card_id is not None,
@@ -783,7 +984,20 @@ class UiPresentationBuilder:
             "name": player.name,
             "life": player.life,
             "mana": mana_text(player),
-            "legalTarget": player in self.game.legal_player_targets_for(),
+            "legalTarget": (
+                player in self.game.legal_player_targets_for()
+                or self._can_choose_fireball()
+                or bool(
+                    self._can_choose_fork()
+                    and player in self.game.fork_copy_target_options(
+                        self._fork_original()
+                    )[1]
+                )
+            ),
+            "selectedTarget": (
+                f"player:{player.id}" in self._choices.fireball_target_keys
+                or f"player:{player.id}" in self._choices.fork_target_keys
+            ),
             "libraryCount": len(player.library),
             "handCount": len(player.hand),
             "hand": [self._card_data(card) for card in player.hand]
@@ -838,6 +1052,10 @@ class UiPresentationBuilder:
             if self.game.pending_balance is not None
             else None
         )
+        lich_choice = (
+            self.game.pending_lich_choices[0]
+            if self.game.pending_lich_choices else None
+        )
         upkeep_sacrifices = (
             self.game.legal_upkeep_sacrifices(
                 self.game.timed_events[0].affected_player_id
@@ -850,6 +1068,18 @@ class UiPresentationBuilder:
             else []
         )
         upkeep_land_choice = self.game.pending_upkeep_land_loss
+        kudzu_choice = (
+            self.game.pending_kudzu_choices[0]
+            if self.game.pending_kudzu_choices else None
+        )
+        creature_copy_choice = (
+            self.game.pending_creature_copy_choices[0]
+            if self.game.pending_creature_copy_choices else None
+        )
+        doppelganger_choice = (
+            self.game.pending_doppelganger_choices[0]
+            if self.game.pending_doppelganger_choices else None
+        )
         combat_role, combat_label, combat_detail = self._combat_ui.card_status(
             self.game, card
         )
@@ -860,8 +1090,28 @@ class UiPresentationBuilder:
             "background": background,
             "foreground": foreground,
             "tapped": card.tapped,
-            "selected": card.id in self.selected_card_ids,
-            "legalTarget": card in self.game.legal_targets_for(),
+            "selected": (
+                card.id in self.selected_card_ids
+                or f"card:{card.id}" in self._choices.fireball_target_keys
+                or f"card:{card.id}" in self._choices.fork_target_keys
+            ),
+            "legalTarget": (
+                card in self.game.legal_targets_for()
+                or card in self._fireball_legal_cards()
+                or card in self._fork_legal_cards()
+                or bool(
+                    kudzu_choice is not None
+                    and card.id in kudzu_choice.candidate_ids
+                )
+                or bool(
+                    creature_copy_choice is not None
+                    and card.id in creature_copy_choice.candidate_ids
+                )
+                or bool(
+                    doppelganger_choice is not None
+                    and card.id in doppelganger_choice.candidate_ids
+                )
+            ),
             "balanceEligible": bool(
                 balance_choice is not None
                 and card.id in balance_choice.candidate_ids
@@ -870,6 +1120,11 @@ class UiPresentationBuilder:
                     if balance_choice.category == "hand"
                     else Zone.BATTLEFIELD
                 )
+            ),
+            "lichEligible": bool(
+                lich_choice is not None
+                and card.id in lich_choice.candidate_ids
+                and card.zone is Zone.BATTLEFIELD
             ),
             "upkeepSacrificeEligible": card in upkeep_sacrifices,
             "upkeepLandChoiceEligible": bool(
