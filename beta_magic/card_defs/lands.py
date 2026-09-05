@@ -29,8 +29,9 @@ def _dual_land(
         card_types=frozenset({CardType.LAND}),
         subtypes=(first_subtype, second_subtype),
         rules_text=(
-            f"Tap to add {{{first_color.value}}} or "
-            f"{{{second_color.value}}} to your mana pool."
+            f"Counts as both {first_subtype} and {second_subtype}. Tap to add "
+            f"either {first_color.name.lower()} or "
+            f"{second_color.name.lower()} mana to your mana pool."
         ),
         activated_abilities=(
             ActivatedManaAbility(first_color),

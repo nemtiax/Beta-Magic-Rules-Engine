@@ -38,7 +38,7 @@ class CardDefinitionArchitectureTests(unittest.TestCase):
             + ARTIFACT_CARDS
             + LAND_CARDS
         )
-        self.assertEqual(len(grouped), 280)
+        self.assertEqual(len(grouped), 286)
         self.assertEqual(len(grouped), len(set(grouped)))
         self.assertEqual(set(grouped), set(ALL_CARDS))
 

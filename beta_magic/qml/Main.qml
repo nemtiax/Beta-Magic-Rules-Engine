@@ -459,6 +459,7 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.NoAutoClose
         visible: gameState.graveyardOrderChoice
+                 && !gameState.libraryDiscardChoice
         title: "Order simultaneous graveyard cards"
 
         contentItem: ColumnLayout {
@@ -508,6 +509,141 @@ ApplicationWindow {
             }
             Button {
                 visible: gameState.graveyardOrderPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: tombCleanupPicker
+        anchors.centerIn: parent
+        width: 500
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.tombCleanupChoice
+        title: "Remove a Cyclopean Tomb mire counter"
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.tombCleanupPlayer === gameState.perspective.id
+                      ? "Choose one mire effect to end this upkeep."
+                      : "Waiting for the affected player to remove a mire counter."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.tombCleanupPlayer === gameState.perspective.id
+                       ? gameState.tombCleanupMarks : []
+                Button {
+                    required property var modelData
+                    text: modelData.label
+                    Layout.fillWidth: true
+                    onClicked: gameBridge.chooseTombCleanupMark(modelData.id)
+                }
+            }
+            Button {
+                visible: gameState.tombCleanupPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: libraryDiscardPicker
+        anchors.centerIn: parent
+        width: 620
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.libraryDiscardChoice
+        title: "Library of Leng — " + gameState.libraryDiscardSource
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.libraryDiscardPlayer === gameState.perspective.id
+                      ? "Choose each forced discard's destination. Cards placed on the library may then be ordered below."
+                      : "Waiting for the affected player to resolve Library of Leng."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: gameState.libraryDiscardPlayer === gameState.perspective.id
+                       ? gameState.libraryDiscardCards : []
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Label {
+                        text: modelData.name
+                        color: "#ffffff"
+                        Layout.fillWidth: true
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered: window.inspectedCard = modelData
+                        }
+                    }
+                    Button {
+                        text: modelData.toLibrary
+                              ? "Top of library" : "Graveyard"
+                        onClicked: gameBridge.toggleLibraryDiscardDestination(
+                                       modelData.id)
+                    }
+                }
+            }
+            Label {
+                visible: gameState.libraryDiscardTopCards.length > 0
+                text: "Library order (bottom to top):"
+                color: "#9fd6a8"
+                font.bold: true
+            }
+            Repeater {
+                model: gameState.libraryDiscardPlayer === gameState.perspective.id
+                       ? gameState.libraryDiscardTopCards : []
+                RowLayout {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    Label {
+                        text: (index === 0 ? "Bottom: "
+                              : index === gameState.libraryDiscardTopCards.length - 1
+                                ? "Top: " : "") + modelData.name
+                        color: "#ffffff"
+                        Layout.fillWidth: true
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered: window.inspectedCard = modelData
+                        }
+                    }
+                    Button {
+                        text: "Down"
+                        enabled: index > 0
+                        onClicked: gameBridge.moveLibraryDiscardCard(
+                                       modelData.id, -1)
+                    }
+                    Button {
+                        text: "Up"
+                        enabled: index < gameState.libraryDiscardTopCards.length - 1
+                        onClicked: gameBridge.moveLibraryDiscardCard(
+                                       modelData.id, 1)
+                    }
+                }
+            }
+            Button {
+                visible: gameState.libraryDiscardPlayer === gameState.perspective.id
+                text: "Confirm destinations"
+                Layout.fillWidth: true
+                onClicked: gameBridge.confirmLibraryDiscard()
+            }
+            Button {
+                visible: gameState.libraryDiscardPlayer !== gameState.perspective.id
                 text: "Switch perspective"
                 Layout.fillWidth: true
                 onClicked: gameBridge.switchPerspective()
@@ -887,6 +1023,56 @@ ApplicationWindow {
                 text: "Cancel"
                 Layout.alignment: Qt.AlignRight
                 onClicked: gameBridge.cancelLandTypeChoice()
+            }
+        }
+    }
+
+    Dialog {
+        id: textWordPicker
+        anchors.centerIn: parent
+        width: 430
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingTextWords
+        title: "Choose words for " + gameState.textWordCardName
+        onOpened: {
+            oldWord.currentIndex = 0
+            newWord.currentIndex = 0
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: "Changing " + gameState.textWordTargetName
+                color: "#ffffff"
+            }
+            Label { text: "Current " + gameState.textWordKind + " word" }
+            ComboBox {
+                id: oldWord
+                Layout.fillWidth: true
+                model: gameState.textWordFromChoices
+            }
+            Label { text: "Replace it with" }
+            ComboBox {
+                id: newWord
+                Layout.fillWidth: true
+                model: gameState.textWordToChoices
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button {
+                    text: "Cancel"
+                    onClicked: gameBridge.cancelTextWordChoice()
+                }
+                Button {
+                    text: "Confirm"
+                    enabled: oldWord.currentText.length > 0
+                             && newWord.currentText.length > 0
+                             && oldWord.currentText !== newWord.currentText
+                    onClicked: gameBridge.chooseTextWords(
+                        oldWord.currentText, newWord.currentText
+                    )
+                }
             }
         }
     }
@@ -1555,6 +1741,52 @@ ApplicationWindow {
                                 text: "Cancel"
                                 visible: !gameState.preventionPaid
                                 onClicked: gameBridge.cancelPrevention()
+                            }
+                        }
+                        RowLayout {
+                            visible: gameState.guardianAngelOptions.length > 0
+                                     && !gameState.choosingGuardianAngelPayment
+                            Label {
+                                text: "Guardian Angel:"
+                                color: "#9fd6a8"
+                                font.bold: true
+                            }
+                            Repeater {
+                                model: gameState.guardianAngelOptions
+                                delegate: Button {
+                                    required property var modelData
+                                    text: modelData.label
+                                    onClicked: gameBridge.chooseGuardianAngelPacket(
+                                                   modelData.id)
+                                }
+                            }
+                        }
+                        RowLayout {
+                            visible: gameState.choosingGuardianAngelPayment
+                            Label {
+                                text: "Prevent " + gameState.guardianAngelAmount
+                                      + " damage with Guardian Angel"
+                                color: "#9fd6a8"
+                                font.bold: true
+                            }
+                            Button {
+                                text: "−"
+                                enabled: gameState.guardianAngelAmount > 1
+                                onClicked: gameBridge.adjustGuardianAngelAmount(-1)
+                            }
+                            Button {
+                                text: "+"
+                                enabled: gameState.guardianAngelAmount
+                                         < gameState.guardianAngelMaximum
+                                onClicked: gameBridge.adjustGuardianAngelAmount(1)
+                            }
+                            Button {
+                                text: "Cancel"
+                                onClicked: gameBridge.cancelGuardianAngelPayment()
+                            }
+                            Button {
+                                text: "Pay"
+                                onClicked: gameBridge.confirmGuardianAngelPayment()
                             }
                         }
                         RowLayout {

@@ -8,6 +8,7 @@ from .abilities import ActivatedRedirectDamageAbility
 from .cards import Card
 from .effects import (
     CounterPurchaseUpkeepEffect,
+    ChangeTextWordEffect,
     CounterRedemptionUpkeepEffect,
     OptionalUpkeepPaymentEffect,
     PartialUpkeepDamageEffect,
@@ -15,7 +16,7 @@ from .effects import (
     UpkeepCreatureSacrificeEffect,
 )
 from .game import PlayerState
-from .types import BASIC_LAND_SUBTYPES, CardType, CombatStep, TurnPhase, Zone
+from .types import BASIC_LAND_SUBTYPES, CardType, Color, CombatStep, TurnPhase, Zone
 
 
 def mana_text(player: PlayerState) -> str:
@@ -32,6 +33,37 @@ class UiPresentationBuilder:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._view_model, name)
+
+    def _text_word_kind(self) -> str:
+        pending = self.game.pending_cast
+        if pending is None:
+            return ""
+        effect = next(
+            (
+                effect
+                for effect in pending.spell.definition.spell_effects
+                if isinstance(effect, ChangeTextWordEffect)
+            ),
+            None,
+        )
+        return effect.word_kind if effect is not None else ""
+
+    def _text_word_from_choices(self) -> list[str]:
+        target = self._card_by_id(self._choices.word_target_id)
+        if target is None:
+            return []
+        if self._text_word_kind() == "color":
+            return [color.name.title() for color in self.game.current_color_words(target)]
+        return list(self.game.current_land_words(target))
+
+    def _text_word_to_choices(self) -> list[str]:
+        if self._text_word_kind() == "color":
+            return [
+                color.name.title()
+                for color in Color
+                if color is not Color.COLORLESS
+            ]
+        return list(BASIC_LAND_SUBTYPES)
 
     def build(self) -> dict[str, Any]:
         perspective = self.game.players[self.perspective_index]
@@ -85,6 +117,14 @@ class UiPresentationBuilder:
         discard_choice = (
             self.game.pending_discard_choices[0]
             if self.game.pending_discard_choices else None
+        )
+        library_discard_choice = (
+            self.game.pending_library_discard_choices[0]
+            if self.game.pending_library_discard_choices else None
+        )
+        tomb_cleanup_choice = (
+            self.game.pending_tomb_cleanup_choices[0]
+            if self.game.pending_tomb_cleanup_choices else None
         )
         balance_choice = (
             self.game.pending_balance.current_choice
@@ -163,6 +203,8 @@ class UiPresentationBuilder:
             or self.game.pending_creature_copy_choices
             or self.game.pending_doppelganger_choices
             or self.game.pending_discard_choices
+            or self.game.pending_library_discard_choices
+            or self.game.pending_tomb_cleanup_choices
             or self.game.pending_balance is not None
             or lich_choice is not None
             or hand_reveal is not None
@@ -173,6 +215,7 @@ class UiPresentationBuilder:
             or library_search_choice is not None
             or choosing_fireball
             or choosing_fork
+            or self._choices.guardian_angel_packet_id is not None
             or untap_choice is not None
             or counter_rewind is not None
             or upkeep_land_choice is not None
@@ -242,6 +285,8 @@ class UiPresentationBuilder:
             or graveyard_return_choice is not None
             or graveyard_order_choice is not None
             or self.game.pending_discard_choices
+            or self.game.pending_library_discard_choices
+            or self.game.pending_tomb_cleanup_choices
             or self.game.pending_balance is not None
             or lich_choice is not None
             or hand_reveal is not None
@@ -251,6 +296,7 @@ class UiPresentationBuilder:
             or natural_selection_choice is not None
             or library_search_choice is not None
             or choosing_fireball
+            or self._choices.guardian_angel_packet_id is not None
             or untap_choice is not None
             or counter_rewind is not None
             or upkeep_land_choice is not None
@@ -304,7 +350,7 @@ class UiPresentationBuilder:
             idle
             and perspective_is_active
             and self.game.current_phase is TurnPhase.DISCARD
-            and self.game.active_player.discard_required
+            and self.game.required_discards(self.game.active_player)
         )
         can_advance = bool(
             idle
@@ -452,6 +498,55 @@ class UiPresentationBuilder:
             "forkTargets": fork_targets,
             "forkTargetCount": len(fork_targets),
             "effectDiscardRequired": discard_choice is not None,
+            "libraryDiscardChoice": library_discard_choice is not None,
+            "tombCleanupChoice": tomb_cleanup_choice is not None,
+            "tombCleanupPlayer": (
+                tomb_cleanup_choice.player_id
+                if tomb_cleanup_choice is not None else ""
+            ),
+            "tombCleanupMarks": (
+                [
+                    {
+                        "id": str(mark.id),
+                        "label": self._tomb_mark_label(mark),
+                    }
+                    for mark in self.game.cyclopean_tomb_marks
+                    if mark.id in tomb_cleanup_choice.mark_ids
+                ]
+                if tomb_cleanup_choice is not None
+                and tomb_cleanup_choice.player_id == perspective.id else []
+            ),
+            "libraryDiscardPlayer": (
+                library_discard_choice.player_id
+                if library_discard_choice is not None else ""
+            ),
+            "libraryDiscardSource": (
+                library_discard_choice.source_name
+                if library_discard_choice is not None else ""
+            ),
+            "libraryDiscardCards": (
+                [
+                    {
+                        **self._card_data(self._card_by_id(card_id)),
+                        "toLibrary": card_id in set(
+                            library_discard_choice.library_ids_bottom_to_top
+                        ),
+                    }
+                    for card_id in library_discard_choice.card_ids
+                    if self._card_by_id(card_id) is not None
+                ]
+                if library_discard_choice is not None
+                and library_discard_choice.player_id == perspective.id else []
+            ),
+            "libraryDiscardTopCards": (
+                [
+                    self._card_data(self._card_by_id(card_id))
+                    for card_id in library_discard_choice.library_ids_bottom_to_top
+                    if self._card_by_id(card_id) is not None
+                ]
+                if library_discard_choice is not None
+                and library_discard_choice.player_id == perspective.id else []
+            ),
             "balanceRequired": balance_choice is not None,
             "lichChoiceRequired": lich_choice is not None,
             "lichChoicePlayer": (
@@ -656,6 +751,22 @@ class UiPresentationBuilder:
             ),
             "choosingX": self._choices.x_card_id is not None,
             "choosingLandType": self._choices.land_type_card_id is not None,
+            "choosingTextWords": self._choices.word_target_id is not None,
+            "textWordCardName": (
+                self.game.pending_cast.spell.name
+                if self._choices.word_target_id is not None
+                and self.game.pending_cast is not None
+                else ""
+            ),
+            "textWordTargetName": (
+                self._card_by_id(self._choices.word_target_id).name
+                if self._choices.word_target_id is not None
+                and self._card_by_id(self._choices.word_target_id) is not None
+                else ""
+            ),
+            "textWordKind": self._text_word_kind(),
+            "textWordFromChoices": self._text_word_from_choices(),
+            "textWordToChoices": self._text_word_to_choices(),
             "choosingMode": self._choices.mode_card_id is not None,
             "choosingDamageSource": self._choices.damage_source_card_id is not None,
             "damageSourceCardName": (
@@ -811,6 +922,22 @@ class UiPresentationBuilder:
                 if self.game.pending_prevention is not None
                 else False
             ),
+            "guardianAngelOptions": [
+                {
+                    "id": str(packet.id),
+                    "label": (
+                        f"{packet.source_name}: up to {maximum} to "
+                        f"{packet.recipient_name}"
+                    ),
+                }
+                for packet, maximum
+                in self.game.guardian_angel_payment_options(perspective.id)
+            ],
+            "choosingGuardianAngelPayment": (
+                self._choices.guardian_angel_packet_id is not None
+            ),
+            "guardianAngelAmount": self._choices.guardian_angel_amount,
+            "guardianAngelMaximum": self._choices.guardian_angel_maximum,
             "destructionWindow": (
                 destruction_incident.step.value.replace("_", " ").title()
                 if destruction_incident is not None
@@ -1029,6 +1156,24 @@ class UiPresentationBuilder:
             "anteCount": len(player.ante),
         }
 
+    def _tomb_mark_label(self, mark: Any) -> str:
+        land = self._card_by_id(mark.land_id)
+        land_name = land.name if land is not None else "Departed land"
+        siblings = sorted(
+            (
+                item for item in self.game.cyclopean_tomb_marks
+                if item.effect_id == mark.effect_id
+                and item.land_id == mark.land_id
+            ),
+            key=lambda item: item.sequence,
+        )
+        if len(siblings) == 1:
+            return land_name
+        position = siblings.index(mark) + 1
+        age = "oldest" if position == 1 else "newest" if position == len(siblings) else ""
+        suffix = f" ({age})" if age else ""
+        return f"{land_name} — mire {position} of {len(siblings)}{suffix}"
+
     def _card_data(self, card: Card) -> dict[str, Any]:
         background, foreground = self._card_colors(card)
         current_card_types = self.game.card_types(card)
@@ -1201,7 +1346,7 @@ class UiPresentationBuilder:
                     key=lambda ability: ability.value,
                 )
             ),
-            "rulesText": card.definition.rules_text,
+            "rulesText": self._displayed_rules_text(card),
             "attachedTo": enchanted_card.name if enchanted_card else "",
             "attachments": [
                 self._card_data(attachment)
@@ -1244,6 +1389,21 @@ class UiPresentationBuilder:
             if card.zone is Zone.BATTLEFIELD
             else [],
         }
+
+    @staticmethod
+    def _displayed_rules_text(card: Card) -> str:
+        changes = [
+            f"{printed.name.lower()} -> {current.name.lower()}"
+            for printed, current in card.color_word_changes.items()
+        ]
+        changes.extend(
+            f"{printed} -> {current}"
+            for printed, current in card.land_word_changes.items()
+        )
+        if not changes:
+            return card.definition.rules_text
+        summary = "; ".join(changes)
+        return f"{card.definition.rules_text}\n\nCurrent text changes: {summary}."
 
     def _combat_card_status(self, card: Card) -> tuple[str, str, str]:
         """Compatibility delegate for presentation-focused extensions."""

@@ -49,6 +49,31 @@ _CREATURE_IN_PLAY = TargetRequirement(
 
 DEATHLACE = lace("Deathlace", Color.BLACK)
 
+ANIMATE_DEAD = CardDefinition(
+    name="Animate Dead",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{1}{B}"),
+    rules_text=(
+        "Bring target creature from any graveyard into play under your "
+        "control with -1 power. Treat it as newly summoned. If Animate "
+        "Dead leaves play, return that creature to its owner's graveyard."
+    ),
+    colors=frozenset({Color.BLACK}),
+    subtypes=("Enchant Dead Creature",),
+    continuous_effects=(
+        ContinuousEffect(
+            scope=EffectScope.ATTACHED_CARD,
+            power=-1,
+            controls_attached_card=True,
+        ),
+    ),
+    target_requirement=TargetRequirement(
+        zone=Zone.GRAVEYARD,
+        card_types=frozenset({CardType.CREATURE}),
+    ),
+    animates_dead_creature=True,
+)
+
 CONTRACT_FROM_BELOW = CardDefinition(
     name="Contract from Below",
     card_types=frozenset({CardType.SORCERY}),
@@ -345,7 +370,8 @@ GLOOM = CardDefinition(
         "3 more mana to use."
     ),
     colors=frozenset({Color.BLACK}),
-    increases_white_spell_cost=3,
+    spell_cost_increase_color=Color.WHITE,
+    spell_cost_increase=3,
     increases_circle_activation_cost=3,
 )
 
@@ -741,6 +767,7 @@ TERROR = CardDefinition(
 BLACK_CARDS = tuple(
     sorted(
         (
+            ANIMATE_DEAD,
             BAD_MOON,
             BLACK_KNIGHT,
             BOG_WRAITH,

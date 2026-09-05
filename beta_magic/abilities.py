@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .mana import ManaCost
-from .types import CardType, Color, KeywordAbility, Zone
+from .types import CardType, Color, KeywordAbility, TurnPhase, Zone
 
 if TYPE_CHECKING:
     from .cards import Card, CardDefinition
@@ -41,6 +41,8 @@ class TargetRequirement:
     any_number: bool = False
     count: int = 1
     printed_card_types_only: bool = False
+    has_color_word: bool = False
+    has_land_word: bool = False
 
     def __post_init__(self) -> None:
         if self.count < 1:
@@ -431,6 +433,9 @@ class ActivatedLandTypeAbility:
     replacement_subtype: str
     tap_cost: bool = True
     mana_cost: ManaCost = field(default_factory=ManaCost)
+    activation_phase: TurnPhase | None = None
+    excluded_land_subtype: str | None = None
+    persists_after_source_leaves: bool = False
 
     def __post_init__(self) -> None:
         if not self.replacement_subtype.strip():

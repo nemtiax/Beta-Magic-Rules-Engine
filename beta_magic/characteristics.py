@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 from typing import Iterable
 
 from .abilities import (
     ActivatedAbility,
+    ActivatedCounterSpellAbility,
+    ActivatedEventLifeGainAbility,
+    ActivatedLandTypeAbility,
     ActivatedManaAbility,
+    ActivatedPreventDamageAbility,
     ActivatedRegenerationAbility,
+    ActivatedTemporaryAbility,
 )
 from .cards import Card
 from .effects import (
@@ -28,10 +34,76 @@ _BASIC_LAND_MANA = {
     "Mountain": Color.RED,
     "Forest": Color.GREEN,
 }
+_COLOR_WORDS = tuple(color for color in Color if color is not Color.COLORLESS)
 
 
 class CharacteristicsMixin:
     """Calculate current characteristics without mutating game state."""
+
+    @staticmethod
+    def color_word(card: Card, printed_color: Color) -> Color:
+        """Resolve a printed color word for this particular card object."""
+
+        return card.color_word_changes.get(printed_color, printed_color)
+
+    @staticmethod
+    def land_word(card: Card, printed_subtype: str) -> str:
+        """Resolve a printed basic-land word for this card object."""
+
+        return card.land_word_changes.get(printed_subtype, printed_subtype)
+
+    def keyword_word(
+        self, card: Card, ability: KeywordAbility
+    ) -> KeywordAbility:
+        """Resolve a color/land word embedded in a keyword ability."""
+
+        protection = ability.protection_color
+        if protection is not None:
+            color = self.color_word(card, protection)
+            return next(
+                candidate
+                for candidate in KeywordAbility
+                if candidate.protection_color is color
+            )
+        landwalk = ability.landwalk_subtype
+        if landwalk is not None:
+            subtype = self.land_word(card, landwalk)
+            return next(
+                candidate
+                for candidate in KeywordAbility
+                if candidate.landwalk_subtype == subtype
+            )
+        return ability
+
+    def current_color_words(self, card: Card) -> tuple[Color, ...]:
+        """Return replaceable color words currently present in its text box."""
+
+        text = re.sub(
+            re.escape(card.name), "", card.definition.rules_text,
+            flags=re.IGNORECASE,
+        )
+        present = {
+            self.color_word(card, color)
+            for color in _COLOR_WORDS
+            if re.search(rf"\b{color.name}\b", text, re.IGNORECASE)
+        }
+        return tuple(color for color in _COLOR_WORDS if color in present)
+
+    def current_land_words(self, card: Card) -> tuple[str, ...]:
+        """Return replaceable basic-land words currently in its text box."""
+
+        text = re.sub(
+            re.escape(card.name), "", card.definition.rules_text,
+            flags=re.IGNORECASE,
+        )
+        present = {
+            self.land_word(card, subtype)
+            for subtype in _BASIC_LAND_MANA
+            if re.search(
+                rf"\b{subtype}(?:s|walk)?\b", text, re.IGNORECASE
+            )
+        }
+        return tuple(subtype for subtype in _BASIC_LAND_MANA if subtype in present)
 
     __slots__ = ()
 
@@ -218,14 +290,17 @@ class CharacteristicsMixin:
 
         if CardType.LAND not in land.definition.card_types:
             return land.definition.subtypes
-        subtypes = tuple(land.definition.subtypes)
+        subtypes = tuple(
+            self.land_word(land, subtype)
+            for subtype in land.definition.subtypes
+        )
         local_replacements = [
                 (
                     source.battlefield_entry_sequence or 0,
                     (
                         source.chosen_land_subtype
                         if effect.chosen_basic_subtype
-                        else effect.replacement_subtype
+                        else self.land_word(source, effect.replacement_subtype)
                     ),
                 )
                 for player in self.players
@@ -238,12 +313,20 @@ class CharacteristicsMixin:
             (sequence, subtype)
             for subtype, sequence in land.land_type_marks.values()
         )
+        local_replacements.extend(
+            (mark.sequence, mark.land_subtype)
+            for mark in self.cyclopean_tomb_marks
+            if mark.land_id == land.id
+        )
         for _, replacement in sorted(local_replacements):
             if replacement is not None:
                 subtypes = (replacement,)
 
         conversions = [
-            effect
+            (
+                self.land_word(source, effect.source_subtype),
+                self.land_word(source, effect.replacement_subtype),
+            )
             for player in self.players
             for source in player.battlefield
             for effect in source.definition.land_type_effects
@@ -251,9 +334,9 @@ class CharacteristicsMixin:
         ]
         for _ in range(len(conversions) + 1):
             changed = False
-            for effect in conversions:
-                if effect.source_subtype in subtypes:
-                    replacement = (effect.replacement_subtype,)
+            for source_subtype, replacement_subtype in conversions:
+                if source_subtype in subtypes:
+                    replacement = (replacement_subtype,)
                     if subtypes != replacement:
                         subtypes = replacement
                         changed = True
@@ -275,18 +358,20 @@ class CharacteristicsMixin:
                 for permanent in controller.battlefield
             )
         if variable.kind is VariableStatKind.CONTROLLED_LAND_SUBTYPE:
+            subtype = self.land_word(creature, variable.subtype)
             return sum(
                 CardType.LAND in permanent.definition.card_types
-                and variable.subtype in self.land_subtypes(permanent)
+                and subtype in self.land_subtypes(permanent)
                 for permanent in controller.battlefield
             )
         if variable.kind is VariableStatKind.ATTACKING_DEFENDER_LAND_SUBTYPE:
+            subtype = self.land_word(creature, variable.subtype)
             counted_player = controller
             if self.combat is not None and creature in self.combat.attackers:
                 counted_player = self.player(self.combat.defending_player_id)
             return sum(
                 CardType.LAND in permanent.definition.card_types
-                and variable.subtype in self.land_subtypes(permanent)
+                and subtype in self.land_subtypes(permanent)
                 for permanent in counted_player.battlefield
             )
         return sum(
@@ -299,7 +384,10 @@ class CharacteristicsMixin:
     def creature_abilities(self, creature: Card) -> frozenset[KeywordAbility]:
         """Return printed and continuously granted keyword abilities."""
 
-        abilities = set(creature.definition.abilities)
+        abilities = {
+            self.keyword_word(creature, ability)
+            for ability in creature.definition.abilities
+        }
         effects = list(self._continuous_effects_for(creature))
         for effect in effects:
             abilities.difference_update(effect.removed_abilities)
@@ -309,7 +397,10 @@ class CharacteristicsMixin:
     def activated_abilities(self, card: Card) -> tuple[ActivatedAbility, ...]:
         """Return printed and continuously granted activated abilities."""
 
-        printed = card.definition.activated_abilities
+        printed = tuple(
+            self._translated_activated_ability(card, ability)
+            for ability in card.definition.activated_abilities
+        )
         if (
             CardType.LAND in card.definition.card_types
             and self.land_subtypes(card) != card.definition.subtypes
@@ -326,6 +417,71 @@ class CharacteristicsMixin:
             if effect.granted_regeneration_cost is not None
         )
         return printed + granted
+
+    def _translated_activated_ability(
+        self, source: Card, ability: ActivatedAbility
+    ) -> ActivatedAbility:
+        """Return an ability with replaceable words resolved for its source."""
+
+        if not source.color_word_changes and not source.land_word_changes:
+            return ability
+        if isinstance(ability, ActivatedManaAbility):
+            return replace(ability, color=self.color_word(source, ability.color))
+        if isinstance(ability, ActivatedCounterSpellAbility):
+            return replace(
+                ability,
+                spell_color=self.color_word(source, ability.spell_color),
+            )
+        if (
+            isinstance(ability, ActivatedEventLifeGainAbility)
+            and ability.spell_color is not None
+        ):
+            return replace(
+                ability,
+                spell_color=self.color_word(source, ability.spell_color),
+            )
+        if (
+            isinstance(ability, ActivatedPreventDamageAbility)
+            and ability.source_color is not None
+        ):
+            return replace(
+                ability,
+                source_color=self.color_word(source, ability.source_color),
+            )
+        if isinstance(ability, ActivatedTemporaryAbility):
+            return replace(
+                ability,
+                target_requirement=self._translated_target_requirement(
+                    source, ability.target_requirement
+                ),
+                granted_abilities=frozenset(
+                    self.keyword_word(source, granted)
+                    for granted in ability.granted_abilities
+                ),
+            )
+        if isinstance(ability, ActivatedLandTypeAbility):
+            return replace(
+                ability,
+                target_requirement=self._translated_target_requirement(
+                    source, ability.target_requirement
+                ),
+                replacement_subtype=self.land_word(
+                    source, ability.replacement_subtype
+                ),
+                excluded_land_subtype=(
+                    self.land_word(source, ability.excluded_land_subtype)
+                    if ability.excluded_land_subtype is not None
+                    else None
+                ),
+            )
+        if hasattr(ability, "target_requirement"):
+            return replace(
+                ability,
+                target_requirement=self._translated_target_requirement(
+                    source, ability.target_requirement
+                ),
+            )
+        return ability
 
     def untaps_during_untap(self, card: Card) -> bool:
         """Whether normal untap processing may untap this permanent."""
@@ -352,6 +508,55 @@ class CharacteristicsMixin:
                 if not self.continuous_permanent_is_active(source):
                     continue
                 for effect in source.definition.continuous_effects:
+                    effect = replace(
+                        effect,
+                        color=(
+                            self.color_word(source, effect.color)
+                            if effect.color is not None
+                            else None
+                        ),
+                        land_subtype=(
+                            self.land_word(source, effect.land_subtype)
+                            if effect.land_subtype is not None
+                            else None
+                        ),
+                        subtype=(
+                            self.land_word(source, effect.subtype)
+                            if effect.subtype is not None
+                            else None
+                        ),
+                        controller_has_land_subtype=(
+                            self.land_word(
+                                source, effect.controller_has_land_subtype
+                            )
+                            if effect.controller_has_land_subtype is not None
+                            else None
+                        ),
+                        counted_controller_land_subtype=(
+                            self.land_word(
+                                source, effect.counted_controller_land_subtype
+                            )
+                            if effect.counted_controller_land_subtype is not None
+                            else None
+                        ),
+                        granted_abilities=frozenset(
+                            self.keyword_word(source, ability)
+                            for ability in effect.granted_abilities
+                        ),
+                        removed_abilities=frozenset(
+                            self.keyword_word(source, ability)
+                            for ability in effect.removed_abilities
+                        ),
+                        blocking_allowed_colors=frozenset(
+                            self.color_word(source, color)
+                            for color in effect.blocking_allowed_colors
+                        ),
+                        blocking_subtype=(
+                            self.land_word(source, effect.blocking_subtype)
+                            if effect.blocking_subtype is not None
+                            else None
+                        ),
+                    )
                     if (
                         effect.scope is EffectScope.ATTACHED_CARD
                         and source.enchanted_card_id != creature.id

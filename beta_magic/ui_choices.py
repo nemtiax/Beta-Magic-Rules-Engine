@@ -33,6 +33,10 @@ class TransientChoiceState:
     fork_target_keys: list[str] = field(default_factory=list)
     fork_x_value: int = 0
     fork_generic_budget: int = 0
+    guardian_angel_packet_id: UUID | None = None
+    guardian_angel_amount: int = 1
+    guardian_angel_maximum: int = 1
+    word_target_id: UUID | None = None
 
     def reset(self) -> None:
         self.x_card_id = None
@@ -49,6 +53,8 @@ class TransientChoiceState:
         self.clear_library_search()
         self.clear_fireball()
         self.clear_fork()
+        self.clear_guardian_angel()
+        self.word_target_id = None
 
     def begin_x(self, card: Card, maximum: int) -> None:
         self.x_card_id = card.id
@@ -126,3 +132,22 @@ class TransientChoiceState:
         self.fork_target_keys.clear()
         self.fork_x_value = 0
         self.fork_generic_budget = 0
+
+    def begin_guardian_angel(self, packet_id: UUID, maximum: int) -> None:
+        self.guardian_angel_packet_id = packet_id
+        self.guardian_angel_maximum = maximum
+        self.guardian_angel_amount = maximum
+
+    def adjust_guardian_angel(self, delta: int) -> None:
+        self.guardian_angel_amount = max(
+            1,
+            min(
+                self.guardian_angel_maximum,
+                self.guardian_angel_amount + delta,
+            ),
+        )
+
+    def clear_guardian_angel(self) -> None:
+        self.guardian_angel_packet_id = None
+        self.guardian_angel_amount = 1
+        self.guardian_angel_maximum = 1

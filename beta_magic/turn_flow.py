@@ -119,6 +119,7 @@ class PendingDrawChoice:
     player_id: str
     total_draws: int
     maximum_skips: int
+    landwalk_subtypes: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -257,6 +258,9 @@ class TurnFlowMixin:
         self.pending_draw_choice = None
         if amount:
             self.island_sanctuary_protected_players.add(player_id)
+            self.island_sanctuary_landwalk_words[player_id] = set(
+                choice.landwalk_subtypes[:amount]
+            )
         self.active_player.draw(choice.total_draws - amount)
 
     def choose_untap_cards(self, player_id: str, cards: tuple[Card, ...]) -> None:
@@ -386,11 +390,11 @@ class TurnFlowMixin:
             return self.advance_phase()
         if (
             self.current_phase is TurnPhase.DISCARD
-            and self.active_player.discard_required
+            and self.required_discards(self.active_player)
         ):
             raise RuntimeError(
                 f"{self.active_player.name} must discard "
-                f"{self.active_player.discard_required} card(s)"
+                f"{self.required_discards(self.active_player)} card(s)"
             )
         self.pending_phase_advance = self.current_phase
         self.priority_player_index = (
@@ -546,9 +550,11 @@ class TurnFlowMixin:
         self.attacked_this_turn.clear()
         self.prevent_combat_damage_this_turn = False
         self.channel_active_players.clear()
+        self.guardian_angel_targets.clear()
         self.pending_graveyard_return_choice = None
         self.graveyard_returns_done_this_upkeep = False
         self.island_sanctuary_protected_players.discard(player_id)
+        self.island_sanctuary_landwalk_words.pop(player_id, None)
         self._enter_phase(TurnPhase.UNTAP)
 
     def _finish_turn_effects(self) -> None:
@@ -1101,7 +1107,7 @@ class TurnFlowMixin:
             raise RuntimeError("cards can only be discarded during a game")
         if self.current_phase is not TurnPhase.DISCARD:
             raise RuntimeError("turn-based discarding occurs during the Discard phase")
-        if not self.active_player.discard_required:
+        if not self.required_discards(self.active_player):
             raise RuntimeError("the active player is not required to discard")
         if card not in self.active_player.hand:
             raise ValueError(f"{card.name} is not in the active player's hand")
@@ -1123,11 +1129,11 @@ class TurnFlowMixin:
             raise RuntimeError("finish the current attack before leaving the Main phase")
         if (
             self.current_phase is TurnPhase.DISCARD
-            and self.active_player.discard_required
+            and self.required_discards(self.active_player)
         ):
             raise RuntimeError(
                 f"{self.active_player.name} must discard "
-                f"{self.active_player.discard_required} card(s)"
+                f"{self.required_discards(self.active_player)} card(s)"
             )
 
         next_phase = self.current_phase.next
@@ -1169,6 +1175,9 @@ class TurnFlowMixin:
             self._queue_doppelganger_choices()
             if self.pending_doppelganger_choices:
                 return
+            self._queue_cyclopean_tomb_cleanup_choices()
+            if self.pending_tomb_cleanup_choices:
+                return
             self._queue_upkeep_events()
             self._refresh_graveyard_return_choice()
         elif phase is TurnPhase.DRAW:
@@ -1179,17 +1188,20 @@ class TurnFlowMixin:
                         continue
                     for effect in source.definition.draw_phase_effects:
                         total_draws += effect.amount
-            sanctuary_skips = sum(
-                effect.restricts_attackers_to_flying_or_islandwalk
+            sanctuary_landwalk = tuple(
+                self.land_word(source, effect.allowed_landwalk_subtype)
                 for source in self.active_player.battlefield
                 if self.continuous_permanent_is_active(source)
                 for effect in source.definition.optional_draw_skip_effects
+                if effect.allowed_landwalk_subtype is not None
             )
+            sanctuary_skips = len(sanctuary_landwalk)
             if sanctuary_skips:
                 self.pending_draw_choice = PendingDrawChoice(
                     self.active_player.id,
                     total_draws,
                     min(total_draws, sanctuary_skips),
+                    sanctuary_landwalk,
                 )
             else:
                 self.active_player.draw(total_draws)
@@ -1292,13 +1304,16 @@ class TurnFlowMixin:
                     if effect.source_tapped is False and source.tapped:
                         continue
                     if effect.counted_active_player_owned_land_subtype:
+                        counted_subtype = self.land_word(
+                            source,
+                            effect.counted_active_player_owned_land_subtype,
+                        )
                         land_count = sum(
                             1
                             for permanent in battlefield
                             if permanent.owner_id == self.active_player.id
                             and CardType.LAND in self.card_types(permanent)
-                            and effect.counted_active_player_owned_land_subtype
-                            in self.land_subtypes(permanent)
+                            and counted_subtype in self.land_subtypes(permanent)
                         )
                         if not land_count:
                             continue

@@ -638,8 +638,13 @@ class DemoGameTests(unittest.TestCase):
             "Circle of Protection: Green",
             "Circle of Protection: Red",
             "Circle of Protection: White",
+            "Guardian Angel",
         ):
             self.assertIn(name, [card.name for card in AEGIS_WARDS_DECK])
+        self.assertIn(
+            "Guardian Angel",
+            [card.name for card in first.players[0].hand],
+        )
         for name in (
             "Lightning Bolt",
             "Psionic Blast",

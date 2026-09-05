@@ -86,7 +86,7 @@ AEGIS_WARDS_DECK = _cards(
     "Circle of Protection: Black", "Circle of Protection: Blue",
     "Circle of Protection: Green", "Circle of Protection: Red",
     "Circle of Protection: White", "Black Knight", "White Knight",
-    "Scrubland", "Plains", "Plains", "Scrubland", "White Knight",
+    "Scrubland", "Plains", "Plains", "Scrubland", "Guardian Angel",
     "Black Ward", "Circle of Protection: Black",
     "Circle of Protection: Red",
 )

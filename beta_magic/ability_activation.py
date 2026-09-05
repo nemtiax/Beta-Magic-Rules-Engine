@@ -434,6 +434,17 @@ class AbilityActivationMixin:
             raise RuntimeError(
                 f"{card.name} can only be activated during an opponent's turn before the attack"
             )
+        if isinstance(ability, ActivatedLandTypeAbility) and (
+            ability.activation_phase is not None
+            and (
+                self.current_phase is not ability.activation_phase
+                or player is not self.active_player
+            )
+        ):
+            raise RuntimeError(
+                f"{card.name} can only be activated during its controller's "
+                f"{ability.activation_phase.value}"
+            )
         if (
             isinstance(ability, ActivatedPumpAbility)
             and ability.affects_attached_creature

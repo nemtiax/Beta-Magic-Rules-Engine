@@ -498,7 +498,7 @@ ISLAND_SANCTUARY = CardDefinition(
     colors=frozenset({Color.WHITE}),
     optional_draw_skip_effects=(
         OptionalDrawSkipEffect(
-            restricts_attackers_to_flying_or_islandwalk=True
+            allowed_landwalk_subtype="Island"
         ),
     ),
 )
@@ -515,6 +515,19 @@ HEALING_SALVE = CardDefinition(
     target_requirement=TargetRequirement(players=True),
     spell_effects=(GainLifeEffect(amount=3),),
     prevention_amount=3,
+)
+
+GUARDIAN_ANGEL = CardDefinition(
+    name="Guardian Angel",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{X}{W}"),
+    rules_text=(
+        "Prevent X damage to one target. For the rest of the turn, Guardian "
+        "Angel's caster may pay 1 mana per point to prevent further damage "
+        "to that target."
+    ),
+    colors=frozenset({Color.WHITE}),
+    is_guardian_angel=True,
 )
 
 RIGHTEOUSNESS = CardDefinition(
@@ -657,6 +670,7 @@ WHITE_CARDS = tuple(
             DISENCHANT,
             FARMSTEAD,
             GREEN_WARD,
+            GUARDIAN_ANGEL,
             HEALING_SALVE,
             HOLY_ARMOR,
             HOLY_STRENGTH,

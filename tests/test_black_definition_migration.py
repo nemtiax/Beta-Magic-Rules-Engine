@@ -6,6 +6,7 @@ from beta_magic.types import Color
 
 
 EXPECTED_NAMES = {
+    "Animate Dead",
     "Bad Moon",
     "Black Knight",
     "Bog Wraith",
@@ -55,7 +56,7 @@ EXPECTED_NAMES = {
 
 class BlackDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_black_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLACK_CARDS), 44)
+        self.assertEqual(len(BLACK_CARDS), 45)
         self.assertEqual(
             {card.name for card in BLACK_CARDS}, EXPECTED_NAMES
         )

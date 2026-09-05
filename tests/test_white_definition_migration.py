@@ -27,6 +27,7 @@ EXPECTED_NAMES = {
     "Disenchant",
     "Farmstead",
     "Green Ward",
+    "Guardian Angel",
     "Healing Salve",
     "Holy Armor",
     "Holy Strength",
@@ -56,7 +57,7 @@ EXPECTED_NAMES = {
 
 class WhiteDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_white_cards_are_migrated(self) -> None:
-        self.assertEqual(len(WHITE_CARDS), 45)
+        self.assertEqual(len(WHITE_CARDS), 46)
         self.assertEqual(
             {card.name for card in WHITE_CARDS}, EXPECTED_NAMES
         )

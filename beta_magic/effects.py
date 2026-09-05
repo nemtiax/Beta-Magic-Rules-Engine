@@ -142,6 +142,8 @@ class DividedDamageEffect:
 class CopyTargetSpellEffect:
     """Create a red copy of the targeted instant or sorcery spell."""
 
+    copy_color: Color = Color.RED
+
 
 @dataclass(frozen=True, slots=True)
 class DrainLifeEffect:
@@ -403,6 +405,17 @@ class ChangeTargetColorEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class ChangeTextWordEffect:
+    """Replace every occurrence of one color or basic-land word."""
+
+    word_kind: str
+
+    def __post_init__(self) -> None:
+        if self.word_kind not in {"color", "land"}:
+            raise ValueError("a text-word effect must change color or land words")
+
+
+@dataclass(frozen=True, slots=True)
 class GlobalDamageEffect:
     """Deal X-scaled damage to all players and selected creatures."""
 
@@ -561,7 +574,7 @@ class DrawPhaseEffect:
 class OptionalDrawSkipEffect:
     """Allow one draw-phase draw to be skipped for a turn-long benefit."""
 
-    restricts_attackers_to_flying_or_islandwalk: bool = False
+    allowed_landwalk_subtype: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -724,6 +737,7 @@ SpellEffect = (
     | ExtraTurnEffect
     | CounterTargetSpellEffect
     | ChangeTargetColorEffect
+    | ChangeTextWordEffect
     | GlobalDamageEffect
     | DestroyTargetsEffect
     | DestroyAllEffect
@@ -854,6 +868,7 @@ __all__ = [
     "LandTapManaEffect",
     "CounterTargetSpellEffect",
     "ChangeTargetColorEffect",
+    "ChangeTextWordEffect",
     "GlobalDamageEffect",
     "UpkeepDamageEffect",
     "UpkeepHandSizeDamageEffect",

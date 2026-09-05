@@ -46,6 +46,7 @@ from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
 from .effects import (
     AttachedLandTypeEffect,
     CopyTargetSpellEffect,
+    ChangeTextWordEffect,
     DividedDamageEffect,
     ReverseDamageEffect,
     UpkeepCreatureSacrificeEffect,
@@ -211,6 +212,8 @@ class GameViewModel(QObject):
                 or self.game.pending_creature_copy_choices
                 or self.game.pending_doppelganger_choices
                 or self.game.pending_discard_choices
+                or self.game.pending_library_discard_choices
+                or self.game.pending_tomb_cleanup_choices
                 or self.game.pending_balance is not None
                 or self.game.pending_lich_choices
                 or self.game.pending_untap_choice is not None
@@ -370,6 +373,21 @@ class GameViewModel(QObject):
                 self._begin_fork_targeting(target)
                 self.stateChanged.emit()
                 return
+            if any(
+                isinstance(effect, ChangeTextWordEffect)
+                for effect in spell.definition.spell_effects
+            ):
+                if target not in self.game.legal_targets_for():
+                    self._tell_current("Choose a legal card as the target.")
+                else:
+                    self._choices.word_target_id = target.id
+                    self._prompt_current(
+                        f"Choose the word change for {spell.name}.",
+                        f"{self.game.player(self.game.pending_cast.caster_id).name} "
+                        f"is choosing words for {spell.name}.",
+                    )
+                self.stateChanged.emit()
+                return
             verb = (
                 "enchanting"
                 if CardType.ENCHANTMENT in spell.definition.card_types
@@ -493,6 +511,15 @@ class GameViewModel(QObject):
                 self.stateChanged.emit()
                 return
             if card.definition.mana_cost.x_symbols:
+                if card.definition.is_guardian_angel and (
+                    self.game.pending_damage is None
+                    or self.game.pending_damage.step.value != "prevention"
+                ):
+                    self._tell_current(
+                        "Guardian Angel can only be cast during a damage-prevention window."
+                    )
+                    self.stateChanged.emit()
+                    return
                 if (
                     card.definition.target_requirement is not None
                     and card.definition.target_requirement.any_number
@@ -620,7 +647,11 @@ class GameViewModel(QObject):
         ability_index = self._choices.x_ability_index
         try:
             if ability_index is None:
-                pending = self.game.begin_cast(card, x_value=x_value)
+                pending = (
+                    self.game.begin_guardian_angel(card, x_value)
+                    if card.definition.is_guardian_angel
+                    else self.game.begin_cast(card, x_value=x_value)
+                )
             else:
                 player = self.game.players[self.perspective_index]
                 pending = self.game.activate_ability(
@@ -637,7 +668,11 @@ class GameViewModel(QObject):
             if pending is not None:
                 player = self.game.players[self.perspective_index]
                 self._prompt_current(
-                    f"Choose a target for {card.name} (X={x_value}).",
+                    (
+                        f"Choose damage to prevent with {card.name} (X={x_value})."
+                        if card.definition.is_guardian_angel
+                        else f"Choose a target for {card.name} (X={x_value})."
+                    ),
                     f"{player.name} is choosing a target for {card.name}.",
                 )
             elif ability_index is None:
@@ -874,6 +909,63 @@ class GameViewModel(QObject):
         )
 
     @Slot(str)
+    def chooseGuardianAngelPacket(self, packet_id: str) -> None:
+        player = self.game.players[self.perspective_index]
+        option = next(
+            (
+                (packet, maximum)
+                for packet, maximum
+                in self.game.guardian_angel_payment_options(player.id)
+                if str(packet.id) == packet_id
+            ),
+            None,
+        )
+        if option is None:
+            self._tell_current("Guardian Angel cannot prevent that damage.")
+        else:
+            packet, maximum = option
+            self._choices.begin_guardian_angel(packet.id, maximum)
+            self._prompt(
+                player.id,
+                f"Choose how much damage to {packet.recipient_name} to prevent.",
+                observer_message=(
+                    f"{player.name} is choosing a Guardian Angel payment."
+                ),
+            )
+        self.stateChanged.emit()
+
+    @Slot(int)
+    def adjustGuardianAngelAmount(self, delta: int) -> None:
+        if self._choices.guardian_angel_packet_id is not None:
+            self._choices.adjust_guardian_angel(delta)
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmGuardianAngelPayment(self) -> None:
+        packet_id = self._choices.guardian_angel_packet_id
+        if packet_id is None:
+            return
+        player = self.game.players[self.perspective_index]
+        amount = self._choices.guardian_angel_amount
+        if self._run(
+            lambda: self.game.pay_guardian_angel_prevention(
+                player.id, packet_id, amount
+            ),
+            f"Guardian Angel prevented {amount} damage.",
+        ):
+            self._choices.clear_guardian_angel()
+            # _run() emits while the payment choice is still populated so a
+            # failed payment can leave the dialog intact.  Notify QML again
+            # after a successful payment clears that transient choice.
+            self.stateChanged.emit()
+
+    @Slot()
+    def cancelGuardianAngelPayment(self) -> None:
+        self._choices.clear_guardian_angel()
+        self._tell_current("Cancelled the Guardian Angel payment.")
+        self.stateChanged.emit()
+
+    @Slot(str)
     def chooseRedirectionPacket(self, packet_id: str) -> None:
         player = self.game.players[self.perspective_index]
         pending = self.game.pending_redirection
@@ -1066,6 +1158,51 @@ class GameViewModel(QObject):
             "Confirmed graveyard order.",
         )
 
+    @Slot(str)
+    def toggleLibraryDiscardDestination(self, card_id: str) -> None:
+        choice = (
+            self.game.pending_library_discard_choices[0]
+            if self.game.pending_library_discard_choices else None
+        )
+        card = self._card_by_id(UUID(card_id))
+        if choice is None or card is None:
+            return
+        self._run(
+            lambda: self.game.toggle_library_discard_destination(
+                choice.player_id, card
+            ),
+            "Changed Library of Leng destination.",
+        )
+
+    @Slot(str, int)
+    def moveLibraryDiscardCard(self, card_id: str, direction: int) -> None:
+        choice = (
+            self.game.pending_library_discard_choices[0]
+            if self.game.pending_library_discard_choices else None
+        )
+        card = self._card_by_id(UUID(card_id))
+        if choice is None or card is None:
+            return
+        self._run(
+            lambda: self.game.move_library_discard_card(
+                choice.player_id, card, direction
+            ),
+            "Adjusted Library of Leng order.",
+        )
+
+    @Slot()
+    def confirmLibraryDiscard(self) -> None:
+        choice = (
+            self.game.pending_library_discard_choices[0]
+            if self.game.pending_library_discard_choices else None
+        )
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.confirm_library_discard(choice.player_id),
+            "Resolved Library of Leng discard.",
+        )
+
     @Slot()
     def cancelTarget(self) -> None:
         if (
@@ -1083,6 +1220,55 @@ class GameViewModel(QObject):
             spell_name = self.game.pending_cast.spell.name
             self.game.cancel_pending_cast()
             self._choices.clear_fork()
+            self._choices.word_target_id = None
+            self._message = f"Cancelled casting {spell_name}."
+        self.stateChanged.emit()
+
+    @Slot(str, str)
+    def chooseTextWords(self, old_word: str, new_word: str) -> None:
+        pending = self.game.pending_cast
+        target = self._card_by_id(self._choices.word_target_id)
+        if pending is None or target is None:
+            self.cancelTextWordChoice()
+            return
+        effect = next(
+            (
+                effect
+                for effect in pending.spell.definition.spell_effects
+                if isinstance(effect, ChangeTextWordEffect)
+            ),
+            None,
+        )
+        if effect is None:
+            self.cancelTextWordChoice()
+            return
+        if effect.word_kind == "color":
+            try:
+                old: Color | str = Color[old_word.upper()]
+                new: Color | str = Color[new_word.upper()]
+            except KeyError:
+                self._tell_current("Choose valid color words.")
+                self.stateChanged.emit()
+                return
+        else:
+            old, new = old_word, new_word
+        spell_name = pending.spell.name
+        if self._run(
+            lambda: self.game.complete_pending_cast(
+                (target,), word_from=old, word_to=new
+            ),
+            f"Cast {spell_name} targeting {target.name}: "
+            f"{old_word} becomes {new_word}.",
+        ):
+            self._choices.word_target_id = None
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelTextWordChoice(self) -> None:
+        self._choices.word_target_id = None
+        if self.game.pending_cast is not None:
+            spell_name = self.game.pending_cast.spell.name
+            self.game.cancel_pending_cast()
             self._message = f"Cancelled casting {spell_name}."
         self.stateChanged.emit()
 
@@ -1830,6 +2016,21 @@ class GameViewModel(QObject):
         self._run(
             lambda: self.game.choose_upkeep_land_loss(choice.chooser_id, land),
             f"Chose {land.name} to be lost to {choice.source_name}.",
+        )
+
+    @Slot(str)
+    def chooseTombCleanupMark(self, mark_id: str) -> None:
+        choice = (
+            self.game.pending_tomb_cleanup_choices[0]
+            if self.game.pending_tomb_cleanup_choices else None
+        )
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.choose_cyclopean_tomb_cleanup(
+                choice.player_id, UUID(mark_id)
+            ),
+            "Removed a Cyclopean Tomb mire counter.",
         )
 
     @Slot()

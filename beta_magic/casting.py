@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Iterable
+from uuid import uuid4
 
 from .abilities import (
     ActivatedDamageAbility,
@@ -27,6 +28,7 @@ from .effects import (
     AttachedLandTypeEffect,
     CounterTargetSpellEffect,
     CopyTargetSpellEffect,
+    ChangeTextWordEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
     ReverseDamageEffect,
@@ -65,6 +67,9 @@ class PendingCast:
     damage_source_key: str | None = None
     copied_spell_targets: tuple[Card | PlayerState, ...] | None = None
     copied_spell_x_value: int | None = None
+    copied_declared_target_requirement: TargetRequirement | None = None
+    chosen_word_from: Color | str | None = None
+    chosen_word_to: Color | str | None = None
 
 
 @dataclass(slots=True)
@@ -101,6 +106,10 @@ class SpellOnStack:
     damage_source_key: str | None = None
     copied_spell_targets: tuple[Card | PlayerState, ...] | None = None
     copied_spell_x_value: int | None = None
+    copied_declared_target_requirement: TargetRequirement | None = None
+    declared_target_requirement: TargetRequirement | None = None
+    chosen_word_from: Color | str | None = None
+    chosen_word_to: Color | str | None = None
 
 
 class TargetingCastingMixin:
@@ -336,6 +345,10 @@ class TargetingCastingMixin:
     ) -> PendingCast | None:
         """Cast an untargeted spell or wait for the spell's targets."""
 
+        if card.definition.is_guardian_angel:
+            raise RuntimeError(
+                "cast Guardian Angel through the damage-prevention window"
+            )
         damage_window_effect = any(
             isinstance(
                 effect,
@@ -428,6 +441,14 @@ class TargetingCastingMixin:
         )
         if requirement is None:
             return []
+        # Activated abilities are materialized with their current words by
+        # ``activated_abilities``. Spells retain a printed definition plus
+        # mutable word mappings while on the stack.
+        word_source = spell if spell is not None else None
+        if word_source is not None:
+            requirement = self._translated_target_requirement(
+                word_source, requirement
+            )
         if requirement.zone is None:
             return []
         caster_id = (
@@ -548,6 +569,15 @@ class TargetingCastingMixin:
                     if candidate.summoned_turn != self.turn_number
                 ]
             if (
+                isinstance(pending_effect, ActivatedLandTypeAbility)
+                and pending_effect.excluded_land_subtype is not None
+            ):
+                excluded_subtype = pending_effect.excluded_land_subtype
+                legal = [
+                    candidate for candidate in legal
+                    if excluded_subtype not in self.land_subtypes(candidate)
+                ]
+            if (
                 isinstance(pending_effect, ActivatedTemporaryAbility)
                 and pending_effect.toughness_less_than_source_power
             ):
@@ -586,6 +616,40 @@ class TargetingCastingMixin:
                 == declared_x
             ]
         return legal
+
+    def _translated_target_requirement(
+        self, source: Card, requirement: TargetRequirement
+    ) -> TargetRequirement:
+        """Resolve replaceable words in a source's target description."""
+
+        return replace(
+            requirement,
+            color=(
+                self.color_word(source, requirement.color)
+                if requirement.color is not None
+                else None
+            ),
+            excluded_colors=frozenset(
+                self.color_word(source, color)
+                for color in requirement.excluded_colors
+            ),
+            subtypes=frozenset(
+                self.land_word(source, subtype)
+                for subtype in requirement.subtypes
+            ),
+            excluded_subtypes=frozenset(
+                self.land_word(source, subtype)
+                for subtype in requirement.excluded_subtypes
+            ),
+            required_land_subtypes=frozenset(
+                self.land_word(source, subtype)
+                for subtype in requirement.required_land_subtypes
+            ),
+            required_abilities=frozenset(
+                self.keyword_word(source, ability)
+                for ability in requirement.required_abilities
+            ),
+        )
 
     def _requirement_accepts_card(
         self,
@@ -638,6 +702,10 @@ class TargetingCastingMixin:
         if requirement.required_land_subtypes and not requirement.required_land_subtypes.issubset(
             self.land_subtypes(card)
         ):
+            return False
+        if requirement.has_color_word and not self.current_color_words(card):
+            return False
+        if requirement.has_land_word and not self.current_land_words(card):
             return False
         if requirement.blocking_only:
             return (
@@ -761,7 +829,7 @@ class TargetingCastingMixin:
         except (ValueError, RuntimeError):
             self.pending_activation = pending
             raise
-        assert validated is ability
+        assert validated == ability
         if ability.tap_cost:
             self._tap_permanent(pending.source)
         if isinstance(
@@ -780,6 +848,12 @@ class TargetingCastingMixin:
             ),
         ):
             self.pay_mana(player, ability.mana_cost)
+        if (
+            isinstance(ability, ActivatedLandTypeAbility)
+            and ability.persists_after_source_leaves
+            and pending.source.persistent_effect_instance_id is None
+        ):
+            pending.source.persistent_effect_instance_id = uuid4()
         if isinstance(ability, ActivatedInterruptUntapAbility):
             for target in chosen:
                 if isinstance(target, Card):
@@ -826,7 +900,11 @@ class TargetingCastingMixin:
         self.pending_activation = None
 
     def complete_pending_cast(
-        self, targets: Iterable[Card | PlayerState]
+        self,
+        targets: Iterable[Card | PlayerState],
+        *,
+        word_from: Color | str | None = None,
+        word_to: Color | str | None = None,
     ) -> None:
         """Validate chosen targets, then pay for and resolve the pending spell."""
 
@@ -863,6 +941,34 @@ class TargetingCastingMixin:
             for target in chosen
         ):
             raise ValueError(f"illegal target for {pending.spell.name}")
+        word_effect = next(
+            (
+                effect
+                for effect in pending.spell.definition.spell_effects
+                if isinstance(effect, ChangeTextWordEffect)
+            ),
+            None,
+        )
+        if word_effect is not None:
+            target = chosen[0] if chosen else None
+            if not isinstance(target, Card):
+                raise ValueError(f"{pending.spell.name} must target a card")
+            if word_effect.word_kind == "color":
+                if not isinstance(word_from, Color) or not isinstance(word_to, Color):
+                    raise ValueError("choose two color words")
+                if word_from not in self.current_color_words(target):
+                    raise ValueError("the chosen color word is not on the target")
+            else:
+                if not isinstance(word_from, str) or not isinstance(word_to, str):
+                    raise ValueError("choose two basic-land words")
+                if word_from not in self.current_land_words(target):
+                    raise ValueError("the chosen land word is not on the target")
+            if word_from == word_to:
+                raise ValueError("the replacement word must be different")
+            pending.chosen_word_from = word_from
+            pending.chosen_word_to = word_to
+        elif word_from is not None or word_to is not None:
+            raise ValueError(f"{pending.spell.name} does not change text words")
         counter_effect = next(
             (
                 effect
@@ -917,6 +1023,11 @@ class TargetingCastingMixin:
             damage_source_key=pending.damage_source_key,
             copied_spell_targets=pending.copied_spell_targets,
             copied_spell_x_value=pending.copied_spell_x_value,
+            copied_declared_target_requirement=(
+                pending.copied_declared_target_requirement
+            ),
+            chosen_word_from=pending.chosen_word_from,
+            chosen_word_to=pending.chosen_word_to,
         )
 
     def fork_copy_target_options(
@@ -937,7 +1048,15 @@ class TargetingCastingMixin:
         requirement = original.definition.target_requirement
         if requirement is None:
             return [], []
+        requirement = self._translated_target_requirement(original, requirement)
         caster_id = self.pending_cast.caster_id
+        fork = self.pending_cast.spell
+        copy_effect = next(
+            effect
+            for effect in fork.definition.spell_effects
+            if isinstance(effect, CopyTargetSpellEffect)
+        )
+        copy_color = self.color_word(fork, copy_effect.copy_color)
         target_zones = requirement.additional_zones | (
             frozenset({requirement.zone})
             if requirement.zone is not None else frozenset()
@@ -951,7 +1070,7 @@ class TargetingCastingMixin:
                 requirement,
                 candidate,
                 caster_id,
-                source_colors=frozenset({Color.RED}),
+                source_colors=frozenset({copy_color}),
             )
         ]
         if Zone.STACK in target_zones:
@@ -961,7 +1080,7 @@ class TargetingCastingMixin:
                     requirement,
                     candidate,
                     caster_id,
-                    source_colors=frozenset({Color.RED}),
+                    source_colors=frozenset({copy_color}),
                 )
             )
         if original.definition.casting_mode_target_zones:
@@ -1031,6 +1150,11 @@ class TargetingCastingMixin:
             raise ValueError("Fork cannot change the copied spell's X value")
         pending.copied_spell_targets = chosen
         pending.copied_spell_x_value = copied_x
+        pending.copied_declared_target_requirement = (
+            self._translated_target_requirement(original, requirement)
+            if requirement is not None
+            else None
+        )
 
     def cancel_pending_cast(self) -> None:
         if self.pending_cast is None:
@@ -1091,9 +1215,19 @@ class TargetingCastingMixin:
         damage_source_key: str | None = None,
         copied_spell_targets: tuple[Card | PlayerState, ...] | None = None,
         copied_spell_x_value: int | None = None,
+        copied_declared_target_requirement: TargetRequirement | None = None,
+        chosen_word_from: Color | str | None = None,
+        chosen_word_to: Color | str | None = None,
     ) -> None:
         """Pay for a spell and add it to the current response batch."""
 
+        declared_requirement = (
+            self._translated_target_requirement(
+                card, card.definition.target_requirement
+            )
+            if card.definition.target_requirement is not None
+            else None
+        )
         self.pay_mana(
             caster, self.spell_mana_cost(card, x_value, len(targets) or 1)
         )
@@ -1106,8 +1240,20 @@ class TargetingCastingMixin:
         ):
             self.interruptible_spell_id = card.id
         self.stack_spells[card.id] = SpellOnStack(
-            card, caster.id, targets, x_value, chosen_mode, damage_source_key,
-            copied_spell_targets, copied_spell_x_value,
+            card=card,
+            caster_id=caster.id,
+            targets=targets,
+            x_value=x_value,
+            chosen_mode=chosen_mode,
+            damage_source_key=damage_source_key,
+            copied_spell_targets=copied_spell_targets,
+            copied_spell_x_value=copied_spell_x_value,
+            copied_declared_target_requirement=(
+                copied_declared_target_requirement
+            ),
+            declared_target_requirement=declared_requirement,
+            chosen_word_from=chosen_word_from,
+            chosen_word_to=chosen_word_to,
         )
         self.events.append(
             SpellCastEvent(

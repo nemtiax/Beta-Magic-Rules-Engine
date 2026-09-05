@@ -207,7 +207,7 @@ WILD_GROWTH = CardDefinition(
     mana_cost=ManaCost.parse("{G}"),
     rules_text=(
         "Enchant land. Whenever enchanted land becomes tapped for any "
-        "reason, its controller adds {G}."
+        "reason, its controller adds one green mana."
     ),
     colors=frozenset({Color.GREEN}),
     subtypes=("Enchant Land",),
@@ -391,7 +391,7 @@ LLANOWAR_ELVES = CardDefinition(
     name="Llanowar Elves",
     card_types=frozenset({CardType.CREATURE}),
     mana_cost=ManaCost.parse("{G}"),
-    rules_text="Tap to add {G} to your mana pool.",
+    rules_text="Tap to add one green mana to your mana pool.",
     colors=frozenset({Color.GREEN}),
     subtypes=("Mana Elves",),
     power=1,

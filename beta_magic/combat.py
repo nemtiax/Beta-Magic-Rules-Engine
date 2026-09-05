@@ -46,8 +46,12 @@ class CombatMixin:
         if defender_id not in self.island_sanctuary_protected_players:
             return True
         abilities = self.creature_abilities(card)
+        allowed_landwalk = self.island_sanctuary_landwalk_words.get(
+            defender_id, {"Island"}
+        )
         return KeywordAbility.FLYING in abilities or any(
-            ability.landwalk_subtype == "Island" for ability in abilities
+            ability.landwalk_subtype in allowed_landwalk
+            for ability in abilities
         )
 
     def _can_attack(self, card: Card) -> bool:
@@ -70,7 +74,7 @@ class CombatMixin:
             card.definition.landhome is None
             or self.player_controls_land_subtype(
                 self.combat.defending_player_id,
-                card.definition.landhome.land_subtype,
+                self.land_word(card, card.definition.landhome.land_subtype),
             )
         )
 
@@ -258,10 +262,12 @@ class CombatMixin:
                 card.definition.landhome is not None
                 and not self.player_controls_land_subtype(
                     self.combat.defending_player_id,
-                    card.definition.landhome.land_subtype,
+                    self.land_word(card, card.definition.landhome.land_subtype),
                 )
             ):
-                subtype = card.definition.landhome.land_subtype
+                subtype = self.land_word(
+                    card, card.definition.landhome.land_subtype
+                )
                 raise ValueError(
                     f"{card.name} cannot attack unless the defender "
                     f"controls an {subtype}"
@@ -315,7 +321,7 @@ class CombatMixin:
                 card.definition.landhome is None
                 or self.player_controls_land_subtype(
                     self.combat.defending_player_id,
-                    card.definition.landhome.land_subtype,
+                    self.land_word(card, card.definition.landhome.land_subtype),
                 )
             )
             and self._island_sanctuary_allows(

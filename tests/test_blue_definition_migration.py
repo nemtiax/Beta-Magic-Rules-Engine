@@ -23,6 +23,7 @@ EXPECTED_NAMES = {
     "Lifetap",
     "Invisibility",
     "Lord of Atlantis",
+    "Magical Hack",
     "Mahamoti Djinn",
     "Mana Short",
     "Merfolk of the Pearl Trident",
@@ -37,6 +38,7 @@ EXPECTED_NAMES = {
     "Psychic Venom",
     "Sea Serpent",
     "Siren's Call",
+    "Sleight of Mind",
     "Spell Blast",
     "Stasis",
     "Steal Artifact",
@@ -55,7 +57,7 @@ EXPECTED_NAMES = {
 
 class BlueDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_blue_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLUE_CARDS), 44)
+        self.assertEqual(len(BLUE_CARDS), 46)
         self.assertEqual(
             {card.name for card in BLUE_CARDS}, EXPECTED_NAMES
         )

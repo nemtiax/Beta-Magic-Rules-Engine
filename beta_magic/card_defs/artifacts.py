@@ -9,6 +9,7 @@ from ..abilities import (
     ActivatedDiscardAbility,
     ActivatedExtraTurnAbility,
     ActivatedEventLifeGainAbility,
+    ActivatedLandTypeAbility,
     ActivatedManaAbility,
     ActivatedPreventDamageAbility,
     ActivatedRevealHandAbility,
@@ -31,7 +32,7 @@ from ..effects import (
     UpkeepHandSizeDamageEffect,
 )
 from ..mana import ManaCost
-from ..types import CardType, Color, KeywordAbility, Zone
+from ..types import CardType, Color, KeywordAbility, TurnPhase, Zone
 
 
 def _mox(name: str, color: Color) -> CardDefinition:
@@ -40,7 +41,7 @@ def _mox(name: str, color: Color) -> CardDefinition:
         card_types=frozenset({CardType.ARTIFACT}),
         mana_cost=ManaCost.parse("{0}"),
         rules_text=(
-            f"Tap to add {{{color.value}}} to your mana pool. "
+            f"Tap to add one {color.name.lower()} mana to your mana pool. "
             "This ability can be played as an interrupt."
         ),
         activated_abilities=(ActivatedManaAbility(color),),
@@ -245,6 +246,44 @@ HOWLING_MINE = CardDefinition(
         "Each player draws one extra card during the draw phase of each turn."
     ),
     draw_phase_effects=(DrawPhaseEffect(),),
+)
+
+LIBRARY_OF_LENG = CardDefinition(
+    name="Library of Leng",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{1}"),
+    rules_text=(
+        "There is no limit to your hand size. If a card forces you to "
+        "discard from your hand, you may put each discarded card on top of "
+        "your library instead of into your graveyard. You may look at "
+        "randomly discarded cards before choosing their destinations."
+    ),
+    is_library_of_leng=True,
+)
+
+CYCLOPEAN_TOMB = CardDefinition(
+    name="Cyclopean Tomb",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{4}"),
+    rules_text=(
+        "{2}, {T}: Put a mire counter on target non-Swamp land; it becomes "
+        "a Swamp. Activate only during your upkeep. If Cyclopean Tomb "
+        "leaves play, remove one of its mire counters of your choice during "
+        "each of your upkeeps."
+    ),
+    activated_abilities=(
+        ActivatedLandTypeAbility(
+            TargetRequirement(
+                zone=Zone.BATTLEFIELD,
+                card_types=frozenset({CardType.LAND}),
+            ),
+            "Swamp",
+            mana_cost=ManaCost.parse("{2}"),
+            activation_phase=TurnPhase.UPKEEP,
+            excluded_land_subtype="Swamp",
+            persists_after_source_leaves=True,
+        ),
+    ),
 )
 
 KORMUS_BELL = CardDefinition(
@@ -512,6 +551,8 @@ UTILITY_ARTIFACTS = (
     JADE_MONOLITH,
     JADE_STATUE,
     HOWLING_MINE,
+    LIBRARY_OF_LENG,
+    CYCLOPEAN_TOMB,
     KORMUS_BELL,
     GAUNTLET_OF_MIGHT,
     HELM_OF_CHATZUK,
@@ -643,6 +684,8 @@ __all__ = [
     "ANKH_OF_MISHRA",
     "DINGUS_EGG",
     "HOWLING_MINE",
+    "LIBRARY_OF_LENG",
+    "CYCLOPEAN_TOMB",
     "KORMUS_BELL",
     "GAUNTLET_OF_MIGHT",
     "HELM_OF_CHATZUK",

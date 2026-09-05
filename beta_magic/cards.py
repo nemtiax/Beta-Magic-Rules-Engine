@@ -45,6 +45,7 @@ from .effects import (
     ContinuousEffect,
     CounterTargetSpellEffect,
     ChangeTargetColorEffect,
+    ChangeTextWordEffect,
     ChannelEffect,
     CreatureBuff,
     DamageEffect,
@@ -138,6 +139,7 @@ class CardDefinition:
     copies_artifact: bool = False
     copies_creature: bool = False
     is_vesuvan_doppelganger: bool = False
+    animates_dead_creature: bool = False
     consecrates_attached_land: bool = False
     additional_mana_per_target_beyond_first: int = 0
     is_lich: bool = False
@@ -154,10 +156,13 @@ class CardDefinition:
     land_mana_bonus_effects: tuple[LandManaBonusEffect, ...] = ()
     land_tap_mana_effects: tuple[LandTapManaEffect, ...] = ()
     mana_payment_effects: tuple[ManaPaymentEffect, ...] = ()
-    increases_white_spell_cost: int = 0
+    spell_cost_increase_color: Color | None = None
+    spell_cost_increase: int = 0
     increases_circle_activation_cost: int = 0
     is_circle_of_protection: bool = False
     prevention_amount: int = 0
+    is_guardian_angel: bool = False
+    is_library_of_leng: bool = False
     casting_modes: tuple[str, ...] = ()
     casting_mode_target_zones: tuple[Zone, ...] = ()
     maximum_blocked_power: int | None = None
@@ -196,8 +201,21 @@ class CardDefinition:
             raise ValueError("a card must have at least one card type")
         if self.fastbond_damage < 0:
             raise ValueError("Fastbond damage cannot be negative")
+        if self.animates_dead_creature and (
+            CardType.ENCHANTMENT not in self.card_types
+            or self.target_requirement is None
+        ):
+            raise ValueError("Animate Dead effects require a targeted enchantment")
         if self.additional_mana_per_target_beyond_first < 0:
             raise ValueError("additional target mana cannot be negative")
+        if self.spell_cost_increase < 0:
+            raise ValueError("spell cost increase cannot be negative")
+        if (self.spell_cost_increase_color is None) != (
+            self.spell_cost_increase == 0
+        ):
+            raise ValueError(
+                "a spell cost increase needs both a color and an amount"
+            )
         has_one_stat = (self.power is None) != (self.toughness is None)
         if has_one_stat:
             raise ValueError("power and toughness must be specified together")
@@ -380,10 +398,13 @@ class Card:
     enchanted_card_id: UUID | None = None
     chosen_land_subtype: str | None = None
     color_override: Color | None = None
+    color_word_changes: dict[Color, Color] = field(default_factory=dict)
+    land_word_changes: dict[str, str] = field(default_factory=dict)
     plus_one_counters: int = 0
     counters: dict[str, int] = field(default_factory=dict)
     summoned_turn: int | None = None
     land_type_marks: dict[UUID, tuple[str, int]] = field(default_factory=dict)
+    persistent_effect_instance_id: UUID | None = None
     is_token: bool = False
     is_spell_copy: bool = False
     printed_definition: CardDefinition | None = None
@@ -412,6 +433,38 @@ class Card:
     @property
     def name(self) -> str:
         return self.definition.name
+
+    def change_color_word(self, old: Color, new: Color) -> None:
+        """Replace every currently matching color word on this object."""
+
+        for printed, current in tuple(self.color_word_changes.items()):
+            if current is old:
+                self.color_word_changes[printed] = new
+        self.color_word_changes[old] = new
+        self.color_word_changes = {
+            printed: current
+            for printed, current in self.color_word_changes.items()
+            if printed is not current
+        }
+
+    def change_land_word(self, old: str, new: str) -> None:
+        """Replace every currently matching basic-land word on this object."""
+
+        for printed, current in tuple(self.land_word_changes.items()):
+            if current == old:
+                self.land_word_changes[printed] = new
+        self.land_word_changes[old] = new
+        self.land_word_changes = {
+            printed: current
+            for printed, current in self.land_word_changes.items()
+            if printed != current
+        }
+
+    def copy_word_changes_from(self, source: Card) -> None:
+        """Copy text modifications without linking the two card objects."""
+
+        self.color_word_changes = dict(source.color_word_changes)
+        self.land_word_changes = dict(source.land_word_changes)
 
 
 __all__ = [
@@ -446,6 +499,7 @@ __all__ = [
     "ContinuousEffect",
     "CounterTargetSpellEffect",
     "ChangeTargetColorEffect",
+    "ChangeTextWordEffect",
     "ChannelEffect",
     "CreatureBuff",
     "DamageEffect",

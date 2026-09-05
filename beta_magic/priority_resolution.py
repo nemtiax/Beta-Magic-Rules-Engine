@@ -39,6 +39,7 @@ from .effects import (
     AddManaEffect,
     BalanceEffect,
     ChangeTargetColorEffect,
+    ChangeTextWordEffect,
     ChannelEffect,
     ContinuousEffect,
     CounterTargetSpellEffect,
@@ -86,6 +87,34 @@ class PendingDiscardChoice:
     player_id: str
     amount: int
     source_name: str
+
+
+@dataclass(slots=True)
+class PendingLibraryDiscardChoice:
+    """An affected player assigns forced discards with Library of Leng."""
+
+    player_id: str
+    card_ids: tuple[UUID, ...]
+    source_name: str
+    library_ids_bottom_to_top: list[UUID] = field(default_factory=list)
+    draw_after: int = 0
+    ante_after: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CyclopeanTombMark:
+    id: UUID
+    effect_id: UUID
+    land_id: UUID
+    sequence: int
+    land_subtype: str
+
+
+@dataclass(frozen=True, slots=True)
+class PendingTombCleanupChoice:
+    player_id: str
+    effect_id: UUID
+    mark_ids: tuple[UUID, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,13 +414,129 @@ class PriorityBatchResolutionMixin:
             )
         return ()
 
-    def _discard_random(self, player: PlayerState, amount: int) -> tuple[Card, ...]:
+    def _discard_random(
+        self, player: PlayerState, amount: int, *, source_name: str = "random discard"
+    ) -> tuple[Card, ...]:
         chosen = tuple(self.random.sample(player.hand, min(amount, len(player.hand))))
+        self._discard_forced(player, chosen, source_name=source_name)
+        return chosen
+
+    def _library_of_leng_active(self, player: PlayerState) -> bool:
+        return any(
+            permanent.definition.is_library_of_leng
+            and self.continuous_permanent_is_active(permanent)
+            for permanent in player.battlefield
+        )
+
+    def required_discards(self, player: PlayerState) -> int:
+        """Return the turn-based hand-size discard, accounting for Leng."""
+
+        return 0 if self._library_of_leng_active(player) else player.discard_required
+
+    def _discard_forced(
+        self,
+        player: PlayerState,
+        cards: Iterable[Card],
+        *,
+        source_name: str,
+        draw_after: int = 0,
+        ante_after: bool = False,
+    ) -> tuple[Card, ...]:
+        """Discard hand cards, pausing for Library of Leng when applicable."""
+
+        chosen = tuple(cards)
+        if chosen and self._library_of_leng_active(player):
+            self.pending_library_discard_choices.append(
+                PendingLibraryDiscardChoice(
+                    player.id,
+                    tuple(card.id for card in chosen),
+                    source_name,
+                    draw_after=draw_after,
+                    ante_after=ante_after,
+                )
+            )
+            return chosen
         graveyard_lengths = self._graveyard_lengths()
         for card in chosen:
             self._move_card(card, Zone.GRAVEYARD)
         self._queue_new_graveyard_order_choices(graveyard_lengths)
+        if ante_after:
+            self._ante_top_card(player)
+        if draw_after:
+            player.draw(draw_after)
         return chosen
+
+    @staticmethod
+    def _ante_top_card(player: PlayerState) -> None:
+        if player.library:
+            ante_card = player.library.pop()
+            ante_card.zone = Zone.ANTE
+            player.ante.append(ante_card)
+        else:
+            player.has_lost = True
+
+    def toggle_library_discard_destination(
+        self, player_id: str, card: Card
+    ) -> None:
+        if not self.pending_library_discard_choices:
+            raise RuntimeError("there is no Library of Leng choice pending")
+        choice = self.pending_library_discard_choices[0]
+        if choice.player_id != player_id:
+            raise ValueError("only the affected player may choose discard destinations")
+        if card.id not in choice.card_ids or card not in self.player(player_id).hand:
+            raise ValueError("that card is not part of this forced discard")
+        if card.id in choice.library_ids_bottom_to_top:
+            choice.library_ids_bottom_to_top.remove(card.id)
+        else:
+            choice.library_ids_bottom_to_top.append(card.id)
+
+    def move_library_discard_card(
+        self, player_id: str, card: Card, direction: int
+    ) -> None:
+        if not self.pending_library_discard_choices:
+            raise RuntimeError("there is no Library of Leng choice pending")
+        choice = self.pending_library_discard_choices[0]
+        if choice.player_id != player_id:
+            raise ValueError("only the affected player may order the cards")
+        if direction not in {-1, 1}:
+            raise ValueError("library order movement must be up or down")
+        try:
+            index = choice.library_ids_bottom_to_top.index(card.id)
+        except ValueError as error:
+            raise ValueError("that card is not being put on the library") from error
+        destination = index + direction
+        if 0 <= destination < len(choice.library_ids_bottom_to_top):
+            choice.library_ids_bottom_to_top[index], choice.library_ids_bottom_to_top[destination] = (
+                choice.library_ids_bottom_to_top[destination],
+                choice.library_ids_bottom_to_top[index],
+            )
+
+    def confirm_library_discard(self, player_id: str) -> None:
+        if not self.pending_library_discard_choices:
+            raise RuntimeError("there is no Library of Leng choice pending")
+        choice = self.pending_library_discard_choices[0]
+        if choice.player_id != player_id:
+            raise ValueError("only the affected player may confirm this discard")
+        player = self.player(player_id)
+        cards = {card.id: card for card in player.hand}
+        if not set(choice.card_ids) <= cards.keys():
+            raise RuntimeError("a card awaiting discard is no longer in hand")
+        library_ids = set(choice.library_ids_bottom_to_top)
+        graveyard_lengths = self._graveyard_lengths()
+        for card_id in choice.card_ids:
+            if card_id not in library_ids:
+                self._move_card(cards[card_id], Zone.GRAVEYARD)
+        self._queue_new_graveyard_order_choices(graveyard_lengths)
+        for card_id in choice.library_ids_bottom_to_top:
+            self._move_card(cards[card_id], Zone.LIBRARY)
+        if choice.ante_after:
+            self._ante_top_card(player)
+        if choice.draw_after:
+            player.draw(choice.draw_after)
+        self.pending_library_discard_choices.pop(0)
+        if not self.pending_library_discard_choices and not self.pending_discard_choices:
+            self.consecutive_passes = 0
+            self.priority_player_index = None
 
     def choose_drain_power_mana(self, player_id: str, color: Color) -> None:
         """Choose the mana produced by the next dual land drained at resolution."""
@@ -522,12 +667,13 @@ class PriorityBatchResolutionMixin:
             raise ValueError(f"choose exactly {required} card(s) to discard")
         if any(card not in player.hand for card in chosen):
             raise ValueError("discard choices must be cards in the affected player's hand")
-        graveyard_lengths = self._graveyard_lengths()
-        for card in chosen:
-            self._move_card(card, Zone.GRAVEYARD)
-        self._queue_new_graveyard_order_choices(graveyard_lengths)
+        self._discard_forced(player, chosen, source_name=choice.source_name)
         self.pending_discard_choices.pop(0)
-        if not self.pending_discard_choices and self.pending_damage is None:
+        if (
+            not self.pending_discard_choices
+            and not self.pending_library_discard_choices
+            and self.pending_damage is None
+        ):
             self.priority_player_index = (
                 self.active_player_index
                 if self.timed_events or self.event_opportunities
@@ -619,12 +765,12 @@ class PriorityBatchResolutionMixin:
             if card.id in battlefield_ids
         ]
         self._destroy_permanents(doomed)
-        graveyard_lengths = self._graveyard_lengths()
         for player in self.players:
-            for card in tuple(player.hand):
-                if card.id in hand_ids:
-                    self._move_card(card, Zone.GRAVEYARD)
-        self._queue_new_graveyard_order_choices(graveyard_lengths)
+            self._discard_forced(
+                player,
+                (card for card in tuple(player.hand) if card.id in hand_ids),
+                source_name="Balance",
+            )
         self.check_state_based_actions()
         return chosen
 
@@ -697,12 +843,36 @@ class PriorityBatchResolutionMixin:
         )
         requirement = interrupt.definition.target_requirement
         if legal_target and requirement is not None:
+            requirement = self._translated_target_requirement(
+                interrupt, requirement
+            )
             legal_target = self._requirement_accepts_card(
                 requirement,
                 target,
                 spell.caster_id,
                 source_colors=self.card_colors(interrupt),
             )
+        word_effect = next(
+            (
+                effect
+                for effect in interrupt.definition.spell_effects
+                if isinstance(effect, ChangeTextWordEffect)
+            ),
+            None,
+        )
+        if legal_target and word_effect is not None and target is not None:
+            if word_effect.word_kind == "color":
+                legal_target = (
+                    isinstance(spell.chosen_word_from, Color)
+                    and isinstance(spell.chosen_word_to, Color)
+                    and spell.chosen_word_from in self.current_color_words(target)
+                )
+            else:
+                legal_target = (
+                    isinstance(spell.chosen_word_from, str)
+                    and isinstance(spell.chosen_word_to, str)
+                    and spell.chosen_word_from in self.current_land_words(target)
+                )
         if (
             legal_target
             and interrupt.definition.casting_mode_target_zones
@@ -763,6 +933,19 @@ class PriorityBatchResolutionMixin:
             )
             self.resume_interrupts_after_destruction = True
         elif legal_target:
+            if word_effect is not None:
+                if word_effect.word_kind == "color":
+                    assert isinstance(spell.chosen_word_from, Color)
+                    assert isinstance(spell.chosen_word_to, Color)
+                    target.change_color_word(
+                        spell.chosen_word_from, spell.chosen_word_to
+                    )
+                else:
+                    assert isinstance(spell.chosen_word_from, str)
+                    assert isinstance(spell.chosen_word_to, str)
+                    target.change_land_word(
+                        spell.chosen_word_from, spell.chosen_word_to
+                    )
             copy_effect = next(
                 (
                     effect
@@ -775,7 +958,9 @@ class PriorityBatchResolutionMixin:
                 original = self.stack_spells[target.id]
                 copy_definition = replace(
                     target.definition,
-                    colors=frozenset({Color.RED}),
+                    colors=frozenset({
+                        self.color_word(interrupt, copy_effect.copy_color)
+                    }),
                 )
                 copy_card = Card(
                     copy_definition,
@@ -785,6 +970,7 @@ class PriorityBatchResolutionMixin:
                     zone=Zone.STACK,
                     is_spell_copy=True,
                 )
+                copy_card.copy_word_changes_from(target)
                 # Keep any still-unresolved interrupts above both spell
                 # instances.  The original precedes its copy so sorceries
                 # that cannot be simultaneous follow the FAQ's original-first
@@ -805,6 +991,11 @@ class PriorityBatchResolutionMixin:
                     ),
                     chosen_mode=original.chosen_mode,
                     damage_source_key=original.damage_source_key,
+                    declared_target_requirement=(
+                        spell.copied_declared_target_requirement
+                        if spell.copied_declared_target_requirement is not None
+                        else original.declared_target_requirement
+                    ),
                 )
             color_effect = next(
                 (
@@ -815,7 +1006,9 @@ class PriorityBatchResolutionMixin:
                 None,
             )
             if color_effect is not None:
-                target.color_override = color_effect.color
+                target.color_override = self.color_word(
+                    interrupt, color_effect.color
+                )
                 if target.zone is Zone.STACK:
                     self._refresh_spell_cast_opportunity(target)
             sacrifice_effect = next(
@@ -830,12 +1023,12 @@ class PriorityBatchResolutionMixin:
                 amount = target.definition.mana_cost.mana_value
                 self._move_card(target, Zone.GRAVEYARD)
                 self.player(spell.caster_id).mana_pool.add(
-                    sacrifice_effect.color, amount
+                    self.color_word(interrupt, sacrifice_effect.color), amount
                 )
         for effect in interrupt.definition.spell_effects:
             if isinstance(effect, AddManaEffect):
                 self.player(spell.caster_id).mana_pool.add(
-                    effect.color, effect.amount
+                    self.color_word(interrupt, effect.color), effect.amount
                 )
 
         if interrupt.zone is Zone.STACK:
@@ -919,6 +1112,10 @@ class PriorityBatchResolutionMixin:
         legal_spell_targets: dict[UUID, tuple[Card | PlayerState, ...]] = {}
         for spell in spells:
             requirement = spell.card.definition.target_requirement
+            if requirement is not None:
+                requirement = self._translated_target_requirement(
+                    spell.card, requirement
+                )
             valid_targets = tuple(
                 target
                 for target in spell.targets
@@ -935,12 +1132,10 @@ class PriorityBatchResolutionMixin:
                 )
             )
             legal_spell_targets[spell.card.id] = valid_targets
-            divided = any(
-                isinstance(effect, DividedDamageEffect)
-                for effect in spell.card.definition.spell_effects
-            )
-            legal[spell.card.id] = requirement is None or (
-                bool(valid_targets) if divided else len(valid_targets) == len(spell.targets)
+            legal[spell.card.id] = (
+                requirement is None
+                or not spell.targets
+                or bool(valid_targets)
             )
         legal_abilities = [
             (
@@ -996,12 +1191,40 @@ class PriorityBatchResolutionMixin:
         # continuous effects participate in the final state of the batch.
         for spell in spells:
             card = spell.card
+            resolved_targets = legal_spell_targets[card.id]
             if legal[card.id] and card.definition.is_permanent:
+                copied_animated_creature = False
+                if card.definition.animates_dead_creature:
+                    target = next(
+                        (
+                            target
+                            for target in resolved_targets
+                            if isinstance(target, Card)
+                        ),
+                        None,
+                    )
+                    assert target is not None
+                    self._move_card(card, Zone.BATTLEFIELD)
+                    card.entered_battlefield_turn = self.turn_number
+                    if target.definition.copies_creature:
+                        if not self.queue_creature_copy_entry(
+                            target,
+                            spell.caster_id,
+                            attachment_id=card.id,
+                        ):
+                            self._move_card(card, Zone.GRAVEYARD)
+                        continue
+                    target.controller_id = spell.caster_id
+                    self._move_card(target, Zone.BATTLEFIELD)
+                    target.entered_battlefield_turn = self.turn_number
+                    target.summoned_turn = self.turn_number
+                    card.enchanted_card_id = target.id
+                    continue
                 if card.definition.copies_artifact:
                     target = next(
                         (
                             target
-                            for target in spell.targets
+                            for target in resolved_targets
                             if isinstance(target, Card)
                         ),
                         None,
@@ -1012,12 +1235,15 @@ class PriorityBatchResolutionMixin:
                     target = next(
                         (
                             target
-                            for target in spell.targets
+                            for target in resolved_targets
                             if isinstance(target, Card)
                         ),
                         None,
                     )
                     assert target is not None
+                    copied_animated_creature = self.creature_has_animate_dead(
+                        target
+                    )
                     self._copy_creature_definition(card, target)
                 self._move_card(card, Zone.BATTLEFIELD)
                 if card.definition.x_enters_with_counter is not None:
@@ -1076,6 +1302,8 @@ class PriorityBatchResolutionMixin:
                     and CardType.ARTIFACT not in card.definition.card_types
                 ):
                     card.summoned_turn = self.turn_number
+                if copied_animated_creature:
+                    self._destroy_permanents((card,))
 
         pending_destruction: list[tuple[Card, bool]] = []
         pending_regeneration: list[Card] = []
@@ -1084,12 +1312,13 @@ class PriorityBatchResolutionMixin:
             if not legal[card.id] or card.definition.is_permanent:
                 continue
             caster = self.player(spell.caster_id)
+            resolved_targets = legal_spell_targets[card.id]
             for effect in card.definition.spell_effects:
                 if isinstance(effect, DamageEffect):
                     recipients = (
                         (caster,)
                         if effect.recipient is EffectRecipient.CASTER
-                        else spell.targets
+                        else resolved_targets
                     )
                     for recipient in recipients:
                         if (
@@ -1116,7 +1345,7 @@ class PriorityBatchResolutionMixin:
                             source_colors=self.card_colors(card),
                         )
                 elif isinstance(effect, DrainLifeEffect):
-                    for recipient in spell.targets:
+                    for recipient in resolved_targets:
                         cap = (
                             self.creature_toughness(recipient)
                             if isinstance(recipient, Card) else None
@@ -1136,7 +1365,7 @@ class PriorityBatchResolutionMixin:
                         effect.toughness
                         + effect.toughness_per_x * spell.x_value
                     )
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if isinstance(target, Card):
                             self.temporary_creature_effects.setdefault(
                                 target.id, []
@@ -1159,38 +1388,40 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, RegenerateTargetsEffect):
                     pending_regeneration.extend(
                         target
-                        for target in spell.targets
+                        for target in resolved_targets
                         if isinstance(target, Card)
                     )
                 elif isinstance(effect, GainLifeEffect):
                     amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if not isinstance(target, Card):
                             self._gain_life(target, amount)
                 elif isinstance(effect, DrawCardsEffect):
                     amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if not isinstance(target, Card):
                             target.draw(amount)
                 elif isinstance(effect, DiscardCardsEffect):
                     amount = effect.amount + effect.amount_per_x * spell.x_value
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if not not isinstance(target, Card):
                             continue
                         if effect.random:
-                            self._discard_random(target, amount)
+                            self._discard_random(
+                                target, amount, source_name=card.name
+                            )
                         elif target.hand:
                             self.pending_discard_choices.append(
                                 PendingDiscardChoice(target.id, amount, card.name)
                             )
                 elif isinstance(effect, DiscardHandsAndDrawEffect):
-                    graveyard_lengths = self._graveyard_lengths()
                     for player in self.players:
-                        for discarded in tuple(player.hand):
-                            self._move_card(discarded, Zone.GRAVEYARD)
-                    self._queue_new_graveyard_order_choices(graveyard_lengths)
-                    for player in self.players:
-                        player.draw(effect.draw_count)
+                        self._discard_forced(
+                            player,
+                            tuple(player.hand),
+                            source_name=card.name,
+                            draw_after=effect.draw_count,
+                        )
                 elif isinstance(effect, ShuffleHandAndGraveyardEffect):
                     for player in self.players:
                         recyclable = tuple(player.hand) + tuple(player.graveyard)
@@ -1200,24 +1431,20 @@ class PriorityBatchResolutionMixin:
                     for player in self.players:
                         player.draw(effect.draw_count)
                 elif isinstance(effect, DiscardHandAnteAndDrawEffect):
-                    graveyard_lengths = self._graveyard_lengths()
-                    for discarded in tuple(caster.hand):
-                        self._move_card(discarded, Zone.GRAVEYARD)
-                    self._queue_new_graveyard_order_choices(graveyard_lengths)
-                    if caster.library:
-                        ante_card = caster.library.pop()
-                        ante_card.zone = Zone.ANTE
-                        caster.ante.append(ante_card)
-                    else:
-                        caster.has_lost = True
-                    caster.draw(effect.draw_count)
+                    self._discard_forced(
+                        caster,
+                        tuple(caster.hand),
+                        source_name=card.name,
+                        draw_after=effect.draw_count,
+                        ante_after=True,
+                    )
                 elif isinstance(effect, SwapLibraryTopWithAnteEffect):
                     # The library-card requirement is checked when Darkpact is
                     # cast. Keep resolution robust if a future effect empties
                     # that library during the same batch.
                     if caster.library:
                         target = next(
-                            item for item in spell.targets if isinstance(item, Card)
+                            item for item in resolved_targets if isinstance(item, Card)
                         )
                         ante_player = next(
                             player for player in self.players if target in player.ante
@@ -1241,7 +1468,7 @@ class PriorityBatchResolutionMixin:
                     )
                 elif isinstance(effect, NaturalSelectionEffect):
                     target = next(
-                        item for item in spell.targets if not isinstance(item, Card)
+                        item for item in resolved_targets if not isinstance(item, Card)
                     )
                     self.pending_natural_selection_choices.append(
                         PendingNaturalSelectionChoice(
@@ -1325,10 +1552,17 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, DestroyTargetsEffect):
                     pending_destruction.extend(
                         (target, effect.regeneration_allowed)
-                        for target in spell.targets
+                        for target in resolved_targets
                         if isinstance(target, Card)
                     )
                 elif isinstance(effect, DestroyAllEffect):
+                    effect = replace(
+                        effect,
+                        subtypes=frozenset(
+                            self.land_word(card, subtype)
+                            for subtype in effect.subtypes
+                        ),
+                    )
                     pending_destruction.extend(
                         (permanent, effect.regeneration_allowed)
                         for player in self.players
@@ -1345,7 +1579,7 @@ class PriorityBatchResolutionMixin:
                         )
                     )
                 elif isinstance(effect, MoveTargetsEffect):
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if not isinstance(target, Card):
                             continue
                         if (
@@ -1360,7 +1594,7 @@ class PriorityBatchResolutionMixin:
                         if effect.destination is Zone.BATTLEFIELD:
                             target.entered_battlefield_turn = self.turn_number
                 elif isinstance(effect, ExileTargetsEffect):
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if not isinstance(target, Card):
                             continue
                         controller = self.player(
@@ -1391,7 +1625,7 @@ class PriorityBatchResolutionMixin:
                         caster.has_lost = False
                 elif isinstance(effect, RetroactiveDamageTransferEffect):
                     target = next(
-                        (item for item in spell.targets if isinstance(item, Card)),
+                        (item for item in resolved_targets if isinstance(item, Card)),
                         None,
                     )
                     if target is None:
@@ -1413,14 +1647,14 @@ class PriorityBatchResolutionMixin:
                         )
                 elif isinstance(effect, SetTappedEffect):
                     tapped = spell.chosen_mode == "Tap"
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if isinstance(target, Card):
                             if tapped:
                                 self._tap_permanent(target)
                             else:
                                 target.tapped = False
                 elif isinstance(effect, TapLandsAndEmptyManaPoolEffect):
-                    for target in spell.targets:
+                    for target in resolved_targets:
                         if isinstance(target, Card):
                             continue
                         caster = self.player(spell.caster_id)
@@ -1592,15 +1826,37 @@ class PriorityBatchResolutionMixin:
                     if isinstance(target, Card):
                         self.attack_requirements[target.id] = AttackRequirement(target.id)
             elif isinstance(declared.ability, ActivatedLandTypeAbility):
-                if declared.source.zone is not Zone.BATTLEFIELD:
+                if (
+                    declared.source.zone is not Zone.BATTLEFIELD
+                    and not declared.ability.persists_after_source_leaves
+                ):
                     continue
                 for target in declared.targets:
                     if isinstance(target, Card):
                         self.battlefield_entry_sequence += 1
-                        target.land_type_marks[declared.source.id] = (
-                            declared.ability.replacement_subtype,
-                            self.battlefield_entry_sequence,
-                        )
+                        if declared.ability.persists_after_source_leaves:
+                            if declared.source.persistent_effect_instance_id is None:
+                                declared.source.persistent_effect_instance_id = uuid4()
+                            mark = CyclopeanTombMark(
+                                uuid4(),
+                                declared.source.persistent_effect_instance_id,
+                                target.id,
+                                self.battlefield_entry_sequence,
+                                declared.ability.replacement_subtype,
+                            )
+                            self.cyclopean_tomb_marks.append(mark)
+                            if declared.source.zone is not Zone.BATTLEFIELD:
+                                self.cyclopean_tomb_cleanup_controllers[
+                                    mark.effect_id
+                                ] = declared.controller_id
+                            target.counters["mire"] = (
+                                target.counters.get("mire", 0) + 1
+                            )
+                        else:
+                            target.land_type_marks[declared.source.id] = (
+                                declared.ability.replacement_subtype,
+                                self.battlefield_entry_sequence,
+                            )
             elif isinstance(declared.ability, ActivatedExtraTurnAbility):
                 self.schedule_extra_turn(declared.controller_id)
             elif isinstance(declared.ability, ActivatedUntapAbility):
@@ -1743,6 +1999,13 @@ class PriorityBatchResolutionMixin:
             elif isinstance(effect, PreventCombatDamageEffect):
                 self.prevent_combat_damage_this_turn = True
             elif isinstance(effect, DestroyAllEffect):
+                effect = replace(
+                    effect,
+                    subtypes=frozenset(
+                        self.land_word(card, subtype)
+                        for subtype in effect.subtypes
+                    ),
+                )
                 self._destroy_permanents(
                     permanent
                     for player in self.players

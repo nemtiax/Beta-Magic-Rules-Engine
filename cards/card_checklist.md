@@ -19,7 +19,7 @@
  - [x] Disenchant
  - [x] Farmstead
  - [x] Green Ward
- - [ ] Guardian Angel
+ - [x] Guardian Angel
  - [x] Healing Salve
  - [x] Holy Armor
  - [x] Holy Strength
@@ -61,7 +61,7 @@
  - [x] Jump
  - [x] Lifetap
  - [x] Lord of Atlantis
- - [ ] Magical Hack
+ - [x] Magical Hack
  - [x] Mahamoti Djinn
  - [x] Mana Short
  - [x] Merfolk of the Pearl Trident
@@ -76,7 +76,7 @@
  - [x] Psychic Venom
  - [x] Sea Serpent
  - [x] Siren's Call
- - [ ] Sleight of Mind
+ - [x] Sleight of Mind
  - [x] Spell Blast
  - [x] Stasis
  - [x] Steal Artifact
@@ -90,7 +90,7 @@
  - [x] Wall of Air
  - [x] Wall of Water
  - [x] Water Elemental
- - [ ] Animate Dead
+ - [x] Animate Dead
  - [x] Bad Moon
  - [x] Black Knight
  - [x] Bog Wraith
@@ -238,7 +238,7 @@
  - [x] Conservator
  - [x] Copper Tablet
  - [x] Crystal Rod
- - [ ] Cyclopean Tomb
+ - [x] Cyclopean Tomb
  - [x] Dingus Egg
  - [x] Disrupting Scepter
  - [x] Forcefield
@@ -255,7 +255,7 @@
  - [x] Jayemdae Tome
  - [x] Juggernaut
  - [x] Kormus Bell
- - [ ] Library of Leng
+ - [x] Library of Leng
  - [x] Living Wall
  - [x] Mana Vault
  - [x] Meekstone

@@ -22,6 +22,7 @@ from .damage import (
 )
 from .destruction import DestructionResolutionStep
 from .events import DamageEvent
+from .mana import ManaCost
 from .rule_events import RuleEventKind, RuleEventOpportunity
 from .types import CardType, Color, CombatStep, Zone
 
@@ -44,6 +45,8 @@ class PendingPrevention:
     unblocked_combat_only: bool = False
     leaves_one_life_loss: bool = False
     paid: bool = False
+    x_value: int = 0
+    establishes_guardian_angel: bool = False
 
 
 @dataclass(slots=True)
@@ -424,6 +427,43 @@ class DamageDestructionMixin:
         )
         return self.pending_prevention
 
+    def begin_guardian_angel(
+        self, card: Card, x_value: int
+    ) -> PendingPrevention:
+        """Cast Guardian Angel for X in the current prevention window."""
+
+        self._require_no_pending_action(allow_stack=True, allow_damage=True)
+        incident = self.pending_damage
+        if (
+            incident is None
+            or incident.step is not DamageResolutionStep.PREVENTION
+        ):
+            raise RuntimeError(
+                "Guardian Angel can only be cast during a damage-prevention window"
+            )
+        if not card.definition.is_guardian_angel:
+            raise ValueError(f"{card.name} is not Guardian Angel")
+        if x_value < 0:
+            raise ValueError("X cannot be negative")
+        caster = self._caster_for(card)
+        if (
+            self.priority_player_index is None
+            or caster is not self.players[self.priority_player_index]
+        ):
+            raise RuntimeError(
+                f"{self.players[self.priority_player_index].name} has priority"
+            )
+        if not self.can_pay_mana(caster, self.spell_mana_cost(card, x_value)):
+            raise RuntimeError(f"not enough mana to cast {card.name} with X={x_value}")
+        self.pending_prevention = PendingPrevention(
+            card,
+            caster.id,
+            x_value,
+            x_value=x_value,
+            establishes_guardian_angel=True,
+        )
+        return self.pending_prevention
+
     def prevent_damage(self, player_id: str, packet_id: UUID) -> int:
         """Assign as much pending prevention as possible to one damage packet."""
 
@@ -480,7 +520,10 @@ class DamageDestructionMixin:
         if not pending.paid:
             if pending.ability_index is None:
                 caster = self.player(pending.controller_id)
-                self.pay_mana(caster, self.spell_mana_cost(pending.source))
+                self.pay_mana(
+                    caster,
+                    self.spell_mana_cost(pending.source, pending.x_value),
+                )
                 self._move_card(pending.source, Zone.GRAVEYARD)
             else:
                 ability = self.activated_abilities(pending.source)[
@@ -584,6 +627,13 @@ class DamageDestructionMixin:
             pending.paid = True
         else:
             player = self.player(player_id)
+        if (
+            pending.establishes_guardian_angel
+            and pending.recipient_id is not None
+        ):
+            self.guardian_angel_targets.add(
+                (pending.controller_id, pending.recipient_id)
+            )
         self.pending_prevention = None
         self.priority_player_index = (
             self.players.index(player) + 1
@@ -601,6 +651,66 @@ class DamageDestructionMixin:
         if pending.paid:
             raise RuntimeError("damage prevention already assigned; finish it instead")
         self.pending_prevention = None
+
+    def guardian_angel_payment_options(
+        self, player_id: str
+    ) -> list[tuple[DamagePacket, int]]:
+        """Damage packets and maximum paid prevention from prior Angels."""
+
+        incident = self.pending_damage
+        if (
+            incident is None
+            or incident.step is not DamageResolutionStep.PREVENTION
+            or self.pending_prevention is not None
+        ):
+            return []
+        player = self.player(player_id)
+        if (
+            self.priority_player_index is None
+            or player is not self.players[self.priority_player_index]
+        ):
+            return []
+        maximum_affordable = 0
+        while self.can_pay_mana(
+            player, ManaCost(generic=maximum_affordable + 1)
+        ):
+            maximum_affordable += 1
+        if maximum_affordable == 0:
+            return []
+        return [
+            (packet, min(packet.remaining, maximum_affordable))
+            for packet in incident.packets
+            if packet.remaining > 0
+            and (player_id, packet.recipient_id) in self.guardian_angel_targets
+        ]
+
+    def pay_guardian_angel_prevention(
+        self, player_id: str, packet_id: UUID, amount: int
+    ) -> int:
+        """Pay one generic mana per point prevented by a prior Guardian Angel."""
+
+        option = next(
+            (
+                (candidate, maximum)
+                for candidate, maximum
+                in self.guardian_angel_payment_options(player_id)
+                if candidate.id == packet_id
+            ),
+            None,
+        )
+        if option is None:
+            raise ValueError("Guardian Angel cannot prevent that damage")
+        packet, maximum = option
+        if not 1 <= amount <= maximum:
+            raise ValueError(f"choose an amount from 1 to {maximum}")
+        player = self.player(player_id)
+        self.pay_mana(player, ManaCost(generic=amount))
+        packet.prevented += amount
+        self.priority_player_index = (
+            self.players.index(player) + 1
+        ) % len(self.players)
+        self.consecutive_passes = 0
+        return amount
 
     def _validate_regeneration_activation(
         self, player_id: str, card: Card, ability_index: int

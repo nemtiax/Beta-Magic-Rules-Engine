@@ -2,6 +2,7 @@ import unittest
 
 from beta_magic import (
     HEALING_SALVE,
+    GUARDIAN_ANGEL,
     PREVENTION_CARDS,
     SAMITE_HEALER,
     GameState,
@@ -61,7 +62,10 @@ class DamagePreventionTests(unittest.TestCase):
             self.game.pass_priority(priority.id)
 
     def test_card_definitions(self) -> None:
-        self.assertEqual(PREVENTION_CARDS, (HEALING_SALVE, SAMITE_HEALER))
+        self.assertEqual(
+            PREVENTION_CARDS,
+            (GUARDIAN_ANGEL, HEALING_SALVE, SAMITE_HEALER),
+        )
         self.assertEqual(HEALING_SALVE.mana_cost.compact, "W")
         self.assertEqual(HEALING_SALVE.prevention_amount, 3)
         self.assertEqual(SAMITE_HEALER.mana_cost.compact, "1W")

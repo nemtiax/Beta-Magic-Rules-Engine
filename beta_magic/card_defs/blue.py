@@ -10,6 +10,7 @@ from ..effects import (
     ContinuousEffect,
     AttachedEventDamageEffect,
     AttachedLandTypeEffect,
+    ChangeTextWordEffect,
     CounterTargetSpellEffect,
     DamageEffect,
     DrawCardsEffect,
@@ -44,6 +45,40 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 THOUGHTLACE = lace("Thoughtlace", Color.BLUE)
+
+MAGICAL_HACK = CardDefinition(
+    name="Magical Hack",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{U}"),
+    rules_text=(
+        "Change one basic land type word in the text of target card being "
+        "played or already in play to another basic land type word."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        additional_zones=frozenset({Zone.STACK}),
+        has_land_word=True,
+    ),
+    spell_effects=(ChangeTextWordEffect("land"),),
+)
+
+SLEIGHT_OF_MIND = CardDefinition(
+    name="Sleight of Mind",
+    card_types=frozenset({CardType.INTERRUPT}),
+    mana_cost=ManaCost.parse("{U}"),
+    rules_text=(
+        "Change one color word in the text of target card being played or "
+        "already in play to another color word."
+    ),
+    colors=frozenset({Color.BLUE}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        additional_zones=frozenset({Zone.STACK}),
+        has_color_word=True,
+    ),
+    spell_effects=(ChangeTextWordEffect("color"),),
+)
 
 STASIS = CardDefinition(
     name="Stasis",
@@ -710,6 +745,7 @@ BLUE_CARDS = tuple(
             LIFETAP,
             LORD_OF_ATLANTIS,
             MAHAMOTI_DJINN,
+            MAGICAL_HACK,
             MANA_SHORT,
             MERFOLK_OF_THE_PEARL_TRIDENT,
             PHANTASMAL_FORCES,
@@ -723,6 +759,7 @@ BLUE_CARDS = tuple(
             PSYCHIC_VENOM,
             SEA_SERPENT,
             SIRENS_CALL,
+            SLEIGHT_OF_MIND,
             SPELL_BLAST,
             STASIS,
             STEAL_ARTIFACT,
