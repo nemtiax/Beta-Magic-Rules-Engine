@@ -128,7 +128,10 @@ from beta_magic.decks import (
     SPECTRUM_ASSAULT_DECK,
     IVORY_LAYERS_DECK,
     SHADOW_COATS_DECK,
+    RIVERBANK_RAIDERS_DECK,
+    RIVERBANK_GUARDIANS_DECK,
     make_aura_test_game,
+    make_raging_river_test_game,
 )
 from beta_magic.ui import (
     GameViewModel,
@@ -641,6 +644,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertFalse(parse_args([]).x_test_decks)
         self.assertFalse(parse_args([]).protection_test_decks)
         self.assertFalse(parse_args([]).aura_test_decks)
+        self.assertFalse(parse_args([]).raging_river_test_decks)
         self.assertTrue(parse_args(["--test-decks"]).test_decks)
         self.assertTrue(
             parse_args(["--enchantment-test-decks"]).enchantment_test_decks
@@ -653,6 +657,27 @@ class DemoGameTests(unittest.TestCase):
             parse_args(["--protection-test-decks"]).protection_test_decks
         )
         self.assertTrue(parse_args(["--aura-test-decks"]).aura_test_decks)
+        self.assertTrue(
+            parse_args(["--raging-river-test-decks"]).raging_river_test_decks
+        )
+
+    def test_raging_river_test_decks_open_with_the_river_and_fast_mana(
+        self,
+    ) -> None:
+        game = make_raging_river_test_game()
+
+        self.assertEqual(len(RIVERBANK_RAIDERS_DECK), 20)
+        self.assertEqual(len(RIVERBANK_GUARDIANS_DECK), 20)
+        for player in game.players:
+            opening_names = [card.name for card in player.hand]
+            self.assertIn("Raging River", opening_names)
+            self.assertIn("Mountain", opening_names)
+            self.assertIn("Mox Ruby", opening_names)
+            self.assertGreaterEqual(
+                sum(CardType.CREATURE in card.definition.card_types
+                    for card in player.hand),
+                3,
+            )
 
     def test_aura_test_decks_open_with_creatures_mana_and_auras(self) -> None:
         game = make_aura_test_game()

@@ -144,6 +144,27 @@ BANDING_DEFENSE_DECK = _cards(
     "Helm of Chatzuk", "Forest",
 )
 
+# Each opening hand contains Raging River, a Mountain, Mox Ruby, a second
+# land, and three cheap creatures. This makes a turn-one River possible while
+# leaving plenty of ground creatures and flyers to divide on later attacks.
+RIVERBANK_RAIDERS_DECK = _cards(
+    "Raging River", "Mountain", "Forest", "Ironclaw Orcs",
+    "Mons's Goblin Raiders", "Timber Wolves", "Grizzly Bears", "Mountain",
+    "Goblin Balloon Brigade", "Llanowar Elves", "Scryb Sprites", "Forest",
+    "Mountain",
+    "Mox Ruby", "Raging River", "Mountain", "Forest", "Grizzly Bears",
+    "Scryb Sprites", "Goblin Balloon Brigade",
+)
+
+RIVERBANK_GUARDIANS_DECK = _cards(
+    "Raging River", "Mountain", "Forest", "Ironclaw Orcs",
+    "Goblin Balloon Brigade", "Birds of Paradise", "Grizzly Bears",
+    "Mountain", "Timber Wolves", "Llanowar Elves", "Scryb Sprites", "Forest",
+    "Mountain",
+    "Mox Ruby", "Raging River", "Mountain", "Forest", "Grizzly Bears",
+    "Birds of Paradise", "Llanowar Elves",
+)
+
 
 def _make_game(
     first_id: str,
@@ -281,6 +302,19 @@ def make_banding_test_game(*, ante: bool = False) -> GameState:
     )
 
 
+def make_raging_river_test_game(*, ante: bool = False) -> GameState:
+    """Create cheap creature decks with a guaranteed opening Raging River."""
+
+    return _make_game(
+        "riverbank-raiders", "Riverbank Raiders (R/G)",
+        RIVERBANK_RAIDERS_DECK,
+        "riverbank-guardians", "Riverbank Guardians (R/G)",
+        RIVERBANK_GUARDIANS_DECK,
+        shuffle=False,
+        ante=ante,
+    )
+
+
 __all__ = [
     "VERDANT_TIDES_DECK",
     "STONEFIRE_DECK",
@@ -296,6 +330,8 @@ __all__ = [
     "SHADOW_COATS_DECK",
     "BANDING_CHARGE_DECK",
     "BANDING_DEFENSE_DECK",
+    "RIVERBANK_RAIDERS_DECK",
+    "RIVERBANK_GUARDIANS_DECK",
     "make_demo_game",
     "make_test_game",
     "make_enchantment_test_game",
@@ -304,4 +340,5 @@ __all__ = [
     "make_protection_test_game",
     "make_aura_test_game",
     "make_banding_test_game",
+    "make_raging_river_test_game",
 ]

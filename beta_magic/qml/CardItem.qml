@@ -22,6 +22,7 @@ Rectangle {
     border.color: cardData.selected ? "#ffd54a"
                   : cardData.balanceEligible || cardData.lichEligible
                     || cardData.upkeepSacrificeEligible
+                    || cardData.riverChoiceEligible
                     ? "#7fc8ff"
                   : cardData.combatRole === "attacker" ? "#e58a55"
                   : cardData.combatRole === "blocker" ? "#75b7e8"
@@ -133,13 +134,37 @@ Rectangle {
 
     }
 
+    Rectangle {
+        id: riverBadge
+        visible: !card.tabMode && !!cardData.riverSide
+        x: cardData.riverSide === "L" ? 4 : parent.width - width - 4
+        anchors.verticalCenter: parent.verticalCenter
+        width: 18
+        height: 22
+        radius: 5
+        color: cardData.riverSide === "L" ? "#276d94" : "#9a4e31"
+        border.color: "#eaf5ff"
+        border.width: 1
+        z: 4
+
+        Text {
+            anchors.centerIn: parent
+            text: cardData.riverSide
+            color: "#ffffff"
+            font.bold: true
+            font.pixelSize: 11
+        }
+    }
+
     MouseArea {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: card.selectionOnly
-                         ? (cardData.attackerSelectionActive
-                            && !cardData.attackerEligible
+                         ? ((cardData.attackerSelectionActive
+                             && !cardData.attackerEligible)
+                            || (cardData.riverChoiceActive
+                                && !cardData.riverChoiceEligible)
                             ? Qt.NoButton : Qt.LeftButton)
                          : card.interactive || card.targetable
                            ? Qt.LeftButton | Qt.RightButton : Qt.NoButton

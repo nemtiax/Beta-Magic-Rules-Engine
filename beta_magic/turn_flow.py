@@ -396,6 +396,7 @@ class TurnFlowMixin:
                 f"{self.active_player.name} must discard "
                 f"{self.required_discards(self.active_player)} card(s)"
             )
+        self._clear_land_tap_undo_window()
         self.pending_phase_advance = self.current_phase
         self.priority_player_index = (
             self.active_player_index + 1
@@ -1433,6 +1434,7 @@ class TurnFlowMixin:
     def _empty_mana_pools(self) -> None:
         """Empty every pool and apply Beta's mana burn rule."""
 
+        self._clear_land_tap_undo_window()
         for player in self.players:
             mana_burn = player.mana_pool.empty()
             life_lost, _ = self._lose_life(player, mana_burn)

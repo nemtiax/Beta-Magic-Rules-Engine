@@ -22,6 +22,7 @@ from ..effects import (
     DiscardHandsAndDrawEffect,
     EffectScope,
     GlobalDamageEffect,
+    FalseOrdersEffect,
     LandManaBonusEffect,
     PermanentTappedEffect,
     UpkeepDamageEffect,
@@ -40,6 +41,38 @@ _CREATURE_IN_PLAY = TargetRequirement(
 )
 
 CHAOSLACE = lace("Chaoslace", Color.RED)
+
+FALSE_ORDERS = CardDefinition(
+    name="False Orders",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{R}"),
+    rules_text=(
+        "Cast after defenders are chosen and before damage is dealt. You "
+        "decide whether and how one defending creature blocks, but may only "
+        "make a choice the defender could legally have made."
+    ),
+    colors=frozenset({Color.RED}),
+    target_requirement=TargetRequirement(
+        zone=Zone.BATTLEFIELD,
+        card_types=frozenset({CardType.CREATURE}),
+        defending_player_only=True,
+    ),
+    spell_effects=(FalseOrdersEffect(),),
+)
+
+RAGING_RIVER = CardDefinition(
+    name="Raging River",
+    card_types=frozenset({CardType.ENCHANTMENT}),
+    mana_cost=ManaCost.parse("{R}{R}"),
+    rules_text=(
+        "Whenever you attack, the defender first divides their non-flying "
+        "creatures between the left and right sides of the River. You then "
+        "place each attacker on a side. Non-flying creatures can block only "
+        "attackers on their side; flying creatures may block either side."
+    ),
+    colors=frozenset({Color.RED}),
+    divides_combat_by_river=True,
+)
 
 FORK = CardDefinition(
     name="Fork",
@@ -681,6 +714,7 @@ RED_CARDS = tuple(
             EARTHQUAKE,
             FIRE_ELEMENTAL,
             FIREBALL,
+            FALSE_ORDERS,
             FORK,
             FIREBREATHING,
             FLASHFIRES,
@@ -699,6 +733,7 @@ RED_CARDS = tuple(
             ORCISH_ARTILLERY,
             ORCISH_ORIFLAMME,
             POWER_SURGE,
+            RAGING_RIVER,
             ROC_OF_KHER_RIDGES,
             ROCK_HYDRA,
             RED_ELEMENTAL_BLAST,

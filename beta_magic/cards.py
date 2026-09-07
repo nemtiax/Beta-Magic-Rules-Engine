@@ -69,6 +69,7 @@ from .effects import (
     SacrificeCreatureForManaEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
+    FalseOrdersEffect,
     BalanceEffect,
     ExtraTurnEffect,
     LandEventDamageEffect,
@@ -182,6 +183,7 @@ class CardDefinition:
     damages_attached_on_entry: int = 0
     destroy_at_end_of_turn_if_no_creatures: bool = False
     lures_blockers: bool = False
+    divides_combat_by_river: bool = False
     tap_abilities_require_paid_upkeep: bool = False
     initial_counters: tuple[tuple[str, int], ...] = ()
     counter_power_bonus: tuple[tuple[str, int], ...] = ()
@@ -290,6 +292,11 @@ class CardDefinition:
             raise ValueError("attachment entry damage requires a target")
         if self.lures_blockers and self.target_requirement is None:
             raise ValueError("a blocking lure requires an attachment target")
+        if (
+            self.divides_combat_by_river
+            and CardType.ENCHANTMENT not in self.card_types
+        ):
+            raise ValueError("a Raging River effect requires an enchantment")
         if self.tap_abilities_require_paid_upkeep and not self.upkeep_effects:
             raise ValueError("an upkeep-locked ability requires an upkeep effect")
         if self.prevention_amount < 0:
@@ -523,6 +530,7 @@ __all__ = [
     "UntapRestrictionEffect",
     "ExtraTurnEffect",
     "BlazeOfGloryEffect",
+    "FalseOrdersEffect",
     "LandEventDamageEffect",
     "AttachedEventDamageEffect",
     "EffectRecipient",

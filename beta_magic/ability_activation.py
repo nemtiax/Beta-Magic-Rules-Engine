@@ -68,6 +68,7 @@ class AbilityActivationMixin:
                 player, ability = self._validate_ability_activation(
                     player_id, card, ability_index
                 )
+                self._clear_land_tap_undo_window()
                 self.pay_mana(player, self.ability_mana_cost(card, ability.mana_cost))
                 if ability.tap_cost:
                     self._tap_permanent(card)
@@ -80,6 +81,7 @@ class AbilityActivationMixin:
             player, ability = self._validate_prevention_activation(
                 player_id, card, ability_index
             )
+            self._clear_land_tap_undo_window()
             self.pending_prevention = PendingPrevention(
                 card,
                 player.id,
@@ -96,6 +98,7 @@ class AbilityActivationMixin:
             player, _ = self._validate_redirection_activation(
                 player_id, card, ability_index
             )
+            self._clear_land_tap_undo_window()
             self.pending_redirection = PendingRedirection(
                 card, player.id, ability_index
             )
@@ -104,6 +107,7 @@ class AbilityActivationMixin:
             player, ability, affected_card = self._validate_regeneration_activation(
                 player_id, card, ability_index
             )
+            self._clear_land_tap_undo_window()
             if ability.counter_cost is not None:
                 card.counters[ability.counter_cost] -= 1
             else:
@@ -132,6 +136,7 @@ class AbilityActivationMixin:
             cost = ability.mana_cost_per_damage.scaled(amount)
             if not self.can_pay_mana(player, cost):
                 raise RuntimeError(f"not enough mana to activate {card.name}")
+            self._clear_land_tap_undo_window()
             self.pay_mana(player, cost)
             self.batch_abilities.append(
                 AbilityOnStack(card, card.name, player.id, ability, (), amount)
@@ -146,7 +151,6 @@ class AbilityActivationMixin:
             ability,
             (
                 ActivatedDamageAbility,
-                ActivatedGlobalDamageAbility,
                 ActivatedDestroyAbility,
                 ActivatedTapAbility,
                 ActivatedUnblockableAbility,
@@ -166,10 +170,25 @@ class AbilityActivationMixin:
                 self.pending_activation = None
                 raise RuntimeError(f"there are no legal targets for {card.name}")
             return pending
+        reversible_land_tap = bool(
+            isinstance(ability, ActivatedManaAbility)
+            and CardType.LAND in self.card_types(card)
+            and ability.tap_cost
+            and not ability.sacrifice_source
+            and not self.ability_mana_cost(card, ability.mana_cost).mana_value
+        )
+        mana_before = self._mana_pool_snapshot() if reversible_land_tap else ()
+        priority_before = self.priority_player_index
+        passes_before = self.consecutive_passes
+        undo_generation_before = self.land_tap_undo_generation
+        if not reversible_land_tap:
+            self._clear_land_tap_undo_window()
         if isinstance(ability, ActivatedManaAbility):
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
-                self._tap_permanent(card)
+                self._tap_permanent(
+                    card, preserve_land_tap_undo=reversible_land_tap
+                )
             player.mana_pool.add(ability.color, ability.amount)
             if CardType.LAND in card.definition.card_types:
                 for owner in self.players:
@@ -188,6 +207,21 @@ class AbilityActivationMixin:
                 # era's ruling makes that destruction non-regenerable.
                 self._move_card(card, Zone.GRAVEYARD)
             self.check_state_based_actions()
+            if (
+                reversible_land_tap
+                and card.zone is Zone.BATTLEFIELD
+                and card.tapped
+                and self.land_tap_undo_generation == undo_generation_before
+            ):
+                self._record_land_tap_undo(
+                    player.id,
+                    card,
+                    mana_before,
+                    priority_player_index_before=priority_before,
+                    consecutive_passes_before=passes_before,
+                )
+            elif reversible_land_tap:
+                self._clear_land_tap_undo_window()
             return None
         if isinstance(ability, ActivatedDrawAbility):
             self.pay_mana(player, ability.mana_cost)
@@ -355,6 +389,8 @@ class AbilityActivationMixin:
         if self.combat is not None and self.combat.step in {
             CombatStep.DECLARE_ATTACKERS,
             CombatStep.DECLARE_BLOCKERS,
+            CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+            CombatStep.RIVER_ATTACKER_ASSIGNMENT,
         }:
             raise RuntimeError(
                 "abilities cannot be activated during a combat declaration"

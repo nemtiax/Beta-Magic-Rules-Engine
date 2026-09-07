@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beta-draft-bot"
+version = "1.0.0"
+description = "Stateful, explainable Magic: The Gathering Beta draft picker"
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT (code only; see NOTICE.md for card data)"}
+dependencies = []
+
+[project.optional-dependencies]
+ui = ["PySide6>=6.8,<7"]
+
+[project.scripts]
+beta-draft = "beta_draft.__main__:main"
+beta-draft-ui = "beta_draft.ui:main"
+
+[tool.setuptools.packages.find]
+include = ["beta_draft*"]
+
+[tool.setuptools.package-data]
+beta_draft = ["data/*.json", "data/*.tsv", "qml/*.qml"]

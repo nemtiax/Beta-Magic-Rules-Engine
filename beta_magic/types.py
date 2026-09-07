@@ -108,8 +108,17 @@ class CombatStep(str, Enum):
     """Declarations and response windows in the clarified Beta attack."""
 
     ATTACK_RESPONSE = "fast_effects_before_attackers"
+    RIVER_DEFENDER_ASSIGNMENT = "divide_defenders_at_river"
     DECLARE_ATTACKERS = "declare_attackers"
+    RIVER_ATTACKER_ASSIGNMENT = "place_attackers_at_river"
     ATTACKER_RESPONSE = "fast_effects_before_blockers"
     DECLARE_BLOCKERS = "declare_blockers"
     BLOCKER_RESPONSE = "fast_effects_before_damage"
     DAMAGE = "damage"
+
+
+class RiverSide(str, Enum):
+    """One bank chosen for a creature during a Raging River attack."""
+
+    LEFT = "L"
+    RIGHT = "R"

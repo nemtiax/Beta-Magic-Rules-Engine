@@ -21,7 +21,12 @@ from .casting import (
     TargetingCastingMixin,
 )
 from .characteristics import CharacteristicsMixin
-from .combat import AttackRequirement, CombatMixin, CombatState
+from .combat import (
+    AttackRequirement,
+    CombatMixin,
+    CombatState,
+    PendingFalseOrdersChoice,
+)
 from .incident_resolution import (
     DamageDestructionMixin,
     PendingPrevention,
@@ -243,6 +248,22 @@ class AnteAward:
         return self.winner_id is None
 
 
+@dataclass(frozen=True, slots=True)
+class LandTapUndo:
+    """A consecutive land mana activation that may still be taken back."""
+
+    player_id: str
+    land_id: UUID
+    turn_number: int
+    phase: TurnPhase | None
+    combat_id: int | None
+    combat_step: CombatStep | None
+    mana_before: tuple[tuple[str, tuple[int, ...]], ...]
+    mana_after: tuple[tuple[str, tuple[int, ...]], ...]
+    priority_player_index_before: int | None
+    consecutive_passes_before: int
+
+
 @dataclass(slots=True)
 class GameState(
     TargetingCastingMixin,
@@ -286,6 +307,9 @@ class GameState(
     creature_deaths_this_turn: int = 0
     player_damage_history: list[PlayerDamageRecord] = field(default_factory=list)
     combat: CombatState | None = None
+    pending_false_orders_choices: list[PendingFalseOrdersChoice] = field(
+        default_factory=list
+    )
     pending_cast: PendingCast | None = None
     pending_activation: PendingActivation | None = None
     pending_prevention: PendingPrevention | None = None
@@ -371,6 +395,8 @@ class GameState(
     pending_library_search_choices: list[PendingLibrarySearchChoice] = field(
         default_factory=list
     )
+    land_tap_undo_history: list[LandTapUndo] = field(default_factory=list)
+    land_tap_undo_generation: int = 0
     random: Random = field(default_factory=Random, repr=False)
 
     def __post_init__(self) -> None:
@@ -420,7 +446,110 @@ class GameState(
     def pay_mana(self, player: PlayerState, cost: ManaCost) -> None:
         """Pay a cost using all currently active mana substitutions."""
 
+        if cost.mana_value:
+            self._clear_land_tap_undo_window()
         player.mana_pool.pay(cost, self._mana_payment_substitutions(player))
+
+    def _mana_pool_snapshot(self) -> tuple[tuple[str, tuple[int, ...]], ...]:
+        return tuple((player.id, player.mana_pool.amounts) for player in self.players)
+
+    def _clear_land_tap_undo_window(self) -> None:
+        """Commit any mana taps made since the last irreversible action."""
+
+        self.land_tap_undo_history.clear()
+        self.land_tap_undo_generation += 1
+
+    def _record_land_tap_undo(
+        self,
+        player_id: str,
+        land: Card,
+        mana_before: tuple[tuple[str, tuple[int, ...]], ...],
+        *,
+        priority_player_index_before: int | None,
+        consecutive_passes_before: int,
+    ) -> None:
+        combat = self.combat
+        self.land_tap_undo_history.append(
+            LandTapUndo(
+                player_id=player_id,
+                land_id=land.id,
+                turn_number=self.turn_number,
+                phase=self.current_phase,
+                combat_id=id(combat) if combat is not None else None,
+                combat_step=combat.step if combat is not None else None,
+                mana_before=mana_before,
+                mana_after=self._mana_pool_snapshot(),
+                priority_player_index_before=priority_player_index_before,
+                consecutive_passes_before=consecutive_passes_before,
+            )
+        )
+
+    def undoable_land_tap(self, player_id: str) -> Card | None:
+        """Return the most recent land if that player may still undo its tap."""
+
+        if not self.land_tap_undo_history:
+            return None
+        record = self.land_tap_undo_history[-1]
+        combat = self.combat
+        combat_id = id(combat) if combat is not None else None
+        combat_step = combat.step if combat is not None else None
+        if (
+            record.player_id != player_id
+            or self.status is not GameStatus.IN_PROGRESS
+            or record.turn_number != self.turn_number
+            or record.phase is not self.current_phase
+            or record.combat_id != combat_id
+            or record.combat_step is not combat_step
+            or record.mana_after != self._mana_pool_snapshot()
+            or (
+                self.priority_player_index is not None
+                and self.players[self.priority_player_index].id != player_id
+            )
+        ):
+            return None
+        try:
+            self._require_no_pending_action(allow_stack=True, allow_damage=True)
+        except RuntimeError:
+            return None
+        land = next(
+            (
+                card
+                for owner in self.players
+                for card in owner.battlefield
+                if card.id == record.land_id
+            ),
+            None,
+        )
+        if (
+            land is None
+            or not land.tapped
+            or land.controller_id != player_id
+            or CardType.LAND not in self.card_types(land)
+        ):
+            return None
+        return land
+
+    def undo_last_land_tap(self, player_id: str) -> Card:
+        """Undo the latest still-uncommitted land mana activation."""
+
+        land = self.undoable_land_tap(player_id)
+        if land is None:
+            raise RuntimeError("there is no land mana tap that can be undone")
+        record = self.land_tap_undo_history.pop()
+        for owner_id, amounts in record.mana_before:
+            pool = self.player(owner_id).mana_pool
+            (
+                pool.white,
+                pool.blue,
+                pool.black,
+                pool.red,
+                pool.green,
+                pool.colorless,
+            ) = amounts
+        land.tapped = False
+        self.priority_player_index = record.priority_player_index_before
+        self.consecutive_passes = record.consecutive_passes_before
+        return land
 
     def spell_mana_cost(
         self, card: Card, x_value: int = 0, target_count: int = 1
@@ -560,6 +689,8 @@ class GameState(
         if self.combat is not None and self.combat.step in {
             CombatStep.DECLARE_ATTACKERS,
             CombatStep.DECLARE_BLOCKERS,
+            CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+            CombatStep.RIVER_ATTACKER_ASSIGNMENT,
         }:
             raise RuntimeError("Channel cannot be used during combat declarations")
         player = self.player(player_id)
@@ -693,6 +824,12 @@ class GameState(
             raise RuntimeError(
                 f"{self.player(choice.chooser_id).name} must choose whether "
                 "to change Vesuvan Doppelganger first"
+            )
+        if self.pending_false_orders_choices:
+            choice = self.pending_false_orders_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.chooser_id).name} must resolve "
+                "False Orders first"
             )
         if self.pending_untap_choice is not None:
             choice = self.pending_untap_choice
@@ -946,6 +1083,7 @@ class GameState(
         """Perform one zone transition without recursively stabilizing the game."""
 
         _, source = self._locate_card(card)
+        self._clear_land_tap_undo_window()
         source_zone = card.zone
         was_land = CardType.LAND in self.card_types(card)
         was_creature = CardType.CREATURE in self.card_types(card)
@@ -1646,11 +1784,16 @@ class GameState(
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
 
-    def _tap_permanent(self, permanent: Card) -> bool:
+    def _tap_permanent(
+        self, permanent: Card, *, preserve_land_tap_undo: bool = False
+    ) -> bool:
         """Tap once and expose matching attached and global event effects."""
 
         if permanent.tapped:
             return False
+        if not preserve_land_tap_undo:
+            self._clear_land_tap_undo_window()
+        opportunities_before = len(self.event_opportunities)
         permanent.tapped = True
         permanent_controller_id = permanent.controller_id or permanent.owner_id
         permanent_controller = self.player(permanent_controller_id)
@@ -1744,6 +1887,8 @@ class GameState(
         if self.event_opportunities and self.priority_player_index is None:
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
+        if len(self.event_opportunities) != opportunities_before:
+            self._clear_land_tap_undo_window()
         return True
 
     def _land_event_sources(
@@ -2068,6 +2213,7 @@ class GameState(
                 )
             ]
             if not doomed:
+                self.reconcile_raging_river()
                 return
             graveyard_lengths = self._graveyard_lengths()
             for creature in doomed:

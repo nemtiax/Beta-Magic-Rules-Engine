@@ -809,6 +809,7 @@ class DamageDestructionMixin:
             raise RuntimeError(
                 f"{self.players[self.priority_player_index].name} has priority"
             )
+        self._clear_land_tap_undo_window()
         self.consecutive_passes += 1
         if self.consecutive_passes < len(self.players):
             self.priority_player_index = (
@@ -832,6 +833,7 @@ class DamageDestructionMixin:
             raise RuntimeError(
                 f"{self.players[self.priority_player_index].name} has priority"
             )
+        self._clear_land_tap_undo_window()
         self.consecutive_passes += 1
         if self.consecutive_passes < len(self.players):
             self.priority_player_index = (

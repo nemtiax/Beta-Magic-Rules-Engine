@@ -1,0 +1,294 @@
+# Original heuristic Limited evaluations, on a roughly 0–5 scale.
+# Name | rating | strategic tags | evaluation note (not Oracle text)
+Animate Wall|0.55|aura,buildaround|Needs a worthwhile Wall; spending two cards on one attacker is fragile.
+Armageddon|2.80|mana_denial,buildaround|Can lock in a board lead, especially with cheap attackers and artifact mana; poor when behind.
+Balance|3.70|sweeper,buildaround|Powerful but symmetric across lands, hands and creatures; artifact mana helps break parity.
+Benalish Hero|1.55|body,aggro,banding|A small body whose banding improves multi-creature combat and damage assignment.
+Black Ward|0.70|aura,sideboard|Protection can stop black removal and Pestilence damage, but requires a useful creature.
+Blaze of Glory|0.65|trick,defensive|A narrow defensive combat trick that needs a blocker capable of surviving.
+Blessing|1.30|aura,mana_sink,white_mana|Repeatable pumping rewards heavy white mana, at the cost of Aura exposure.
+Blue Ward|0.45|aura,sideboard|A narrow answer to blue interaction and blockers; usually a sideboard card.
+Castle|0.70|defensive|Only helps creatures that are not attacking; even Serra Angel loses the bonus while attacking despite remaining untapped.
+Circle of Protection: Black|1.45|sideboard,defensive|Strong against black damage and useful with your own Pestilence; costs mana to maintain.
+Circle of Protection: Blue|0.85|sideboard,defensive|Matchup-dependent protection against blue damage, without removing attackers.
+Circle of Protection: Green|1.10|sideboard,defensive|Useful against large green attackers when the matchup warrants it.
+Circle of Protection: Red|1.70|sideboard,defensive|A strong sideboard answer to red burn and red creatures.
+Circle of Protection: White|1.00|sideboard,defensive|Can contain white damage, but has no effect against other colors.
+Consecrate Land|0.10|aura,narrow|Protecting one land rarely justifies spending a card.
+Conversion|0.50|sideboard,white_mana|A powerful anti-Mountain effect with a recurring white upkeep cost.
+Crusade|1.75|anthem,buildaround|Rewards many white creatures; opposing white creatures receive the bonus too.
+Death Ward|0.80|trick|Cheap protection from some destruction; regeneration does not answer exile or all removal.
+Disenchant|3.10|utility_removal|Cheap interaction with Beta's powerful artifacts and enchantments, including Control Magic.
+Farmstead|0.10|aura,white_mana|Extreme white requirements for slow life gain and no board development.
+Green Ward|0.60|aura,sideboard|May let a threat bypass green blockers, but remains a narrow Aura.
+Guardian Angel|0.50|trick,defensive|Damage prevention rarely trades profitably without a specific combat situation.
+Healing Salve|0.55|trick,defensive|The prevention mode can save a creature; life gain alone is low priority.
+Holy Armor|0.45|aura,defensive|Toughness without meaningful pressure seldom repays the Aura risk.
+Holy Strength|1.00|aura,aggro|A small permanent boost, best on evasion, but vulnerable to two-for-one removal.
+Island Sanctuary|1.00|defensive,buildaround|Skipping draws is costly, and flying or islandwalk attackers still get through.
+Karma|1.20|sideboard|Punishes Swamps symmetrically, making your own black mana a liability.
+Lance|0.75|aura|First strike can improve combat, but needs a body and risks card disadvantage.
+Mesa Pegasus|2.30|body,evasion,banding,aggro|Flying and banding make this more useful than its small stats suggest.
+Northern Paladin|3.15|body,white_mana|A reasonable body with repeatable destruction against black permanents.
+Pearled Unicorn|1.60|body|An unremarkable three-mana 2/2; use it when the pool needs creatures.
+Personal Incarnation|3.05|body,finisher,white_mana|A large body with demanding mana and a serious life-loss consequence when it dies.
+Purelace|0.05|narrow|Color changing is almost never worth a card without a specific hoser interaction.
+Red Ward|0.85|aura,sideboard|Can protect a valuable creature from red burn and blockers.
+Resurrection|2.45|recursion|Returns your own dead creature; better with impactful creatures and sufficient white mana.
+Reverse Damage|1.10|trick,defensive|Can retroactively reverse a damaging event and swing a race, but is expensive and does not develop the board.
+Righteousness|1.35|trick,defensive|An efficient blocking trick, but requires an opponent to attack into it.
+Samite Healer|2.50|body,utility_creature,defensive|Repeatable prevention improves combat and protects one-toughness creatures from pingers.
+Savannah Lions|2.70|body,aggro|Excellent early pressure when white is a main color; poor as a splash.
+Serra Angel|4.65|body,evasion,finisher|An efficient large flyer whose vigilance supports both racing and defense.
+Swords to Plowshares|4.75|removal,premium_removal,splashable|One-mana exile answers virtually every creature despite the opponent's life gain.
+Veteran Bodyguard|2.75|body,defensive|A substantial defensive body that can redirect unblocked combat damage while untapped.
+Wall of Swords|3.25|body,defender,defensive|A large flying blocker that stops many of Beta's best attackers.
+White Knight|3.00|body,aggro|First strike and protection from black are strong, but early double white matters.
+White Ward|0.45|aura,sideboard|Narrow protection with the usual risk of investing another card in a creature.
+Wrath of God|4.45|sweeper|A true reset that prevents regeneration; stronger when your pool can recover or hold back threats.
+Air Elemental|3.90|body,evasion,finisher|An efficient large flying threat, with a double-blue commitment.
+Ancestral Recall|5.35|draw,splashable|Three cards at instant speed for one mana is exceptional card advantage.
+Animate Artifact|0.55|aura,buildaround|Needs a useful noncreature artifact; animation adds vulnerability as well as a body.
+Blue Elemental Blast|1.65|sideboard|Efficient against red spells and permanents, but has no general-purpose role.
+Braingeyser|3.80|draw,mana_sink|Scalable card advantage; its double blue makes casual splashing difficult.
+Clone|3.85|body,finisher,splashable|Targets and copies the best available creature as it is summoned, including an opponent's threat; it needs a legal creature in play.
+Control Magic|4.95|removal,premium_removal,body|Stealing the best creature swings both sides of the board; enchantment removal can reverse it.
+Copy Artifact|1.85|buildaround|Copies strong artifacts on either side; your own quality targets improve reliability.
+Counterspell|3.20|interaction|A clean answer to any spell if you can hold up double blue in time.
+Creature Bond|0.45|aura,narrow|Does not remove the enchanted creature; needs a second event to produce damage.
+Drain Power|0.20|burst_ramp,narrow|Temporary mana is unreliable because the opponent can spend resources before it resolves.
+Feedback|0.15|aura,narrow|Slow damage attached to an enchantment without disabling its effect.
+Flight|0.80|aura|Evasion can matter on a large attacker, but the two-card investment is fragile.
+Invisibility|1.25|aura,aggro|Can bypass most blockers, but requires double blue and a worthwhile attacker.
+Jump|0.45|trick|Temporary flying rarely warrants a full card except to finish a race.
+Lifetap|0.30|sideboard|Life gain against Forests neither answers threats nor wins by itself.
+Lord of Atlantis|2.10|body,lord|A double-blue bear with a payoff for other Merfolk; it also helps opposing Merfolk.
+Magical Hack|0.10|narrow|Land-type word changes are too situational for most draft pools.
+Mahamoti Djinn|4.20|body,evasion,finisher|A huge flyer that dominates combat if the pool can support its cost.
+Mana Short|0.60|tempo,narrow|Can deny one turn's mana, but leaves no lasting board advantage.
+Merfolk of the Pearl Trident|0.70|body,aggro|A weak one-drop unless multiple Lords of Atlantis make the tribe worthwhile.
+Phantasmal Forces|3.05|body,evasion,blue_mana|Four flying power is threatening, but one toughness and blue upkeep are real liabilities.
+Phantasmal Terrain|0.30|aura,narrow|Land-type disruption is unreliable and double blue prevents easy fixing use.
+Phantom Monster|3.55|body,evasion|An efficient flying attacker with an easy single-blue casting requirement.
+Pirate Ship|3.05|body,repeatable_removal,removal,island_required|The pinging ability is useful even when it cannot attack; you must control an Island to keep it.
+Power Leak|0.25|aura,narrow|Taxing an enchantment is slow and does not remove it.
+Power Sink|2.90|interaction|Flexible interaction whose compulsory payment can drain the opponent's lands and mana pool even when the spell is saved.
+Prodigal Sorcerer|4.05|body,removal,repeatable_removal|Repeatable one damage kills many small Beta creatures and improves combat trades.
+Psionic Blast|4.10|removal,premium_removal,splashable|Four instant-speed damage answers sizable creatures or finishes a game, at a life cost.
+Psychic Venom|0.50|aura,mana_denial|The opponent can often avoid the enchanted land; no immediate board impact.
+Sea Serpent|1.00|body,finisher,island_required|A costly attacker restricted by opposing Islands and dependent on your own Island.
+Siren's Call|1.80|trick,defensive|Its historical forced-attack and end-of-turn destruction rules punish creatures that cannot make the required attack, but still need careful timing.
+Sleight of Mind|0.15|narrow|Color-word changes are niche answers to hosers rather than normal playables.
+Spell Blast|1.85|interaction|Costs one more mana than the opposing spell and becomes awkward against expensive threats.
+Stasis|0.30|buildaround,blue_mana|Symmetric untap denial with ongoing upkeep needs a dedicated way to sustain an advantage.
+Steal Artifact|2.65|utility_removal,buildaround|Excellent against strong artifacts, but target-dependent and double blue.
+Thoughtlace|0.05|narrow|Color changing has little standalone value.
+Timetwister|2.55|refill,buildaround|Both players get new hands; strongest when you expend yours first, not automatic card advantage.
+Time Walk|4.30|tempo,extra_turn,splashable|A cheap extra turn becomes especially powerful with pressure or a developed board.
+Twiddle|0.90|trick,buildaround|Besides its ordinary tempo uses, tapping a continuous artifact switches that artifact off; with Time Vault it buys one extra turn per Twiddle.
+Unsummon|2.65|tempo|Efficient tempo, Aura punishment, and protection for your own creature, but historical timing prohibits casting it during damage dealing.
+Vesuvan Doppelganger|4.15|body,finisher|A targeted copy threat that can adapt to the best legal creature on the board during its upkeep.
+Volcanic Eruption|0.95|sideboard,sweeper|Needs Mountains to destroy and triple blue; damage is symmetric and tied to actual land destruction.
+Wall of Air|2.25|body,defender,defensive|A durable flying blocker, though double blue and low power limit flexibility.
+Wall of Water|1.35|body,defender,defensive,blue_mana|A mana-hungry defender that does little to advance a win condition.
+Water Elemental|2.95|body,finisher|A large ground creature whose double-blue cost competes with better flying finishers.
+Animate Dead|4.00|recursion,body,splashable|Cheap reanimation can use either graveyard, making it useful without a dedicated combo.
+Bad Moon|1.55|anthem,buildaround|Rewards a substantial black creature count, while also improving opposing black creatures.
+Black Knight|3.00|body,aggro|First strike and protection from white are valuable, but early double black matters.
+Bog Wraith|2.90|body|A serviceable 3/3 with strong evasion against Swamp decks.
+Contract from Below|5.50|ante,draw|Extremely powerful only when ante is explicitly enabled; removed from non-ante play.
+Cursed Land|0.35|aura,narrow|Slow unavoidable damage does not interact with the opponent's board.
+Darkpact|0.05|ante,narrow|Manipulates ante, without improving ordinary battlefield play.
+Dark Ritual|1.75|burst_ramp|Trades a card for early black mana; better with impactful early black plays, weaker in attrition.
+Deathgrip|0.90|sideboard,black_mana|A recurring anti-green counter engine that requires sustained black mana.
+Deathlace|0.05|narrow|Color changing is generally card disadvantage.
+Demonic Attorney|0.05|ante,narrow|An ante-only effect with no normal draft-game benefit.
+Demonic Hordes|3.35|body,finisher,black_mana|A large repeatable land-destruction threat with demanding triple-black upkeep.
+Demonic Tutor|3.85|tutor,splashable|Cheap selection for your best answer, bomb, or assembled combo piece.
+Drain Life|3.00|removal,mana_sink,black_mana,no_splash|Only black mana may pay X, so nominal single-black casting cost is misleading.
+Drudge Skeletons|2.25|body,regenerator,black_mana,defensive|A cheap regenerating blocker that ties up black mana but stalls ground combat.
+Evil Presence|0.30|aura,narrow|Narrow land disruption and swampwalk support; not actual land destruction.
+Fear|1.00|aura,black_mana|Can make a threat hard to block, but black and artifact creatures remain obstacles.
+Frozen Shade|1.75|body,mana_sink,black_mana,no_splash|Requires repeated black mana investment to be a meaningful threat.
+Gloom|0.95|sideboard|Taxes white spells and specifically Circle of Protection abilities under its Beta wording, but not every activated ability of a white enchantment.
+Howl from Beyond|1.45|trick,mana_sink|Can finish a race or win combat, but needs an attacker and open mana.
+Hypnotic Specter|4.10|body,evasion,aggro|An early evasive attacker with repeatable random discard; double black is important.
+Lich|0.10|buildaround,black_mana,no_splash|Four black mana and multiple ways to lose the game make this a highly fragile buildaround.
+Lord of the Pit|1.75|body,evasion,finisher,black_mana|An enormous flyer with a recurring creature sacrifice requirement and severe failure damage.
+Mind Twist|4.65|discard,splashable|Scalable random discard often removes an opponent's whole hand before it can be used.
+Nether Shadow|0.85|body,aggro,buildaround|A small double-black attacker whose recursion needs a stocked, correctly ordered graveyard.
+Nettling Imp|2.55|body,utility_creature,defensive|Forces unfavorable attacks and can destroy an eligible creature that remains unable to attack, including one tapped after being nettled.
+Nightmare|2.70|body,evasion,finisher,black_mana,no_splash|Size depends on actual Swamps; strongest in a heavily black pool.
+Paralyze|3.20|removal|Excellent early restraint, but opponents can pay to untap the creature later.
+Pestilence|4.55|sweeper,removal,repeatable_removal,mana_sink,black_mana,no_splash|Repeatable symmetric damage dominates small creatures; needs black mana and a surviving creature.
+Plague Rats|0.65|body,buildaround|One copy is poor; several copies can make the rat plan worthwhile, with no Limited four-copy cap.
+Raise Dead|1.70|recursion|Useful with strong creatures, but requires a dead creature and another casting payment.
+Royal Assassin|3.90|body,removal,repeatable_removal|Repeatable destruction of tapped creatures constrains attacks, but the 1/1 body is vulnerable.
+Sacrifice|0.35|burst_ramp,narrow|Trades a creature and a card for temporary black mana, requiring a specific payoff.
+Scathe Zombies|1.60|body|An ordinary three-mana 2/2 that improves with Zombie support or creature shortages.
+Scavenging Ghoul|2.05|body,regenerator|A modest four-mana body whose delayed counters come from creatures destroyed and placed in graveyards, rather than every modern sacrifice.
+Sengir Vampire|4.05|body,evasion,finisher|A large efficient flyer with the potential to grow after combat kills.
+Simulacrum|1.10|trick,defensive|Recovers life after damage by damaging your own creature; timing and a suitable creature matter.
+Sinkhole|1.65|mana_denial|Efficient land destruction supports pressure, but double black and weak late draws limit it.
+Terror|4.00|removal,premium_removal,splashable|Efficient destruction without regeneration, but cannot hit black or artifact creatures.
+Unholy Strength|1.35|aura,aggro|Cheap pressure, especially on evasive attackers, with normal Aura card-disadvantage risk.
+Wall of Bone|2.05|body,defender,regenerator,black_mana,defensive|A durable regenerating blocker that is poor at closing games.
+Warp Artifact|0.30|aura,narrow|Slow damage that leaves the opposing artifact functioning.
+Weakness|2.35|removal|Kills one-toughness creatures through regeneration and weakens larger bodies without fully removing them.
+Will-o'-the-Wisp|2.55|body,regenerator,defensive,black_mana|A cheap evasive regenerating blocker, useful for defense but unable to win by attacking.
+Word of Command|0.65|narrow,interaction|Highly situational hand manipulation; difficult to turn into reliable Limited value.
+Zombie Master|2.40|body,lord|A reasonable body that grants other Zombies regeneration and swampwalk, not a stat boost.
+Burrowing|0.55|aura,sideboard|Mountainwalk matters against red opponents and requires a worthwhile attacker.
+Chaoslace|0.05|narrow|A color-changing effect with almost no standalone draft value.
+Disintegrate|4.80|removal,premium_removal,mana_sink,splashable|Scalable removal or reach that prevents regeneration and can exile the victim.
+Dragon Whelp|3.60|body,evasion,mana_sink,red_mana|An efficient flyer with red pumping; overusing the pump schedules destruction, but the Whelp can regenerate from that destruction.
+Dwarven Demolition Team|1.45|body,utility_removal,sideboard|Small and expensive, but repeated Wall destruction can matter in this set.
+Dwarven Warriors|2.00|body,utility_creature|Makes small-power attackers unblockable; can combine with subsequent power increases.
+Earthbind|2.00|removal,sideboard|Two damage only on entering against a flying creature; larger flyers merely lose flying.
+Earth Elemental|3.05|body,finisher|A substantial ground body whose five toughness resists many damage effects.
+Earthquake|4.15|sweeper,removal,mana_sink,splashable|Scalable damage to ground creatures and both players; especially useful beside flyers.
+False Orders|1.25|trick,aggro|Can undo or rearrange a block, with value depending on the combat position.
+Fireball|5.05|removal,premium_removal,mana_sink,splashable|Scalable removal and reach, with a costly but powerful multi-target option.
+Firebreathing|0.90|aura,mana_sink,red_mana|Repeatable red pumping needs a resilient or evasive creature and sustained red mana.
+Fire Elemental|2.85|body,finisher|Large ground power, but double red and four toughness make it replaceable top end.
+Flashfires|0.85|sideboard,mana_denial|Devastating against Plains-heavy opponents, otherwise ineffective and potentially symmetric.
+Fork|1.55|buildaround,red_mana|Needs a worthwhile instant or sorcery and two red mana held open; its controller can reselect Fireball's targets and division for the copy.
+Goblin Balloon Brigade|2.10|body,aggro,red_mana|A one-drop that can attack through the air, with an ongoing red mana requirement.
+Goblin King|2.10|body,lord|Pays off other Goblins, including opposing ones, rather than improving itself.
+Granite Gargoyle|3.30|body,evasion,mana_sink,red_mana|A cheap efficient flyer with toughness pumping that helps it survive combat and burn.
+Gray Ogre|1.60|body|An ordinary three-mana 2/2; creature and curve needs determine its priority.
+Hill Giant|2.20|body|A straightforward 3/3 with a light color requirement.
+Hurloon Minotaur|2.05|body|A useful toughness advantage over bears, offset by double-red casting requirements.
+Ironclaw Orcs|2.35|body,aggro|Efficient early pressure, with a restriction that makes it a poor defensive creature.
+Keldon Warlord|2.35|body,buildaround|Size scales with your non-Wall creatures, making creature density essential.
+Lightning Bolt|4.50|removal,premium_removal,splashable|One-mana instant removal or reach is excellent, though three damage misses large finishers.
+Manabarbs|1.25|buildaround,aggro|Triggers whenever a land is tapped, not only when it is tapped for mana; symmetric damage still punishes your own land use.
+Mana Flare|0.90|buildaround,ramp|Both players benefit, and the opponent gets the first untap with doubled land mana.
+Mons's Goblin Raiders|0.70|body,aggro|A weak one-drop unless a Goblin-heavy plan makes it relevant.
+Orcish Artillery|3.70|body,removal,repeatable_removal,red_mana|Repeatable two damage is powerful, but the self-damage can make racing dangerous.
+Orcish Oriflamme|1.70|anthem,aggro|Costs four mana in Beta and only boosts attacking creatures; needs a wide attacking board.
+Power Surge|1.35|mana_denial,buildaround,aggro|Mana burn removes the modern escape of safely tapping spare lands before the turn, making untapped lands a real damage liability.
+Raging River|1.20|buildaround,aggro|Helps a broad ground attack distribute blockers, but needs a board advantage to exploit.
+Red Elemental Blast|1.75|sideboard|An excellent answer to blue spells and permanents in the relevant matchup.
+Rock Hydra|3.20|body,mana_sink,finisher,red_mana|A scalable body with red-intensive protection; X is not its practical curve position.
+Roc of Kher Ridges|3.60|body,evasion|A strong four-mana flyer with a single-red casting cost.
+Sedge Troll|2.40|body|An ordinary red body becomes much stronger with a Swamp and black regeneration mana.
+Shatter|2.45|utility_removal|Efficient artifact destruction is valuable in Beta, though narrower than Disenchant.
+Shivan Dragon|4.35|body,evasion,finisher,mana_sink,red_mana|A large flying finisher with a threatening red mana sink.
+Smoke|0.85|buildaround,defensive|Symmetric creature untap restriction favors a few strong attackers or vigilant threats.
+Stone Giant|3.10|body,utility_creature|An efficient body that can launch smaller-toughness creatures for a final flying attack.
+Stone Rain|1.35|mana_denial|Situational mana disruption that needs pressure to justify a card.
+Tunnel|0.80|utility_removal,sideboard|Cheap Wall removal with a very narrow target class.
+Two-Headed Giant of Foriys|3.45|body,finisher|A solid trampling body that also blocks two creatures, with only one red pip.
+Uthden Troll|2.65|body,regenerator,red_mana|A serviceable body whose regeneration helps it trade and defend repeatedly.
+Wall of Fire|1.65|body,defender,defensive,red_mana|A tough defender with red pumping, but limited offensive contribution.
+Wall of Stone|1.30|body,defender,defensive|A huge blocker without power; valuable mainly to a pool with another way to win.
+Wheel of Fortune|2.65|refill,buildaround|Refills both hands; benefits low-curve decks that empty their hand first.
+Aspect of Wolf|0.75|aura,green_mana,no_splash|Forest-scaled stats reward heavy green but add Aura risk and poor early reliability.
+Berserk|2.65|trick,aggro|Can deliver lethal trample damage or kill an attacking enemy after combat, with real timing costs.
+Birds of Paradise|3.35|body,ramp,fixing|Excellent permanent fixing and acceleration, provided green is available early; not an attacker.
+Camouflage|1.15|trick,aggro|Beta's concealed piles let the attacker deliberately rearrange attackers after blockers choose piles; it still needs a broad attacking board.
+Channel|1.00|burst_ramp,buildaround,no_splash|Exchanges life for colorless mana; powerful with specific payoffs, not generic card advantage.
+Cockatrice|3.10|body,evasion,defensive|A flying combat deterrent that destroys creatures involved with it after combat.
+Craw Wurm|2.60|body,finisher|Large but expensive ground power; prioritize only when the pool can support the top end.
+Elvish Archers|2.65|body,aggro|An efficient first-striking attacker that improves with pump spells.
+Fastbond|0.35|buildaround|Extra land plays do not draw extra lands; a normal Limited hand rarely exploits it well.
+Fog|0.60|trick,defensive|Buys a combat step but usually spends a card without changing the board.
+Force of Nature|2.70|body,finisher,green_mana,no_splash|A huge trampler requiring four green to cast and recurring green upkeep to avoid damage.
+Fungusaur|2.05|body,buildaround|A small four-drop that can grow from nonlethal damage, particularly with controlled damage sources.
+Gaea's Liege|2.15|body,finisher,green_mana,no_splash|Slow Forest-dependent stats and land manipulation need a heavily green plan.
+Giant Growth|3.20|trick,aggro|An efficient combat trick that can win a trade, resist burn, or add lethal damage.
+Giant Spider|3.05|body,defensive|A durable answer to many small flyers, especially valuable in green.
+Grizzly Bears|2.30|body,aggro|A reliable two-drop whose value rises when the pool lacks early creatures.
+Hurricane|3.30|removal,sweeper,mana_sink,splashable|Answers flyers and damages both players; it also kills your own flying creatures.
+Ice Storm|1.35|mana_denial|Land destruction is most useful with pressure, and poor at stabilizing a losing board.
+Instill Energy|0.95|aura,buildaround|Grants attack permission and a once-per-turn untap; does not grant haste for tap abilities.
+Ironroot Treefolk|2.35|body,finisher|A sturdy ground body with a light color requirement but a crowded five-mana slot.
+Kudzu|0.60|aura,mana_denial|Land destruction that can be redirected back at you, with little control over the result.
+Ley Druid|1.70|body,ramp|Slow acceleration by untapping a land; improves with Wild Growth or a productive land.
+Lifeforce|0.95|sideboard,green_mana|A recurring answer to black spells, requiring heavy green mana.
+Lifelace|0.05|narrow|Changing a card's color seldom justifies its slot.
+Living Artifact|0.25|aura,defensive|Slow conditional life gain, with no immediate effect on the board.
+Living Lands|0.85|buildaround,green_mana|Animates all Forests and exposes your mana base to creature removal and sweepers.
+Llanowar Elves|3.10|body,ramp,green_mana|Efficient early acceleration into substantial creatures; needs green early and adequate payoffs.
+Lure|1.35|aura,buildaround|Can force blocks to free other attackers; exceptional with Basilisk-style destruction.
+Natural Selection|1.05|selection|Improves upcoming draws but does not replace itself or create card advantage.
+Regeneration|1.10|aura,green_mana|Can preserve a valuable creature, at the cost of an Aura and recurring green mana.
+Regrowth|2.90|recursion,splashable|Flexible recursion for a spent bomb or answer; requires a useful graveyard target.
+Scryb Sprites|2.20|body,evasion,aggro|An efficient evasive one-drop that supports pressure and pump effects.
+Shanodin Dryads|1.10|body,aggro|A small one-drop whose forestwalk improves the green matchup.
+Stream of Life|0.20|lifegain,narrow|Spending a card solely on life usually loses ground on the battlefield.
+Thicket Basilisk|2.50|body,defensive|Strong combat deterrence; forced multi-blocks with Lure can clear a board.
+Timber Wolves|1.50|body,aggro,banding|Small stats, but banding gives useful control over combat damage allocation.
+Tranquility|1.85|utility_removal|Can remove multiple enchantments, including your own; pool composition matters.
+Tsunami|1.10|sideboard,mana_denial|A powerful anti-Island sideboard effect that also destroys your own Islands.
+Verduran Enchantress|0.95|body,draw,buildaround|Needs enough independently playable enchantments; drafting bad Auras to support it is costly.
+Wall of Brambles|2.15|body,defender,regenerator,green_mana,defensive|A regenerating blocker with enough power to make combat awkward.
+Wall of Ice|1.25|body,defender,defensive|A large powerless blocker, useful only with adequate ways to win elsewhere.
+Wall of Wood|0.60|body,defender,defensive|Low-impact defense that quickly becomes outclassed.
+Wanderlust|0.65|aura,narrow|Slow damage without disabling the enchanted creature.
+War Mammoth|2.30|body|An ordinary four-mana 3/3 with trample that becomes useful with power boosts.
+Web|0.65|aura,defensive|Turns a creature into a better anti-flyer blocker, with the usual Aura risk.
+Wild Growth|2.75|ramp,green_mana|Produces green whenever the enchanted land becomes tapped, even for another color or effect; forced excess mana can cause mana burn.
+Ankh of Mishra|1.35|buildaround,aggro|Symmetric land damage can support early pressure but is often a poor late draw.
+Badlands|1.65|dual,fixing|An untapped Swamp-Mountain that fixes black and red and enables land-type payoffs.
+Basalt Monolith|2.60|ramp,burst_ramp|Stores a burst of colorless mana; does not untap normally and needs three mana to reset.
+Bayou|1.65|dual,fixing|An untapped Swamp-Forest that fixes black and green and enables land-type payoffs.
+Black Lotus|4.00|burst_ramp,fixing|Explosive one-use mana of one color; less durable than repeatable acceleration or a lasting bomb.
+Black Vise|2.20|aggro,buildaround|Strong early pressure against full hands, but unreliable once the opponent has deployed cards.
+Celestial Prism|0.55|fixing|Universal filtering is possible but very slow and costs two mana for each activation.
+Chaos Orb|4.35|removal,premium_removal,dexterity|Only usable if dexterity cards are enabled; value depends on actual flip success and table rules.
+Clockwork Beast|3.30|body,finisher|Starts as a 7/4, then loses attack power through combat and takes mana plus an upkeep tap to recharge.
+Conservator|0.95|defensive,mana_sink|Prevents life loss rather than damage, so it can absorb mana burn as well as damaging effects, though at an inefficient rate.
+Copper Tablet|0.65|aggro,buildaround|Symmetric attrition damage needs a reliable racing advantage.
+Crystal Rod|0.10|lifegain,narrow|Conditional small life gain is not a useful early draft priority.
+Cyclopean Tomb|2.10|mana_denial,buildaround|Slow repeatable conversion of opposing non-Swamp lands can disrupt colors at substantial cost.
+Dingus Egg|0.30|buildaround|Does little without land destruction and punishes your destroyed lands as well.
+Disrupting Scepter|3.20|discard,control|Repeatable discard can dominate attrition; its activation is restricted to your turn but uses the historical fast-effect timing system.
+Forcefield|2.75|defensive,control,mana_sink|Limits damage from unblocked creatures without killing them; cannot fully stop a wide army or burn.
+Forest|0.00|basic|Basic lands are assumed freely available after the draft.
+Gauntlet of Might|0.70|buildaround|Symmetric red-creature pumping and extra red mana whenever a Mountain is tapped, even for another color or effect, require a strongly red pool.
+Glasses of Urza|0.10|narrow|Information without board presence or card advantage rarely warrants a slot.
+Helm of Chatzuk|0.90|buildaround|Reusable banding can improve combat, but requires creatures and activation mana.
+Howling Mine|0.75|refill,buildaround|Symmetric extra draws initially favor the opponent; tapping it on their turn can break parity.
+Icy Manipulator|4.75|removal,repeatable_removal,control,mana_sink|Reusable tapping contains threats, disrupts mana, and can turn off your own Winter Orb at the right time.
+Illusionary Mask|0.35|narrow,buildaround|Does not evade colored mana requirements, but concealed characteristics can make opposing targeted spells illegal before the creature is revealed.
+Iron Star|0.10|lifegain,narrow|Conditional incremental life gain is low-impact.
+Island|0.00|basic|Basic lands are assumed freely available after the draft.
+Ivory Cup|0.10|lifegain,narrow|Conditional incremental life gain is low-impact.
+Jade Monolith|0.65|defensive,buildaround|Expensive redirection can protect key creatures but consumes your life and mana.
+Jade Statue|3.25|body,defensive|A repeatable 3/6 combat body with activation costs; it is not a creature outside combat.
+Jayemdae Tome|3.65|draw,control,mana_sink|Repeatable card advantage wins long games but demands a large mana investment.
+Juggernaut|3.70|body,aggro|Efficient colorless power that must attack and bypasses Walls; vulnerable to three-damage burn.
+Kormus Bell|0.45|buildaround|Animates all Swamps as colorless creatures, so Bad Moon does not help them and Terror can destroy them; tapping the Bell turns the animation off.
+Library of Leng|0.20|narrow|Discard protection and hand-size relief do not normally advance a Limited game.
+Living Wall|1.60|body,defender,regenerator,defensive|A colorless regenerating blocker, but slow and unable to attack.
+Mana Vault|4.05|burst_ramp|Explosive colorless acceleration into expensive threats; normal untapping is unavailable and upkeep is costly.
+Meekstone|1.45|buildaround,defensive|Locks down large tapped creatures on both sides; needs small attackers or vigilance.
+Mountain|0.00|basic|Basic lands are assumed freely available after the draft.
+Mox Emerald|4.20|ramp,fixing,mox|Free permanent green mana; remains acceleration off color but cannot pay other colors' pips.
+Mox Jet|4.20|ramp,fixing,mox|Free permanent black mana; especially useful for black-intensive effects.
+Mox Pearl|4.20|ramp,fixing,mox|Free permanent white mana; helps early double-white spells when on color.
+Mox Ruby|4.20|ramp,fixing,mox|Free permanent red mana; supports red casting and repeated activation costs.
+Mox Sapphire|4.20|ramp,fixing,mox|Free permanent blue mana; supports blue casting and holding up interaction.
+Nevinyrral's Disk|4.40|sweeper|A colorless reset for creatures, artifacts and enchantments; enters tapped and destroys your board too.
+Obsianus Golem|2.55|body,finisher|A durable colorless six-drop that can fill top end but is replaceable when the curve is crowded.
+Plains|0.00|basic|Basic lands are assumed freely available after the draft.
+Plateau|1.65|dual,fixing|An untapped Mountain-Plains that fixes red and white and enables land-type payoffs.
+Rod of Ruin|3.10|removal,repeatable_removal,mana_sink|Repeatable one damage answers small creatures in any colors, but four plus three mana is slow.
+Savannah|1.65|dual,fixing|An untapped Forest-Plains that fixes green and white and enables land-type payoffs.
+Scrubland|1.65|dual,fixing|An untapped Plains-Swamp that fixes white and black and enables land-type payoffs.
+Sol Ring|5.40|ramp|Exceptionally efficient repeatable colorless acceleration, though colored pips still need other sources.
+Soul Net|0.50|lifegain,buildaround|Incremental life gain from creatures destroyed and put in graveyards can help a damage engine, but not every modern sacrifice qualifies.
+Sunglasses of Urza|0.25|fixing,buildaround|Only converts white mana to red; a narrow support card for a specific white-red pool.
+Swamp|0.00|basic|Basic lands are assumed freely available after the draft.
+Taiga|1.65|dual,fixing|An untapped Mountain-Forest that fixes red and green and enables land-type payoffs.
+The Hive|3.45|body,mana_sink,control|A slow but repeatable source of flying tokens; five mana to cast and five per token.
+Throne of Bone|0.10|lifegain,narrow|Conditional incremental life gain is low-impact.
+Time Vault|0.20|buildaround|Skipping a turn to store one is not an advantage by itself; Beta has only awkward untap support.
+Tropical Island|1.65|dual,fixing|An untapped Forest-Island that fixes green and blue and enables land-type payoffs.
+Tundra|1.65|dual,fixing|An untapped Plains-Island that fixes white and blue and enables land-type payoffs.
+Underground Sea|1.65|dual,fixing|An untapped Island-Swamp that fixes blue and black and enables land-type payoffs.
+Volcanic Island|1.65|dual,fixing|An untapped Island-Mountain that fixes blue and red and enables land-type payoffs.
+Winter Orb|1.50|buildaround,mana_denial|Symmetric land-untap restriction favors cheap threats, nonland mana, and effects that tap the Orb.
+Wooden Sphere|0.10|lifegain,narrow|Conditional incremental life gain is low-impact.

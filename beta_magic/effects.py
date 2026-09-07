@@ -290,6 +290,11 @@ class BlazeOfGloryEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class FalseOrdersEffect:
+    """Let the caster replace one defender's blocking assignment."""
+
+
+@dataclass(frozen=True, slots=True)
 class BalanceEffect:
     """Snapshot and equalize lands, hands, and creatures by player choice."""
 
@@ -733,6 +738,7 @@ SpellEffect = (
     | SacrificeCreatureForManaEffect
     | SirensCallEffect
     | BlazeOfGloryEffect
+    | FalseOrdersEffect
     | BalanceEffect
     | ExtraTurnEffect
     | CounterTargetSpellEffect
@@ -858,6 +864,7 @@ __all__ = [
     "SacrificeCreatureForManaEffect",
     "SirensCallEffect",
     "BlazeOfGloryEffect",
+    "FalseOrdersEffect",
     "BalanceEffect",
     "ExtraTurnEffect",
     "LandEventDamageEffect",

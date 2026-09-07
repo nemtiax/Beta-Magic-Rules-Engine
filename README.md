@@ -86,6 +86,7 @@ The following mutually exclusive command-line options load deterministic
 | `--protection-test-decks` | Protection, Wards, Circles of Protection, and colored effects |
 | `--aura-test-decks` | Cheap Auras and creatures for testing stacked attachments |
 | `--banding-test-decks` | Attacking bands, defensive Banding, and mixed evasion |
+| `--raging-river-test-decks` | Cheap creatures, River-bank placement, and flying blockers |
 
 For example:
 

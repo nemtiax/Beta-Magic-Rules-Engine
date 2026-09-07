@@ -30,6 +30,7 @@ from .effects import (
     ChangeTextWordEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
+    FalseOrdersEffect,
     ReverseDamageEffect,
     RetroactiveDamageTransferEffect,
     TemporaryPumpEffect,
@@ -261,12 +262,24 @@ class TargetingCastingMixin:
             raise RuntimeError(
                 f"{card.name} can only be cast after attackers and before blockers"
             )
+        if any(
+            isinstance(effect, FalseOrdersEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            self.combat is None
+            or self.combat.step is not CombatStep.BLOCKER_RESPONSE
+        ):
+            raise RuntimeError(
+                f"{card.name} can only be cast after blockers and before damage"
+            )
         return caster
 
     def _validate_cast(self, card: Card, x_value: int = 0) -> PlayerState:
         if self.combat is not None and self.combat.step in {
             CombatStep.DECLARE_ATTACKERS,
             CombatStep.DECLARE_BLOCKERS,
+            CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+            CombatStep.RIVER_ATTACKER_ASSIGNMENT,
         }:
             raise RuntimeError("spells cannot be cast during a combat declaration")
         if x_value < 0:
@@ -827,6 +840,7 @@ class TargetingCastingMixin:
             self.pending_activation = pending
             raise
         assert validated == ability
+        self._clear_land_tap_undo_window()
         if ability.tap_cost:
             self._tap_permanent(pending.source)
         if isinstance(

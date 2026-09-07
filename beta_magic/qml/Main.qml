@@ -1362,10 +1362,14 @@ ApplicationWindow {
                     Layout.minimumHeight: 190
                     Layout.preferredHeight: 200
                     playerData: gameState.opponent
-                    interactive: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
-                                 || gameState.canChooseLich || gameState.canChooseKudzu
-                                 || gameState.canChooseClone
-                                 || gameState.canChooseDoppelganger
+                    interactive: (!gameState.riverChoiceRequired
+                                  || gameState.canChooseRiverSides)
+                                 && (gameState.settingBlockers
+                                     || gameState.upkeepLandChoiceRequired
+                                     || gameState.canChooseLich
+                                     || gameState.canChooseKudzu
+                                     || gameState.canChooseClone
+                                     || gameState.canChooseDoppelganger)
                     selectionOnly: gameState.settingBlockers || gameState.upkeepLandChoiceRequired
                                    || gameState.canChooseLich || gameState.canChooseKudzu
                                    || gameState.canChooseClone
@@ -1491,6 +1495,26 @@ ApplicationWindow {
                                 color: "#ffd978"
                             }
                             Label {
+                                visible: gameState.falseOrdersChoiceRequired
+                                text: gameState.canChooseFalseOrders
+                                      ? "Reassign " + gameState.falseOrdersBlocker
+                                        + " for False Orders"
+                                      : gameState.falseOrdersPlayer
+                                        + " is resolving False Orders"
+                                color: "#ffd978"
+                            }
+                            Label {
+                                visible: gameState.riverChoiceRequired
+                                text: gameState.canChooseRiverSides
+                                      ? "Raging River: place "
+                                        + gameState.riverChoiceRole + " ("
+                                        + gameState.riverChoiceProgress + ")"
+                                      : gameState.riverChoicePlayer
+                                        + " is placing "
+                                        + gameState.riverChoiceRole
+                                color: "#ffd978"
+                            }
+                            Label {
                                 visible: gameState.balanceRequired
                                 text: gameState.balanceProgress + ": "
                                       + gameState.balancePlayer + " chooses "
@@ -1508,9 +1532,32 @@ ApplicationWindow {
                         RowLayout {
                             visible: gameState.contextActionsVisible
                             Button {
+                                visible: gameState.canUndoLandTap
+                                text: gameState.undoLandTapLabel
+                                onClicked: gameBridge.undoLandTap()
+                            }
+                            Button {
                                 visible: gameState.canBeginAttack
                                 text: "Begin attack"
                                 onClicked: gameBridge.beginCombat()
+                            }
+                            Button {
+                                visible: gameState.canChooseRiverSides
+                                enabled: gameState.canPlaceRiverSide
+                                text: "Place left"
+                                onClicked: gameBridge.setRiverSide("L")
+                            }
+                            Button {
+                                visible: gameState.canChooseRiverSides
+                                enabled: gameState.canPlaceRiverSide
+                                text: "Place right"
+                                onClicked: gameBridge.setRiverSide("R")
+                            }
+                            Button {
+                                visible: gameState.canChooseRiverSides
+                                enabled: gameState.canConfirmRiverSides
+                                text: "Confirm river"
+                                onClicked: gameBridge.confirmRiverSides()
                             }
                             Button {
                                 visible: gameState.canDeclareAttackers
@@ -1524,7 +1571,7 @@ ApplicationWindow {
                                 onClicked: gameBridge.declareAttackers()
                             }
                             Button {
-                                visible: gameState.canDeclareBlockers
+                                visible: gameState.settingBlockers
                                 enabled: gameState.canSetBlocks
                                 text: gameState.blockAssignmentLabel
                                 onClicked: gameBridge.setBlocks()
@@ -1533,6 +1580,11 @@ ApplicationWindow {
                                 visible: gameState.canDeclareBlockers
                                 text: gameState.declareBlockersLabel
                                 onClicked: gameBridge.declareBlockers()
+                            }
+                            Button {
+                                visible: gameState.canChooseFalseOrders
+                                text: "Confirm False Orders"
+                                onClicked: gameBridge.confirmFalseOrders()
                             }
                             Button {
                                 visible: gameState.targeting
@@ -1847,8 +1899,12 @@ ApplicationWindow {
                     Layout.minimumHeight: 190
                     Layout.preferredHeight: 200
                     playerData: gameState.perspective
-                    interactive: true
+                    interactive: (!gameState.falseOrdersChoiceRequired
+                                  || gameState.canChooseFalseOrders)
+                                 && (!gameState.riverChoiceRequired
+                                     || gameState.canChooseRiverSides)
                     selectionOnly: gameState.canDeclareAttackers
+                                   || gameState.canChooseRiverSides
                                    || gameState.settingBlockers || gameState.canChooseLich
                                    || gameState.canChooseKudzu || gameState.canChooseClone
                                    || gameState.canChooseDoppelganger
@@ -1865,7 +1921,10 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 88
                     playerData: gameState.perspective
+                    interactive: !gameState.falseOrdersChoiceRequired
+                                 && !gameState.riverChoiceRequired
                     selectionOnly: gameState.canDeclareAttackers
+                                   || gameState.canChooseRiverSides
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }
                     onActivated: function(cardId) { gameBridge.activateCard(cardId) }
                     onAbilityActivated: function(cardId, abilityIndex) {

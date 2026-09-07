@@ -42,6 +42,7 @@ from .decks import (
     make_x_test_game,
     make_aura_test_game,
     make_banding_test_game,
+    make_raging_river_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
 from .effects import (
@@ -110,6 +111,28 @@ class GameViewModel(QObject):
             message,
             observer_message=observer_message,
         )
+
+    def _prompt_raging_river_choice(self) -> bool:
+        """Publish the pending River placement, if combat is paused for one."""
+
+        combat = self.game.combat
+        chooser_id = self.game.river_choice_player_id()
+        if combat is None or chooser_id is None:
+            return False
+        chooser = self.game.player(chooser_id)
+        role = (
+            "defending creatures"
+            if combat.step is CombatStep.RIVER_DEFENDER_ASSIGNMENT
+            else "attackers"
+        )
+        self._prompt(
+            chooser.id,
+            f"Assign every highlighted {role} to the left or right bank.",
+            observer_message=(
+                f"{chooser.name} is assigning {role} for Raging River."
+            ),
+        )
+        return True
 
     def _tell_current(self, message: str) -> None:
         """Show a local validation or interaction message only to this player."""
@@ -212,6 +235,7 @@ class GameViewModel(QObject):
                 or self.game.pending_kudzu_choices
                 or self.game.pending_creature_copy_choices
                 or self.game.pending_doppelganger_choices
+                or self.game.pending_false_orders_choices
                 or self.game.pending_discard_choices
                 or self.game.pending_library_discard_choices
                 or self.game.pending_tomb_cleanup_choices
@@ -402,7 +426,22 @@ class GameViewModel(QObject):
                 self.stateChanged.emit()
             return
 
-        card = self._perspective_card(card_id)
+        perspective_id = self.game.players[self.perspective_index].id
+        if self._combat_ui.is_choosing_river_sides(
+            self.game, perspective_id
+        ):
+            candidate = self._card_by_id(UUID(card_id))
+            if not self._combat_ui.river_selectable_card(
+                self.game, perspective_id, candidate
+            ):
+                self._tell_current(
+                    "Select a highlighted creature awaiting a River side."
+                )
+                self.stateChanged.emit()
+                return
+            card = candidate
+        else:
+            card = self._perspective_card(card_id)
         if self.game.pending_upkeep_land_loss is not None:
             candidate = self._card_by_id(UUID(card_id))
             if (
@@ -412,7 +451,6 @@ class GameViewModel(QObject):
             ):
                 card = candidate
         combat = self.game.combat
-        perspective_id = self.game.players[self.perspective_index].id
         drafting_attackers = self._combat_ui.is_drafting_attackers(
             self.game, perspective_id
         )
@@ -877,6 +915,16 @@ class GameViewModel(QObject):
             )
             self.stateChanged.emit()
 
+    @Slot()
+    def undoLandTap(self) -> None:
+        player = self.game.players[self.perspective_index]
+        land = self.game.undoable_land_tap(player.id)
+        land_name = land.name if land is not None else "land"
+        self._run(
+            lambda: self.game.undo_last_land_tap(player.id),
+            f"Undid {land_name}'s mana tap.",
+        )
+
     @Slot(str)
     def chooseDamagePacket(self, packet_id: str) -> None:
         player = self.game.players[self.perspective_index]
@@ -1319,6 +1367,26 @@ class GameViewModel(QObject):
             lambda: resolved.append(self.game.pass_priority(player.id)),
             success,
         ):
+            return
+        if self._prompt_raging_river_choice():
+            self.stateChanged.emit()
+            return
+        false_orders_choice = (
+            self.game.pending_false_orders_choices[0]
+            if self.game.pending_false_orders_choices else None
+        )
+        if false_orders_choice is not None:
+            chooser = self.game.player(false_orders_choice.chooser_id)
+            blocker = self._card_by_id(false_orders_choice.blocker_id)
+            blocker_name = blocker.name if blocker is not None else "the creature"
+            self._prompt(
+                chooser.id,
+                f"False Orders resolved. Reassign {blocker_name}, then confirm.",
+                observer_message=(
+                    f"{chooser.name} is reassigning {blocker_name} with False Orders."
+                ),
+            )
+            self.stateChanged.emit()
             return
         if (
             resolved
@@ -2078,6 +2146,9 @@ class GameViewModel(QObject):
             lambda: self.game.declare_attackers(cards, bands=bands),
             f"{len(cards)} attacker(s) declared.",
         ):
+            if self._prompt_raging_river_choice():
+                self.stateChanged.emit()
+                return
             self._prompt(
                 attacker.id,
                 f"Declared {len(cards)} attacker(s). You may play fast effects or pass.",
@@ -2087,6 +2158,74 @@ class GameViewModel(QObject):
                 ),
             )
             self.stateChanged.emit()
+
+    @Slot(str)
+    def setRiverSide(self, side: str) -> None:
+        player = self.game.players[self.perspective_index]
+        try:
+            message = self._combat_ui.set_river_side(
+                self.game, player.id, self.selected_card_ids, side
+            )
+        except (ValueError, RuntimeError) as error:
+            self._tell_current(str(error))
+            self.stateChanged.emit()
+            return
+        self.selected_card_ids.clear()
+        self._tell_current(message)
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmRiverSides(self) -> None:
+        player = self.game.players[self.perspective_index]
+        try:
+            assignments = self._combat_ui.river_assignments(self.game)
+        except RuntimeError as error:
+            self._tell_current(str(error))
+            self.stateChanged.emit()
+            return
+        if not self._run(
+            lambda: self.game.choose_raging_river_sides(
+                player.id, assignments
+            ),
+            "Raging River sides confirmed.",
+        ):
+            return
+        combat = self.game.combat
+        if self._prompt_raging_river_choice():
+            self.stateChanged.emit()
+            return
+        if combat is None:
+            return
+        if combat.step is CombatStep.DECLARE_ATTACKERS:
+            attacker = self.game.player(combat.attacking_player_id)
+            self._prompt(
+                attacker.id,
+                "Defenders divided. Select attackers and any attacking bands.",
+                observer_message=(
+                    f"{attacker.name} is choosing attackers after the River split."
+                ),
+            )
+        elif combat.step is CombatStep.ATTACKER_RESPONSE:
+            receiver = (
+                self.game.players[self.game.priority_player_index]
+                if self.game.priority_player_index is not None
+                else self.game.player(combat.attacking_player_id)
+            )
+            self._prompt(
+                receiver.id,
+                "River sides confirmed. You may play fast effects or pass.",
+                observer_message=(
+                    f"Waiting for {receiver.name} before blockers are declared."
+                ),
+            )
+        elif combat.step is CombatStep.DECLARE_BLOCKERS:
+            defender = self.game.player(combat.defending_player_id)
+            self._prompt(
+                defender.id,
+                "River sides confirmed. Arrange blockers, then declare them.",
+                observer_message=f"{defender.name} is arranging blockers.",
+            )
+        self.stateChanged.emit()
 
     @Slot()
     def setAttackingBand(self) -> None:
@@ -2105,6 +2244,14 @@ class GameViewModel(QObject):
 
     @Slot()
     def setBlocks(self) -> None:
+        if (
+            self.game.pending_false_orders_choices
+            and self.game.pending_false_orders_choices[0].chooser_id
+            != self.game.players[self.perspective_index].id
+        ):
+            self._tell_current("The other player is resolving False Orders.")
+            self.stateChanged.emit()
+            return
         try:
             message = self._combat_ui.set_blocks(self.game, self.selected_card_ids)
         except (ValueError, RuntimeError) as error:
@@ -2119,6 +2266,50 @@ class GameViewModel(QObject):
             observer_message=f"{player.name} is arranging blockers.",
         )
         self.stateChanged.emit()
+
+    @Slot()
+    def confirmFalseOrders(self) -> None:
+        choice = (
+            self.game.pending_false_orders_choices[0]
+            if self.game.pending_false_orders_choices else None
+        )
+        if choice is None:
+            return
+        try:
+            assignments = self._combat_ui.false_orders_assignment(self.game)
+        except RuntimeError as error:
+            self._tell_current(str(error))
+            self.stateChanged.emit()
+            return
+        blocker = self._card_by_id(choice.blocker_id)
+        blocker_name = blocker.name if blocker is not None else "the creature"
+        if self._run(
+            lambda: self.game.choose_false_orders_assignment(
+                self.game.players[self.perspective_index].id, assignments
+            ),
+            f"Confirmed False Orders for {blocker_name}.",
+        ):
+            self._combat_ui.sync(self.game)
+            next_choice = (
+                self.game.pending_false_orders_choices[0]
+                if self.game.pending_false_orders_choices else None
+            )
+            if next_choice is not None:
+                next_chooser = self.game.player(next_choice.chooser_id)
+                next_blocker = self._card_by_id(next_choice.blocker_id)
+                next_name = (
+                    next_blocker.name
+                    if next_blocker is not None else "the creature"
+                )
+                self._prompt(
+                    next_chooser.id,
+                    f"Reassign {next_name} for False Orders, then confirm.",
+                    observer_message=(
+                        f"{next_chooser.name} is reassigning {next_name} "
+                        "with False Orders."
+                    ),
+                )
+            self.stateChanged.emit()
 
     @Slot()
     def declareBlockers(self) -> None:
@@ -2259,6 +2450,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="use deterministic 20-card decks focused on Banding",
     )
     deck_group.add_argument(
+        "--raging-river-test-decks",
+        action="store_true",
+        help="use cheap creature decks with a guaranteed early Raging River",
+    )
+    deck_group.add_argument(
         "--random-starter-decks",
         action="store_true",
         help="give both players independently generated 60-card Beta starters",
@@ -2277,6 +2473,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("Beta Magic")
     if args.random_starter_decks:
         game_factory = make_random_starter_game
+    elif args.raging_river_test_decks:
+        game_factory = make_raging_river_test_game
     elif args.banding_test_decks:
         game_factory = make_banding_test_game
     elif args.aura_test_decks:

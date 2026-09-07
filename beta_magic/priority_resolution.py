@@ -32,7 +32,7 @@ from .abilities import (
 )
 from .cards import Card
 from .casting import SpellOnStack
-from .combat import AttackRequirement
+from .combat import AttackRequirement, PendingFalseOrdersChoice
 from .damage import DamageIncidentKind, DamageRecipientKind
 from .destruction import DestructionIncident, DestructionTarget
 from .effects import (
@@ -71,6 +71,7 @@ from .effects import (
     ShuffleHandAndGraveyardEffect,
     SirensCallEffect,
     BlazeOfGloryEffect,
+    FalseOrdersEffect,
     TemporaryPumpEffect,
     TapLandsAndEmptyManaPoolEffect,
     SwapLibraryTopWithAnteEffect,
@@ -294,9 +295,15 @@ class PriorityBatchResolutionMixin:
         assert self.combat is not None
         if self.combat.step is CombatStep.ATTACK_RESPONSE:
             self._empty_mana_pools()
-            self.combat.step = CombatStep.DECLARE_ATTACKERS
+            if not self._begin_river_defender_assignment(
+                CombatStep.DECLARE_ATTACKERS
+            ):
+                self.combat.step = CombatStep.DECLARE_ATTACKERS
         elif self.combat.step is CombatStep.ATTACKER_RESPONSE:
-            self.combat.step = CombatStep.DECLARE_BLOCKERS
+            if not self._begin_river_defender_assignment(
+                CombatStep.DECLARE_BLOCKERS
+            ):
+                self.combat.step = CombatStep.DECLARE_BLOCKERS
         elif self.combat.step is CombatStep.BLOCKER_RESPONSE:
             self.combat.step = CombatStep.DAMAGE
         else:
@@ -339,6 +346,7 @@ class PriorityBatchResolutionMixin:
             and player.id == self.timed_events[0].affected_player_id
         ):
             raise RuntimeError("choose whether to pay the upkeep cost first")
+        self._clear_land_tap_undo_window()
         self.consecutive_passes += 1
         if self.consecutive_passes < len(self.players):
             self.priority_player_index = (
@@ -1513,6 +1521,22 @@ class PriorityBatchResolutionMixin:
                             target.id
                             for target in spell.targets
                             if isinstance(target, Card)
+                        )
+                elif isinstance(effect, FalseOrdersEffect):
+                    if (
+                        self.combat is not None
+                        and self.combat.step is CombatStep.BLOCKER_RESPONSE
+                    ):
+                        self.pending_false_orders_choices.extend(
+                            PendingFalseOrdersChoice(
+                                spell.caster_id,
+                                target.id,
+                                card.name,
+                            )
+                            for target in resolved_targets
+                            if isinstance(target, Card)
+                            and target.controller_id
+                            == self.combat.defending_player_id
                         )
                 elif isinstance(effect, BalanceEffect):
                     self._begin_balance()

@@ -145,7 +145,7 @@
  - [x] Earth Elemental
  - [x] Earthbind
  - [x] Earthquake
- - [ ] False Orders
+ - [x] False Orders
  - [x] Fire Elemental
  - [x] Fireball
  - [x] Firebreathing
@@ -166,7 +166,7 @@
  - [x] Orcish Artillery
  - [x] Orcish Oriflamme
  - [x] Power Surge
- - [ ] Raging River
+ - [x] Raging River
  - [x] Red Elemental Blast
  - [x] Roc of Kher Ridges
  - [x] Rock Hydra

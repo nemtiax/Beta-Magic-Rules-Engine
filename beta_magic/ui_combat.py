@@ -7,7 +7,7 @@ from uuid import UUID
 
 from .cards import Card
 from .game import GameState
-from .types import CardType, CombatStep, KeywordAbility, Zone
+from .types import CardType, CombatStep, KeywordAbility, RiverSide, Zone
 
 
 class CombatUiController:
@@ -15,8 +15,11 @@ class CombatUiController:
 
     def __init__(self) -> None:
         self._draft_combat_id: int | None = None
+        self._false_orders_choice_id: int | None = None
         self._blocker_draft: dict[UUID, tuple[UUID, ...]] = {}
         self._attacking_band_draft: list[tuple[UUID, ...]] = []
+        self._river_choice_key: tuple[CombatStep, tuple[UUID, ...]] | None = None
+        self._river_side_draft: dict[UUID, RiverSide] = {}
         self._damage_combat_id: int | None = None
         self._damage_assignments: dict[UUID, dict[UUID, int]] = {}
         self._damage_submitted = False
@@ -24,8 +27,11 @@ class CombatUiController:
 
     def reset(self) -> None:
         self._draft_combat_id = None
+        self._false_orders_choice_id = None
         self._blocker_draft.clear()
         self._attacking_band_draft.clear()
+        self._river_choice_key = None
+        self._river_side_draft.clear()
         self._damage_combat_id = None
         self._damage_assignments.clear()
         self._damage_submitted = False
@@ -38,6 +44,33 @@ class CombatUiController:
             self._draft_combat_id = combat_id
             self._blocker_draft.clear()
             self._attacking_band_draft.clear()
+        river_choice_key = (
+            (combat.step, combat.river_choice_card_ids)
+            if combat is not None
+            and combat.step in {
+                CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+                CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+            }
+            else None
+        )
+        if river_choice_key != self._river_choice_key:
+            self._river_choice_key = river_choice_key
+            self._river_side_draft.clear()
+        false_orders_choice = (
+            game.pending_false_orders_choices[0]
+            if game.pending_false_orders_choices else None
+        )
+        false_orders_choice_id = (
+            id(false_orders_choice) if false_orders_choice is not None else None
+        )
+        if false_orders_choice_id != self._false_orders_choice_id:
+            self._false_orders_choice_id = false_orders_choice_id
+            self._blocker_draft.clear()
+            if false_orders_choice is not None:
+                self._blocker_draft[false_orders_choice.blocker_id] = tuple(
+                    attacker.id
+                    for attacker in game.false_orders_current_assignment()
+                )
         if combat_id != self._damage_combat_id:
             self._damage_combat_id = combat_id
             self._damage_assignments.clear()
@@ -69,6 +102,80 @@ class CombatUiController:
 
     def draft_for(self, blocker_id: UUID) -> tuple[UUID, ...]:
         return self._blocker_draft.get(blocker_id, ())
+
+    def is_choosing_river_sides(
+        self, game: GameState, perspective_id: str
+    ) -> bool:
+        return bool(
+            game.combat is not None
+            and game.combat.step in {
+                CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+                CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+            }
+            and game.river_choice_player_id() == perspective_id
+        )
+
+    def river_selectable_card(
+        self, game: GameState, perspective_id: str, card: Card | None
+    ) -> bool:
+        return bool(
+            card is not None
+            and self.is_choosing_river_sides(game, perspective_id)
+            and game.combat is not None
+            and card.id in game.combat.river_choice_card_ids
+        )
+
+    def set_river_side(
+        self,
+        game: GameState,
+        perspective_id: str,
+        selected_ids: set[UUID],
+        side: RiverSide | str,
+    ) -> str:
+        self.sync(game)
+        if not self.is_choosing_river_sides(game, perspective_id):
+            raise RuntimeError("the other player must choose the River sides")
+        assert game.combat is not None
+        chosen = set(game.combat.river_choice_card_ids) & selected_ids
+        if not chosen:
+            raise ValueError("select at least one highlighted creature")
+        normalized = side if isinstance(side, RiverSide) else RiverSide(side)
+        for card_id in chosen:
+            self._river_side_draft[card_id] = normalized
+        bank = "left" if normalized is RiverSide.LEFT else "right"
+        return f"Placed {len(chosen)} creature(s) on the {bank}."
+
+    def river_side_for(self, game: GameState, card: Card) -> RiverSide | None:
+        self.sync(game)
+        return self._river_side_draft.get(
+            card.id, game.raging_river_side(card)
+        )
+
+    def river_assignment_progress(self, game: GameState) -> tuple[int, int]:
+        self.sync(game)
+        if game.combat is None:
+            return 0, 0
+        candidate_ids = set(game.combat.river_choice_card_ids)
+        return (
+            len(candidate_ids & self._river_side_draft.keys()),
+            len(candidate_ids),
+        )
+
+    def river_assignments(self, game: GameState) -> dict[Card, RiverSide]:
+        self.sync(game)
+        if game.combat is None:
+            raise RuntimeError("there is no combat in progress")
+        cards = {
+            card.id: card
+            for player in game.players
+            for card in player.battlefield
+        }
+        return {
+            cards[card_id]: side
+            for card_id, side in self._river_side_draft.items()
+            if card_id in cards
+            and card_id in game.combat.river_choice_card_ids
+        }
 
     def set_attacking_band(
         self, game: GameState, selected_ids: set[UUID]
@@ -180,9 +287,23 @@ class CombatUiController:
 
     def is_drafting(self, game: GameState, perspective_id: str) -> bool:
         combat = game.combat
-        return bool(combat is not None
-                    and combat.step is CombatStep.DECLARE_BLOCKERS
-                    and combat.defending_player_id == perspective_id)
+        false_orders_choice = (
+            game.pending_false_orders_choices[0]
+            if game.pending_false_orders_choices else None
+        )
+        return bool(
+            combat is not None
+            and (
+                (
+                    combat.step is CombatStep.DECLARE_BLOCKERS
+                    and combat.defending_player_id == perspective_id
+                )
+                or (
+                    false_orders_choice is not None
+                    and false_orders_choice.chooser_id == perspective_id
+                )
+            )
+        )
 
     def selectable_card(self, game: GameState, perspective_id: str,
                         card: Card | None) -> bool:
@@ -190,6 +311,15 @@ class CombatUiController:
             return False
         combat = game.combat
         assert combat is not None
+        false_orders_choice = (
+            game.pending_false_orders_choices[0]
+            if game.pending_false_orders_choices else None
+        )
+        if false_orders_choice is not None:
+            return bool(
+                card.id == false_orders_choice.blocker_id
+                or card in game.legal_false_orders_attackers()
+            )
         defender = game.player(combat.defending_player_id)
         return card in combat.attackers or (
             card in defender.battlefield
@@ -200,7 +330,26 @@ class CombatUiController:
     def selected_groups(self, game: GameState, selected_ids: set[UUID]
                         ) -> tuple[list[Card], list[Card]]:
         combat = game.combat
-        if combat is None or combat.step is not CombatStep.DECLARE_BLOCKERS:
+        if combat is None:
+            return [], []
+        false_orders_choice = (
+            game.pending_false_orders_choices[0]
+            if game.pending_false_orders_choices else None
+        )
+        if false_orders_choice is not None:
+            blocker = next(
+                (
+                    card
+                    for card in game.player(combat.defending_player_id).battlefield
+                    if card.id == false_orders_choice.blocker_id
+                ),
+                None,
+            )
+            attackers = [
+                card for card in combat.attackers if card.id in selected_ids
+            ]
+            return ([blocker] if blocker is not None else []), attackers
+        if combat.step is not CombatStep.DECLARE_BLOCKERS:
             return [], []
         defender = game.player(combat.defending_player_id)
         blockers = [card for card in defender.battlefield
@@ -211,8 +360,12 @@ class CombatUiController:
         return blockers, attackers
 
     def set_blocks(self, game: GameState, selected_ids: set[UUID]) -> str:
+        self.sync(game)
         combat = game.combat
-        if combat is None or combat.step is not CombatStep.DECLARE_BLOCKERS:
+        if combat is None or (
+            not game.pending_false_orders_choices
+            and combat.step is not CombatStep.DECLARE_BLOCKERS
+        ):
             raise RuntimeError("The game is not waiting for blocker assignments.")
         blockers, attackers = self.selected_groups(game, selected_ids)
         if not blockers:
@@ -234,6 +387,20 @@ class CombatUiController:
                               if attacker_id in attackers)
                 for blocker in defender.battlefield
                 if (attacker_ids := self._blocker_draft.get(blocker.id))}
+
+    def false_orders_assignment(self, game: GameState) -> tuple[Card, ...]:
+        """Return the proposed assignment for the pending affected blocker."""
+
+        self.sync(game)
+        if not game.pending_false_orders_choices or game.combat is None:
+            raise RuntimeError("There is no False Orders choice pending.")
+        choice = game.pending_false_orders_choices[0]
+        attackers = {card.id: card for card in game.combat.attackers}
+        return tuple(
+            attackers[attacker_id]
+            for attacker_id in self._blocker_draft.get(choice.blocker_id, ())
+            if attacker_id in attackers
+        )
 
     def card_status(self, game: GameState, card: Card) -> tuple[str, str, str]:
         combat = game.combat
@@ -260,20 +427,60 @@ class CombatUiController:
                 f"B{band_index}: " + ", ".join(member.name for member in band),
             )
         draft_blockers = None
-        if (combat.step is CombatStep.DECLARE_BLOCKERS
-                and self._draft_combat_id == id(combat)):
+        if (
+            (
+                combat.step is CombatStep.DECLARE_BLOCKERS
+                or bool(game.pending_false_orders_choices)
+            )
+            and self._draft_combat_id == id(combat)
+        ):
             defender = game.player(combat.defending_player_id)
             band_by_member = {
                 member.id: {card.id for card in band}
                 for band in combat.attacking_bands
                 for member in band
             }
-            draft_blockers = {
-                attacker.id: [blocker for blocker in defender.battlefield
-                              if band_by_member.get(attacker.id, {attacker.id})
-                              & set(self._blocker_draft.get(blocker.id, ()))]
-                for attacker in combat.attackers
-            }
+            false_orders_choice = (
+                game.pending_false_orders_choices[0]
+                if game.pending_false_orders_choices else None
+            )
+            if false_orders_choice is None:
+                draft_blockers = {
+                    attacker.id: [
+                        blocker
+                        for blocker in defender.battlefield
+                        if band_by_member.get(attacker.id, {attacker.id})
+                        & set(self._blocker_draft.get(blocker.id, ()))
+                    ]
+                    for attacker in combat.attackers
+                }
+            else:
+                affected = next(
+                    (
+                        blocker
+                        for blocker in defender.battlefield
+                        if blocker.id == false_orders_choice.blocker_id
+                    ),
+                    None,
+                )
+                draft_blockers = {
+                    attacker.id: [
+                        blocker
+                        for blocker in combat.blockers.get(attacker.id, ())
+                        if blocker.id != false_orders_choice.blocker_id
+                    ]
+                    for attacker in combat.attackers
+                }
+                if affected is not None:
+                    drafted_ids = set(
+                        self._blocker_draft.get(affected.id, ())
+                    )
+                    for attacker in combat.attackers:
+                        if (
+                            band_by_member.get(attacker.id, {attacker.id})
+                            & drafted_ids
+                        ):
+                            draft_blockers[attacker.id].append(affected)
         attacker_index = next((index for index, candidate
                                in enumerate(combat.attackers, start=1)
                                if candidate.id == card.id), None)

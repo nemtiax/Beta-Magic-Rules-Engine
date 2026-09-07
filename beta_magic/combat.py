@@ -9,7 +9,15 @@ from uuid import UUID
 from .cards import Card
 from .damage import DamageIncidentKind, DamageResolutionStep
 from .destruction import DestructionIncident, DestructionTarget
-from .types import CardType, CombatStep, GameStatus, KeywordAbility, TurnPhase, Zone
+from .types import (
+    CardType,
+    CombatStep,
+    GameStatus,
+    KeywordAbility,
+    RiverSide,
+    TurnPhase,
+    Zone,
+)
 
 if TYPE_CHECKING:
     from .game import PlayerState
@@ -29,6 +37,9 @@ class CombatState:
     regenerated_card_ids: set[UUID] = field(default_factory=set)
     end_of_combat_destruction_ids: set[UUID] = field(default_factory=set)
     blaze_of_glory_blocker_ids: set[UUID] = field(default_factory=set)
+    river_sides: dict[UUID, RiverSide] = field(default_factory=dict)
+    river_choice_card_ids: tuple[UUID, ...] = ()
+    river_resume_step: CombatStep | None = None
 
 
 @dataclass(slots=True)
@@ -37,10 +48,157 @@ class AttackRequirement:
     destroy_if_no_attack: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class PendingFalseOrdersChoice:
+    """The spell's caster replaces one defender's declared blocks."""
+
+    chooser_id: str
+    blocker_id: UUID
+    source_name: str
+
+
 class CombatMixin:
     """Combat façade methods operating on state owned by ``GameState``."""
 
     __slots__ = ()
+
+    def raging_river_active(self) -> bool:
+        """Whether the attacker currently controls at least one active River."""
+
+        if self.combat is None:
+            return False
+        attacker = self.player(self.combat.attacking_player_id)
+        return any(
+            permanent.definition.divides_combat_by_river
+            and self.continuous_permanent_is_active(permanent)
+            for permanent in attacker.battlefield
+        )
+
+    def river_choice_player_id(self) -> str | None:
+        """Return the player who must complete the current River placement."""
+
+        if self.combat is None:
+            return None
+        if self.combat.step is CombatStep.RIVER_DEFENDER_ASSIGNMENT:
+            return self.combat.defending_player_id
+        if self.combat.step is CombatStep.RIVER_ATTACKER_ASSIGNMENT:
+            return self.combat.attacking_player_id
+        return None
+
+    def raging_river_side(self, card: Card) -> RiverSide | None:
+        """Return a creature's effective side, if a River split is active."""
+
+        if self.combat is None or not self.raging_river_active():
+            return None
+        return self.combat.river_sides.get(card.id)
+
+    def _river_defenders_needing_sides(self) -> tuple[Card, ...]:
+        if self.combat is None:
+            return ()
+        defender = self.player(self.combat.defending_player_id)
+        return tuple(
+            card
+            for card in defender.battlefield
+            if CardType.CREATURE in self.card_types(card)
+            and KeywordAbility.FLYING not in self.creature_abilities(card)
+            and card.id not in self.combat.river_sides
+        )
+
+    def _begin_river_defender_assignment(self, resume: CombatStep) -> bool:
+        """Pause combat for any defender placements that are now required."""
+
+        assert self.combat is not None
+        if not self.raging_river_active():
+            self.combat.river_sides.clear()
+            return False
+        candidates = self._river_defenders_needing_sides()
+        if not candidates:
+            return False
+        self.combat.river_choice_card_ids = tuple(card.id for card in candidates)
+        self.combat.river_resume_step = resume
+        self.combat.step = CombatStep.RIVER_DEFENDER_ASSIGNMENT
+        self.priority_player_index = None
+        self.consecutive_passes = 0
+        return True
+
+    def choose_raging_river_sides(
+        self,
+        player_id: str,
+        assignments: dict[Card, RiverSide | str],
+    ) -> CombatStep:
+        """Commit the pending left/right creature placements."""
+
+        if self.combat is None or self.combat.step not in {
+            CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+            CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+        }:
+            raise RuntimeError("the game is not waiting for Raging River choices")
+        if self.river_choice_player_id() != player_id:
+            raise RuntimeError("the other player must choose the River sides")
+        expected_ids = set(self.combat.river_choice_card_ids)
+        if {card.id for card in assignments} != expected_ids:
+            raise ValueError("choose a side for every highlighted creature")
+        battlefield = {
+            card.id: card
+            for player in self.players
+            for card in player.battlefield
+        }
+        if not expected_ids <= battlefield.keys():
+            raise ValueError("a creature awaiting placement has left play")
+        normalized: dict[UUID, RiverSide] = {}
+        for card, side in assignments.items():
+            try:
+                normalized[card.id] = (
+                    side if isinstance(side, RiverSide) else RiverSide(side)
+                )
+            except ValueError as error:
+                raise ValueError("a River side must be L or R") from error
+        self.combat.river_sides.update(normalized)
+        resume = self.combat.river_resume_step
+        if resume is None:
+            raise RuntimeError("the River choice has no combat step to resume")
+        self.combat.river_choice_card_ids = ()
+        self.combat.river_resume_step = None
+        self.combat.step = resume
+        self.priority_player_index = (
+            self.active_player_index
+            if resume in {
+                CombatStep.ATTACKER_RESPONSE,
+                CombatStep.BLOCKER_RESPONSE,
+            }
+            else None
+        )
+        self.consecutive_passes = 0
+        return self.combat.step
+
+    def reconcile_raging_river(self) -> None:
+        """Track River removal and creatures animated during combat."""
+
+        if self.combat is None:
+            return
+        if not self.raging_river_active():
+            self.combat.river_sides.clear()
+            return
+        if self.combat.step is CombatStep.ATTACKER_RESPONSE:
+            self._begin_river_defender_assignment(CombatStep.ATTACKER_RESPONSE)
+
+    def _raging_river_blocking_error(
+        self, blocker: Card, attacker: Card
+    ) -> str | None:
+        if self.combat is None or not self.raging_river_active():
+            return None
+        if KeywordAbility.FLYING in self.creature_abilities(blocker):
+            return None
+        blocker_side = self.combat.river_sides.get(blocker.id)
+        attacker_side = self.combat.river_sides.get(attacker.id)
+        if blocker_side is None or attacker_side is None:
+            return f"{blocker.name} and {attacker.name} need River sides"
+        if blocker_side is not attacker_side:
+            return (
+                f"{blocker.name} cannot block {attacker.name} from the other "
+                "side of Raging River"
+            )
+        return None
 
     def _island_sanctuary_allows(self, card: Card, defender_id: str) -> bool:
         if defender_id not in self.island_sanctuary_protected_players:
@@ -105,6 +263,9 @@ class CombatMixin:
     def _individual_blocking_error(
         self, blocker: Card, attacker: Card, defender: PlayerState
     ) -> str | None:
+        river_error = self._raging_river_blocking_error(blocker, attacker)
+        if river_error is not None:
+            return river_error
         power_limit = blocker.definition.maximum_blocked_power
         if power_limit is not None and self.creature_power(attacker) > power_limit:
             return f"{blocker.name} cannot block a creature with power greater than {power_limit}"
@@ -237,6 +398,7 @@ class CombatMixin:
         if self.attacks_this_turn:
             raise RuntimeError("the active player has already attacked this turn")
 
+        self._clear_land_tap_undo_window()
         defender_index = (self.active_player_index + 1) % len(self.players)
         self.combat = CombatState(
             attacking_player_id=self.active_player.id,
@@ -257,6 +419,12 @@ class CombatMixin:
         # closed the response window and entered DECLARE_ATTACKERS.
         if self.combat is not None and self.combat.step is CombatStep.ATTACK_RESPONSE:
             self._empty_mana_pools()
+            if self._begin_river_defender_assignment(
+                CombatStep.DECLARE_ATTACKERS
+            ):
+                raise RuntimeError(
+                    "the defender must divide creatures for Raging River first"
+                )
             self.combat.step = CombatStep.DECLARE_ATTACKERS
             self.priority_player_index = None
             self.consecutive_passes = 0
@@ -365,8 +533,14 @@ class CombatMixin:
         self.combat.attackers = chosen
         self.combat.attacking_bands = declared_bands
         self.combat.blockers = {card.id: [] for card in chosen}
-        self.combat.step = CombatStep.ATTACKER_RESPONSE
-        self.priority_player_index = self.active_player_index
+        if self.raging_river_active() and chosen:
+            self.combat.river_choice_card_ids = tuple(card.id for card in chosen)
+            self.combat.river_resume_step = CombatStep.ATTACKER_RESPONSE
+            self.combat.step = CombatStep.RIVER_ATTACKER_ASSIGNMENT
+            self.priority_player_index = None
+        else:
+            self.combat.step = CombatStep.ATTACKER_RESPONSE
+            self.priority_player_index = self.active_player_index
         self.consecutive_passes = 0
         self.attacks_this_turn += 1
         self.check_state_based_actions()
@@ -486,6 +660,9 @@ class CombatMixin:
                 raise ValueError(f"{blocker.name} is tapped and cannot block")
             if attacker.id not in attackers:
                 raise ValueError(f"{attacker.name} is not attacking")
+            river_error = self._raging_river_blocking_error(blocker, attacker)
+            if river_error is not None:
+                raise ValueError(river_error)
             power_limit = blocker.definition.maximum_blocked_power
             if (
                 power_limit is not None
@@ -591,6 +768,187 @@ class CombatMixin:
         self.priority_player_index = self.active_player_index
         self.consecutive_passes = 0
         return self.combat.step
+
+    def _attacking_group(self, attacker: Card) -> tuple[Card, ...]:
+        """Return the declared band containing an attacker, or that attacker."""
+
+        assert self.combat is not None
+        return next(
+            (
+                band
+                for band in self.combat.attacking_bands
+                if attacker in band
+            ),
+            (attacker,),
+        )
+
+    def false_orders_current_assignment(self) -> tuple[Card, ...]:
+        """Return one representative per group blocked by the pending creature."""
+
+        if not self.pending_false_orders_choices or self.combat is None:
+            return ()
+        choice = self.pending_false_orders_choices[0]
+        blocker = next(
+            (
+                card
+                for card in self.player(self.combat.defending_player_id).battlefield
+                if card.id == choice.blocker_id
+            ),
+            None,
+        )
+        if blocker is None:
+            return ()
+        result: list[Card] = []
+        seen_groups: set[tuple[UUID, ...]] = set()
+        for attacker in self.combat.attackers:
+            if blocker not in self.combat.blockers.get(attacker.id, ()):
+                continue
+            group = self._attacking_group(attacker)
+            key = tuple(member.id for member in group)
+            if key not in seen_groups:
+                seen_groups.add(key)
+                result.append(attacker)
+        return tuple(result)
+
+    def legal_false_orders_attackers(self) -> tuple[Card, ...]:
+        """Return attackers the pending False Orders creature could block."""
+
+        if not self.pending_false_orders_choices or self.combat is None:
+            return ()
+        choice = self.pending_false_orders_choices[0]
+        defender = self.player(self.combat.defending_player_id)
+        blocker = next(
+            (card for card in defender.battlefield if card.id == choice.blocker_id),
+            None,
+        )
+        if blocker is None or CardType.CREATURE not in self.card_types(blocker):
+            return ()
+        legal: list[Card] = []
+        for attacker in self.combat.attackers:
+            group = self._attacking_group(attacker)
+            if any(
+                self._individual_blocking_error(blocker, member, defender) is None
+                for member in group
+            ):
+                legal.append(attacker)
+        return tuple(legal)
+
+    def _rebuild_combat_destruction_assignments(self) -> None:
+        """Recalculate Basilisk/Cockatrice delayed destruction after a change."""
+
+        assert self.combat is not None
+        self.combat.end_of_combat_destruction_ids.clear()
+        for attacker in self.combat.attackers:
+            for blocker in self.combat.blockers.get(attacker.id, ()):
+                for effect in attacker.definition.combat_destruction_effects:
+                    if not (
+                        effect.spare_blocking_walls
+                        and "Wall" in blocker.definition.subtypes
+                    ):
+                        self.combat.end_of_combat_destruction_ids.add(blocker.id)
+                if blocker.definition.combat_destruction_effects:
+                    self.combat.end_of_combat_destruction_ids.add(attacker.id)
+
+    def choose_false_orders_assignment(
+        self, player_id: str, attackers: Iterable[Card]
+    ) -> None:
+        """Commit the False Orders caster's replacement blocking decision."""
+
+        if not self.pending_false_orders_choices:
+            raise RuntimeError("there is no False Orders choice pending")
+        choice = self.pending_false_orders_choices[0]
+        if player_id != choice.chooser_id:
+            raise ValueError("only the False Orders caster may choose the new blocks")
+        if self.combat is None or self.combat.step is not CombatStep.BLOCKER_RESPONSE:
+            self.pending_false_orders_choices.pop(0)
+            return
+        defender = self.player(self.combat.defending_player_id)
+        blocker = next(
+            (card for card in defender.battlefield if card.id == choice.blocker_id),
+            None,
+        )
+        if blocker is None or CardType.CREATURE not in self.card_types(blocker):
+            self.pending_false_orders_choices.pop(0)
+            return
+
+        requested = tuple(attackers)
+        if len({card.id for card in requested}) != len(requested):
+            raise ValueError("an attacking creature may only be chosen once")
+        distinct_groups: dict[tuple[UUID, ...], Card] = {}
+        for attacker in requested:
+            if attacker not in self.combat.attackers:
+                raise ValueError(f"{attacker.name} is not attacking")
+            group = self._attacking_group(attacker)
+            representative = next(
+                (
+                    member
+                    for member in group
+                    if self._individual_blocking_error(blocker, member, defender)
+                    is None
+                ),
+                None,
+            )
+            if representative is None:
+                raise ValueError(f"{blocker.name} cannot legally block that group")
+            distinct_groups.setdefault(
+                tuple(member.id for member in group), representative
+            )
+        assigned = tuple(distinct_groups.values())
+        if (
+            blocker.id not in self.combat.blaze_of_glory_blocker_ids
+            and len(assigned) > blocker.definition.maximum_attackers_blocked
+        ):
+            raise ValueError(
+                f"{blocker.name} cannot block {len(assigned)} attacking groups"
+            )
+
+        if blocker.id in self.combat.blaze_of_glory_blocker_ids:
+            required = {
+                tuple(member.id for member in self._attacking_group(attacker))
+                for attacker in self.required_blaze_blocks(blocker)
+            }
+            actual = {
+                tuple(member.id for member in self._attacking_group(attacker))
+                for attacker in assigned
+            }
+            if actual != required:
+                raise ValueError(
+                    f"{blocker.name} must block every attacker it can legally block"
+                )
+
+        lure_options = self.lure_block_options(blocker)
+        if lure_options:
+            assigned_member_ids = {
+                member.id
+                for attacker in assigned
+                for member in self._attacking_group(attacker)
+            }
+            if not any(card.id in assigned_member_ids for card in lure_options):
+                raise ValueError(
+                    f"{blocker.name} must still block a Lured attacker if able"
+                )
+
+        was_blocking = any(
+            blocker in current for current in self.combat.blockers.values()
+        )
+        for current in self.combat.blockers.values():
+            current[:] = [card for card in current if card.id != blocker.id]
+        for attacker in assigned:
+            for member in self._attacking_group(attacker):
+                self.combat.blockers[member.id].append(blocker)
+
+        is_blocking = bool(assigned)
+        counter_name = blocker.definition.loses_counter_when_declared_for_combat
+        if counter_name is not None and was_blocking != is_blocking:
+            if is_blocking and blocker.counters.get(counter_name, 0):
+                blocker.counters[counter_name] -= 1
+            elif not is_blocking:
+                blocker.counters[counter_name] = (
+                    blocker.counters.get(counter_name, 0) + 1
+                )
+        self._rebuild_combat_destruction_assignments()
+        self.pending_false_orders_choices.pop(0)
+        self.check_state_based_actions()
 
     def advance_combat(self) -> CombatStep:
         """Close the post-blocker response window and begin damage."""

@@ -1,0 +1,3 @@
+[console_scripts]
+beta-draft = beta_draft.__main__:main
+beta-draft-ui = beta_draft.ui:main

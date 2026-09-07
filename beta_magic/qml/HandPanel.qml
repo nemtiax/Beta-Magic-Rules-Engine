@@ -4,6 +4,7 @@ import QtQuick.Controls
 Frame {
     id: handPanel
     required property var playerData
+    property bool interactive: true
     property bool selectionOnly: false
     signal selected(string cardId)
     signal activated(string cardId)
@@ -20,7 +21,7 @@ Frame {
     CardFlow {
         anchors.fill: parent
         cards: playerData.hand
-        interactive: true
+        interactive: handPanel.interactive
         selectionOnly: handPanel.selectionOnly
         onSelected: function(cardId) { handPanel.selected(cardId) }
         onActivated: function(cardId) { handPanel.activated(cardId) }

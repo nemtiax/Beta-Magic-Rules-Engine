@@ -76,6 +76,7 @@ class UiPresentationBuilder:
         opponent = self.game.players[1 - self.perspective_index]
         combat = self.game.combat
         self._combat_ui.sync(self.game)
+        undoable_land = self.game.undoable_land_tap(perspective.id)
         upkeep_event = (
             self.game.timed_events[0] if self.game.timed_events else None
         )
@@ -177,6 +178,23 @@ class UiPresentationBuilder:
             self.game.pending_library_search_choices[0]
             if self.game.pending_library_search_choices else None
         )
+        false_orders_choice = (
+            self.game.pending_false_orders_choices[0]
+            if self.game.pending_false_orders_choices else None
+        )
+        river_choice_required = bool(
+            combat is not None
+            and combat.step in {
+                CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+                CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+            }
+        )
+        river_choice_player_id = (
+            self.game.river_choice_player_id() if river_choice_required else None
+        )
+        can_choose_river = bool(
+            river_choice_required and river_choice_player_id == perspective.id
+        )
         fireball_card = self._fireball_card()
         choosing_fireball = fireball_card is not None
         choosing_fork = self._fork_original() is not None
@@ -193,6 +211,8 @@ class UiPresentationBuilder:
                 and combat.step in {
                     CombatStep.DECLARE_ATTACKERS,
                     CombatStep.DECLARE_BLOCKERS,
+                    CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+                    CombatStep.RIVER_ATTACKER_ASSIGNMENT,
                 }
             )
         )
@@ -219,6 +239,8 @@ class UiPresentationBuilder:
             or demonic_attorney_choice is not None
             or natural_selection_choice is not None
             or library_search_choice is not None
+            or false_orders_choice is not None
+            or river_choice_required
             or choosing_fireball
             or choosing_fork
             or self._choices.guardian_angel_packet_id is not None
@@ -301,12 +323,14 @@ class UiPresentationBuilder:
             or demonic_attorney_choice is not None
             or natural_selection_choice is not None
             or library_search_choice is not None
+            or false_orders_choice is not None
             or choosing_fireball
             or self._choices.guardian_angel_packet_id is not None
             or untap_choice is not None
             or counter_rewind is not None
             or upkeep_land_choice is not None
             or doppelganger_choice is not None
+            or river_choice_required
             or pending_priority
         )
         perspective_is_active = self.perspective_index == self.game.active_player_index
@@ -329,6 +353,12 @@ class UiPresentationBuilder:
             and combat.step is CombatStep.DECLARE_BLOCKERS
             and combat.defending_player_id == perspective.id
         )
+        can_choose_false_orders = bool(
+            false_orders_choice is not None
+            and false_orders_choice.chooser_id == perspective.id
+            and combat is not None
+        )
+        setting_blockers = can_declare_blockers or can_choose_false_orders
         choosing_combat_damage = self._combat_ui.choosing_damage_assignment(
             self.game
         )
@@ -350,7 +380,7 @@ class UiPresentationBuilder:
         )
         selected_draft_blockers, selected_draft_attackers = (
             self._combat_ui.selected_groups(self.game, self.selected_card_ids)
-            if can_declare_blockers else ([], [])
+            if setting_blockers else ([], [])
         )
         drafted_attacker_count = (
             len(
@@ -363,6 +393,17 @@ class UiPresentationBuilder:
         drafted_blocker_count = (
             len(self._combat_ui.blocker_assignments(self.game))
             if can_declare_blockers else 0
+        )
+        river_assigned_count, river_choice_count = (
+            self._combat_ui.river_assignment_progress(self.game)
+            if river_choice_required else (0, 0)
+        )
+        selected_river_count = (
+            len(
+                self.selected_card_ids
+                & set(combat.river_choice_card_ids)
+            )
+            if combat is not None else 0
         )
         turn_discard_required = bool(
             idle
@@ -696,6 +737,11 @@ class UiPresentationBuilder:
                 )
             ),
             "canAdvance": can_advance and not choosing_combat_damage,
+            "canUndoLandTap": undoable_land is not None,
+            "undoLandTapLabel": (
+                f"Undo {undoable_land.name} tap"
+                if undoable_land is not None else "Undo land tap"
+            ),
             "canChannel": can_channel,
             "channelMaximum": channel_maximum,
             "advanceLabel": advance_label,
@@ -722,9 +768,52 @@ class UiPresentationBuilder:
                 f"{'blocker' if drafted_blocker_count == 1 else 'blockers'}"
             ),
             "canSetBlocks": bool(selected_draft_blockers),
-            "settingBlockers": can_declare_blockers,
+            "settingBlockers": setting_blockers,
             "blockAssignmentLabel": (
-                "Set blocks" if selected_draft_attackers else "Clear blocks"
+                (
+                    "Make block"
+                    if selected_draft_attackers else "Make not block"
+                )
+                if false_orders_choice is not None
+                else "Set blocks" if selected_draft_attackers else "Clear blocks"
+            ),
+            "falseOrdersChoiceRequired": false_orders_choice is not None,
+            "canChooseFalseOrders": can_choose_false_orders,
+            "riverChoiceRequired": river_choice_required,
+            "canChooseRiverSides": can_choose_river,
+            "canPlaceRiverSide": bool(
+                can_choose_river and selected_river_count
+            ),
+            "canConfirmRiverSides": bool(
+                can_choose_river
+                and river_choice_count > 0
+                and river_assigned_count == river_choice_count
+            ),
+            "riverChoiceProgress": (
+                f"{river_assigned_count} of {river_choice_count} placed"
+                if river_choice_required else ""
+            ),
+            "riverChoicePlayer": (
+                self.game.player(river_choice_player_id).name
+                if river_choice_player_id is not None else ""
+            ),
+            "riverChoiceRole": (
+                "defenders"
+                if combat is not None
+                and combat.step is CombatStep.RIVER_DEFENDER_ASSIGNMENT
+                else "attackers"
+                if river_choice_required else ""
+            ),
+            "falseOrdersPlayer": (
+                self.game.player(false_orders_choice.chooser_id).name
+                if false_orders_choice is not None else ""
+            ),
+            "falseOrdersBlocker": (
+                self._card_by_id(false_orders_choice.blocker_id).name
+                if false_orders_choice is not None
+                and self._card_by_id(false_orders_choice.blocker_id) is not None
+                else "departed creature"
+                if false_orders_choice is not None else ""
             ),
             "choosingCombatDamage": choosing_combat_damage,
             "combatDamageAssignments": combat_damage_rows,
@@ -736,11 +825,18 @@ class UiPresentationBuilder:
                 self.game.player(pending_damage_assigners[0]).name
                 if pending_damage_assigners else ""
             ),
-            "priorityRequired": pending_priority and lich_choice is None,
+            "priorityRequired": (
+                pending_priority
+                and lich_choice is None
+                and false_orders_choice is None
+            ),
             "contextActionsVisible": bool(
                 can_begin_attack
+                or undoable_land is not None
                 or can_declare_attackers
                 or can_declare_blockers
+                or false_orders_choice is not None
+                or river_choice_required
                 or self.game.pending_cast is not None
                 or self.game.pending_activation is not None
                 or upkeep_payment_required
@@ -1129,13 +1225,17 @@ class UiPresentationBuilder:
             card for card in player.battlefield
             if card.enchanted_card_id is None
         ]
+        river_order = {"L": 0, "": 1, "R": 2}
         battlefield_nonlands = sorted(
             (
                 card
                 for card in battlefield_roots
                 if CardType.LAND not in card.definition.card_types
             ),
-            key=lambda card: CardType.CREATURE not in self.game.card_types(card),
+            key=lambda card: (
+                river_order.get(self._river_side_label(card), 1),
+                CardType.CREATURE not in self.game.card_types(card),
+            ),
         )
         battlefield_lands = sorted(
             (
@@ -1144,6 +1244,7 @@ class UiPresentationBuilder:
                 if CardType.LAND in card.definition.card_types
             ),
             key=lambda card: (
+                river_order.get(self._river_side_label(card), 1),
                 0 if card.definition.is_basic_land else 1,
                 _BASIC_LAND_ORDER.get(card.name, len(_BASIC_LAND_ORDER))
                 if card.definition.is_basic_land
@@ -1155,9 +1256,14 @@ class UiPresentationBuilder:
             if (
                 not land_columns
                 or land_columns[-1]["name"] != land.name
+                or land_columns[-1]["side"] != self._river_side_label(land)
                 or len(land_columns[-1]["cards"]) == 4
             ):
-                land_columns.append({"name": land.name, "cards": []})
+                land_columns.append({
+                    "name": land.name,
+                    "side": self._river_side_label(land),
+                    "cards": [],
+                })
             land_columns[-1]["cards"].append(self._card_data(land))
         return {
             "id": player.id,
@@ -1277,6 +1383,11 @@ class UiPresentationBuilder:
         attacker_selection_active = self._combat_ui.is_drafting_attackers(
             self.game, self.game.players[self.perspective_index].id
         )
+        perspective_id = self.game.players[self.perspective_index].id
+        river_choice_active = self._combat_ui.is_choosing_river_sides(
+            self.game, perspective_id
+        )
+        river_side = self._river_side_label(card)
         result = {
             "id": str(card.id),
             "name": card.name,
@@ -1291,6 +1402,11 @@ class UiPresentationBuilder:
                 attacker_selection_active
                 and self.game.can_declare_attacker(card)
             ),
+            "riverChoiceActive": river_choice_active,
+            "riverChoiceEligible": self._combat_ui.river_selectable_card(
+                self.game, perspective_id, card
+            ),
+            "riverSide": river_side,
             "selected": (
                 card.id in self.selected_card_ids
                 or f"card:{card.id}" in self._choices.fireball_target_keys
@@ -1465,10 +1581,17 @@ class UiPresentationBuilder:
                     preview_status.append(f"Counters: {counters}")
             if combat_detail:
                 preview_status.append(combat_detail)
+            if river_side:
+                bank = "left" if river_side == "L" else "right"
+                preview_status.append(f"Raging River: {bank} side")
         if result["rulesText"] != card.definition.rules_text:
             preview_status.append(result["rulesText"].split("\n\n")[-1])
         result["previewStatus"] = "\n".join(preview_status)
         return result
+
+    def _river_side_label(self, card: Card) -> str:
+        side = self._combat_ui.river_side_for(self.game, card)
+        return side.value if side is not None else ""
 
     @staticmethod
     def _displayed_rules_text(card: Card) -> str:
