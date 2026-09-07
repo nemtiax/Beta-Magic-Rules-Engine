@@ -1158,6 +1158,7 @@ class PriorityBatchResolutionMixin:
                         ActivatedGlobalDamageAbility,
                         ActivatedUntapAbility,
                         ActivatedCreateTokenAbility,
+                        ActivatedDiscardAbility,
                     ),
                 )
                 else ability.source.zone is Zone.BATTLEFIELD
@@ -1814,13 +1815,18 @@ class PriorityBatchResolutionMixin:
             elif isinstance(declared.ability, ActivatedRevealHandAbility):
                 self._queue_opponent_hand_reveal(declared.controller_id)
             elif isinstance(declared.ability, ActivatedDiscardAbility):
-                for target in declared.targets:
-                    if not isinstance(target, Card) and target.hand:
-                        self.pending_discard_choices.append(
-                            PendingDiscardChoice(
-                                target.id, declared.ability.amount, declared.source_name
-                            )
+                controller = self.player(declared.controller_id)
+                opponent = self.players[
+                    (self.players.index(controller) + 1) % len(self.players)
+                ]
+                if opponent.hand:
+                    self.pending_discard_choices.append(
+                        PendingDiscardChoice(
+                            opponent.id,
+                            declared.ability.amount,
+                            declared.source_name,
                         )
+                    )
             elif isinstance(declared.ability, ActivatedAttackRequirementAbility):
                 for target in declared.targets:
                     if isinstance(target, Card):

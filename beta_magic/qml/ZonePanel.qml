@@ -39,6 +39,7 @@ Frame {
                 Layout.fillHeight: true
                 Layout.minimumHeight: implicitHeight
                 cards: playerData.battlefieldNonlands
+                edgeInset: 8
                 interactive: zone.interactive
                 selectionOnly: zone.selectionOnly
                 targetable: zone.targeting
@@ -61,12 +62,13 @@ Frame {
                 color: "#bfc7d1"
                 font.bold: true
             }
-            CardFlow {
+            LandFlow {
                 Layout.row: zone.frontAtBottom ? 1 : 4
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: implicitHeight
-                cards: playerData.battlefieldLands
+                columns: playerData.battlefieldLandColumns
+                edgeInset: 8
                 interactive: zone.interactive
                 selectionOnly: zone.selectionOnly
                 targetable: zone.targeting
@@ -79,43 +81,59 @@ Frame {
             }
         }
         ColumnLayout {
-            Layout.preferredWidth: 220
-            Layout.minimumWidth: 180
-            Layout.maximumWidth: 240
+            Layout.preferredWidth: 232
+            Layout.minimumWidth: 224
+            Layout.maximumWidth: 250
             Layout.fillWidth: false
-            Layout.alignment: Qt.AlignTop
+            Layout.fillHeight: true
             spacing: 7
-            Label {
-                text: "Graveyard · " + playerData.graveyardCount
-                color: "#e5e9ef"
-                font.bold: true
-            }
-            CardFlow {
+
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: implicitHeight
-                cards: playerData.graveyard
-                interactive: false
-                targetable: zone.targeting
-                onSelected: function(cardId) { zone.selected(cardId) }
-                onInspected: function(cardData) { zone.inspected(cardData) }
+                Layout.fillHeight: true
+                spacing: 8
+
+                ColumnLayout {
+                    Layout.preferredWidth: 108
+                    Layout.minimumWidth: 108
+                    Layout.fillHeight: true
+                    spacing: 5
+                    Label {
+                        text: "Graveyard · " + playerData.graveyardCount
+                        color: "#e5e9ef"
+                        font.bold: true
+                    }
+                    CardPile {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 72
+                        cards: playerData.graveyard
+                        targetable: zone.targeting
+                        onSelected: function(cardId) { zone.selected(cardId) }
+                        onInspected: function(cardData) { zone.inspected(cardData) }
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.preferredWidth: 108
+                    Layout.minimumWidth: 108
+                    Layout.fillHeight: true
+                    spacing: 5
+                    Label {
+                        text: "Set aside · " + playerData.exileCount
+                        color: "#e5e9ef"
+                        font.bold: true
+                    }
+                    CardPile {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 72
+                        cards: playerData.exile
+                        onInspected: function(cardData) { zone.inspected(cardData) }
+                    }
+                }
             }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 1
-                color: "#39434f"
-            }
-            Label {
-                text: "Set aside · " + playerData.exileCount
-                color: "#e5e9ef"
-                font.bold: true
-            }
-            CardFlow {
-                Layout.fillWidth: true
-                Layout.preferredHeight: implicitHeight
-                cards: playerData.exile
-                interactive: false
-                onInspected: function(cardData) { zone.inspected(cardData) }
-            }
+
             Rectangle {
                 visible: playerData.anteCount > 0
                 Layout.fillWidth: true

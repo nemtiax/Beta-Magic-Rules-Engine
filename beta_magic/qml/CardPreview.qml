@@ -146,13 +146,29 @@ Frame {
                     font.pixelSize: 18
                 }
             }
+
+            Image {
+                id: fullCardImage
+                anchors.fill: parent
+                z: 2
+                source: preview.cardData ? preview.cardData.fullCardUrl || "" : ""
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                cache: true
+                smooth: true
+                mipmap: true
+                visible: source.toString() !== "" && status !== Image.Error
+            }
         }
 
         Label {
             Layout.fillWidth: true
-            text: preview.cardData && preview.cardData.tapped ? "Tapped" : ""
+            visible: preview.cardData && !!preview.cardData.previewStatus
+            text: preview.cardData ? preview.cardData.previewStatus : ""
             color: "#ffd978"
             font.bold: true
+            font.pixelSize: 13
+            wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
         }
 

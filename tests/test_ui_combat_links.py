@@ -5,12 +5,14 @@ from beta_magic import (
     GRIZZLY_BEARS,
     SERRA_ANGEL,
     MESA_PEGASUS,
+    PLAINS,
     Card,
     CombatState,
     CombatStep,
     GameState,
     PlayerState,
     TurnPhase,
+    WALL_OF_WOOD,
     Zone,
 )
 from beta_magic.ui import GameViewModel
@@ -99,6 +101,9 @@ class UiCombatLinkTests(unittest.TestCase):
 
     def test_draft_assignments_can_be_overwritten_and_cleared(self):
         self.enter_blocker_draft()
+        self.assertEqual(
+            self.view.state["declareBlockersLabel"], "Declare 0 blockers"
+        )
         self.view.toggleCard(str(self.angel.id))
         self.view.toggleCard(str(self.bear_one.id))
         self.view.setBlocks()
@@ -109,11 +114,17 @@ class UiCombatLinkTests(unittest.TestCase):
         self.assertEqual(
             self.view._card_data(self.bear_one)["combatLabel"], "Blocks A1"
         )
+        self.assertEqual(
+            self.view.state["declareBlockersLabel"], "Declare 1 blocker"
+        )
 
         self.view.toggleCard(str(self.bear_one.id))
         self.view.setBlocks()
         self.assertEqual(self.view._combat_ui.draft_for(self.bear_one.id), ())
         self.assertEqual(self.view._card_data(self.bear_one)["combatLabel"], "")
+        self.assertEqual(
+            self.view.state["declareBlockersLabel"], "Declare 0 blockers"
+        )
 
     def test_different_blockers_can_be_drafted_against_different_attackers(self):
         second_attacker = self.creature(self.attacker, GRIZZLY_BEARS)
@@ -133,6 +144,9 @@ class UiCombatLinkTests(unittest.TestCase):
         )
         self.assertEqual(
             self.view._card_data(self.bear_two)["combatLabel"], "Blocks A2"
+        )
+        self.assertEqual(
+            self.view.state["declareBlockersLabel"], "Declare 2 blockers"
         )
 
     def test_declare_blockers_submits_the_draft_atomically(self):
@@ -229,12 +243,88 @@ class UiCombatLinkTests(unittest.TestCase):
 
         self.view.toggleCard(str(hero.id))
         self.view.toggleCard(str(pegasus.id))
+        self.assertTrue(self.view.state["canSetAttackingBand"])
         self.view.setAttackingBand()
 
         self.assertEqual(self.view._card_data(hero)["combatLabel"], "Band B1")
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 2 attackers"
+        )
         self.view.declareAttackers()
         self.assertEqual(self.game.combat.attacking_bands, [(hero, pegasus)])
         self.assertEqual(set(self.game.combat.attackers), {hero, pegasus})
+
+    def test_attacker_declaration_label_tracks_the_live_selection(self):
+        second_attacker = self.creature(self.attacker, GRIZZLY_BEARS)
+        self.game.combat.step = CombatStep.DECLARE_ATTACKERS
+        self.game.combat.attackers.clear()
+        self.game.combat.blockers.clear()
+
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 0 attackers"
+        )
+
+        self.view.toggleCard(str(self.angel.id))
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 1 attacker"
+        )
+
+        self.view.toggleCard(str(second_attacker.id))
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 2 attackers"
+        )
+
+        self.view.toggleCard(str(self.angel.id))
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 1 attacker"
+        )
+
+    def test_band_button_requires_a_legal_banding_composition(self):
+        second_nonbander = self.creature(self.attacker, GRIZZLY_BEARS)
+        bander = self.creature(self.attacker, BENALISH_HERO)
+        self.game.combat.step = CombatStep.DECLARE_ATTACKERS
+        self.game.combat.attackers.clear()
+        self.game.combat.blockers.clear()
+
+        self.view.toggleCard(str(self.angel.id))
+        self.view.toggleCard(str(second_nonbander.id))
+        self.assertFalse(self.view.state["canSetAttackingBand"])
+
+        # The coordinator enforces the same rule even if called without QML's
+        # disabled-button guard.
+        self.view.setAttackingBand()
+        self.assertEqual(self.view._combat_ui.attacking_bands(self.game), [])
+        self.assertIn("must have Banding", self.view.state["message"])
+
+        self.view.toggleCard(str(second_nonbander.id))
+        self.view.toggleCard(str(bander.id))
+        self.assertTrue(self.view.state["canSetAttackingBand"])
+
+    def test_only_eligible_attackers_can_be_selected(self):
+        land = self.creature(self.attacker, PLAINS)
+        wall = self.creature(self.attacker, WALL_OF_WOOD)
+        sick_creature = self.creature(self.attacker, GRIZZLY_BEARS)
+        sick_creature.entered_battlefield_turn = self.game.turn_number
+        tapped_creature = self.creature(self.attacker, GRIZZLY_BEARS)
+        tapped_creature.tapped = True
+        self.game.combat.step = CombatStep.DECLARE_ATTACKERS
+        self.game.combat.attackers.clear()
+        self.game.combat.blockers.clear()
+
+        for ineligible in (land, wall, sick_creature, tapped_creature):
+            self.assertFalse(self.view._card_data(ineligible)["attackerEligible"])
+            self.view.toggleCard(str(ineligible.id))
+            self.assertNotIn(ineligible.id, self.view.selected_card_ids)
+
+        self.assertEqual(
+            self.view.state["message"], "That card is not eligible to attack."
+        )
+        self.assertTrue(self.view._card_data(self.angel)["attackerEligible"])
+        self.view.toggleCard(str(self.angel.id))
+        self.assertEqual(self.view.selected_card_ids, {self.angel.id})
+        self.assertEqual(
+            self.view.state["declareAttackersLabel"], "Declare 1 attacker"
+        )
 
 
 if __name__ == "__main__":

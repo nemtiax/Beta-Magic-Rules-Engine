@@ -7,6 +7,7 @@ Flickable {
     property bool interactive: true
     property bool selectionOnly: false
     property bool targetable: false
+    property int edgeInset: 0
     signal selected(string cardId)
     signal activated(string cardId)
     signal abilityActivated(string cardId, int abilityIndex)
@@ -20,9 +21,9 @@ Flickable {
         }
         return maximum
     }
-    implicitHeight: 72 + maximumAttachments * 18
-    contentWidth: cardRow.implicitWidth
-    contentHeight: height
+    implicitHeight: 72 + maximumAttachments * 18 + edgeInset * 2
+    contentWidth: cardRow.implicitWidth + edgeInset * 2
+    contentHeight: Math.max(height, cardRow.implicitHeight + edgeInset * 2)
     clip: true
     boundsBehavior: Flickable.StopAtBounds
     flickableDirection: Flickable.HorizontalFlick
@@ -33,6 +34,8 @@ Flickable {
 
     Row {
         id: cardRow
+        x: flow.edgeInset
+        y: flow.edgeInset
         spacing: 7
         Repeater {
             model: cards

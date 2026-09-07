@@ -156,7 +156,10 @@ DISRUPTING_SCEPTER = CardDefinition(
     name="Disrupting Scepter",
     card_types=frozenset({CardType.ARTIFACT}),
     mana_cost=ManaCost.parse("{3}"),
-    rules_text="{3}, {T}: Opponent discards one card of their choice from hand.",
+    rules_text=(
+        "{3}, {T}: Opponent discards one card of their choice from hand. "
+        "Activate only during your turn."
+    ),
     activated_abilities=(ActivatedDiscardAbility(ManaCost.parse("{3}")),),
 )
 

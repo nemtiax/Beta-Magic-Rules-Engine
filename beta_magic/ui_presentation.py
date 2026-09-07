@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 from .abilities import ActivatedRedirectDamageAbility
 from .cards import Card
+from .card_images import image_urls_for
 from .effects import (
     CounterPurchaseUpkeepEffect,
     ChangeTextWordEffect,
@@ -17,6 +18,11 @@ from .effects import (
 )
 from .game import PlayerState
 from .types import BASIC_LAND_SUBTYPES, CardType, Color, CombatStep, TurnPhase, Zone
+
+
+_BASIC_LAND_ORDER = {
+    name: index for index, name in enumerate(BASIC_LAND_SUBTYPES)
+}
 
 
 def mana_text(player: PlayerState) -> str:
@@ -345,6 +351,18 @@ class UiPresentationBuilder:
         selected_draft_blockers, selected_draft_attackers = (
             self._combat_ui.selected_groups(self.game, self.selected_card_ids)
             if can_declare_blockers else ([], [])
+        )
+        drafted_attacker_count = (
+            len(
+                self._combat_ui.drafted_attackers(
+                    self.game, self.selected_card_ids
+                )
+            )
+            if can_declare_attackers else 0
+        )
+        drafted_blocker_count = (
+            len(self._combat_ui.blocker_assignments(self.game))
+            if can_declare_blockers else 0
         )
         turn_discard_required = bool(
             idle
@@ -683,8 +701,15 @@ class UiPresentationBuilder:
             "advanceLabel": advance_label,
             "canBeginAttack": can_begin_attack,
             "canDeclareAttackers": can_declare_attackers,
+            "declareAttackersLabel": (
+                f"Declare {drafted_attacker_count} "
+                f"{'attacker' if drafted_attacker_count == 1 else 'attackers'}"
+            ),
             "canSetAttackingBand": bool(
-                can_declare_attackers and len(self.selected_card_ids) >= 2
+                can_declare_attackers
+                and self._combat_ui.can_set_attacking_band(
+                    self.game, self.selected_card_ids
+                )
             ),
             "attackingBandActionLabel": (
                 self._combat_ui.attacking_band_action_label(
@@ -692,6 +717,10 @@ class UiPresentationBuilder:
                 )
             ),
             "canDeclareBlockers": can_declare_blockers,
+            "declareBlockersLabel": (
+                f"Declare {drafted_blocker_count} "
+                f"{'blocker' if drafted_blocker_count == 1 else 'blockers'}"
+            ),
             "canSetBlocks": bool(selected_draft_blockers),
             "settingBlockers": can_declare_blockers,
             "blockAssignmentLabel": (
@@ -1096,16 +1125,40 @@ class UiPresentationBuilder:
     def _player_data(
         self, player: PlayerState, *, reveal_hand: bool
     ) -> dict[str, Any]:
-        graveyard_targeting = (
-            self.game.pending_cast is not None
-            and self.game.pending_cast.spell.definition.target_requirement is not None
-            and self.game.pending_cast.spell.definition.target_requirement.zone
-            is Zone.GRAVEYARD
-        )
         battlefield_roots = [
             card for card in player.battlefield
             if card.enchanted_card_id is None
         ]
+        battlefield_nonlands = sorted(
+            (
+                card
+                for card in battlefield_roots
+                if CardType.LAND not in card.definition.card_types
+            ),
+            key=lambda card: CardType.CREATURE not in self.game.card_types(card),
+        )
+        battlefield_lands = sorted(
+            (
+                card
+                for card in battlefield_roots
+                if CardType.LAND in card.definition.card_types
+            ),
+            key=lambda card: (
+                0 if card.definition.is_basic_land else 1,
+                _BASIC_LAND_ORDER.get(card.name, len(_BASIC_LAND_ORDER))
+                if card.definition.is_basic_land
+                else card.name.casefold(),
+            ),
+        )
+        land_columns: list[dict[str, Any]] = []
+        for land in battlefield_lands:
+            if (
+                not land_columns
+                or land_columns[-1]["name"] != land.name
+                or len(land_columns[-1]["cards"]) == 4
+            ):
+                land_columns.append({"name": land.name, "cards": []})
+            land_columns[-1]["cards"].append(self._card_data(land))
         return {
             "id": player.id,
             "name": player.name,
@@ -1132,25 +1185,17 @@ class UiPresentationBuilder:
             else [],
             "battlefield": [self._card_data(card) for card in player.battlefield],
             "battlefieldNonlands": [
-                self._card_data(card)
-                for card in battlefield_roots
-                if CardType.LAND not in card.definition.card_types
+                self._card_data(card) for card in battlefield_nonlands
             ],
             "battlefieldLands": [
-                self._card_data(card)
-                for card in battlefield_roots
-                if CardType.LAND in card.definition.card_types
+                self._card_data(card) for card in battlefield_lands
             ],
+            "battlefieldLandColumns": land_columns,
             "graveyard": [
-                self._card_data(card)
-                for card in (
-                    player.graveyard
-                    if graveyard_targeting
-                    else player.graveyard[-5:]
-                )
+                self._card_data(card) for card in player.graveyard
             ],
             "graveyardCount": len(player.graveyard),
-            "exile": [self._card_data(card) for card in player.exile[-5:]],
+            "exile": [self._card_data(card) for card in player.exile],
             "exileCount": len(player.exile),
             "ante": [self._card_data(card) for card in player.ante],
             "anteCount": len(player.ante),
@@ -1176,6 +1221,7 @@ class UiPresentationBuilder:
 
     def _card_data(self, card: Card) -> dict[str, Any]:
         background, foreground = self._card_colors(card)
+        image_urls = image_urls_for(card.name)
         current_card_types = self.game.card_types(card)
         displayed_subtypes = (
             self.game.land_subtypes(card)
@@ -1228,13 +1274,23 @@ class UiPresentationBuilder:
         combat_role, combat_label, combat_detail = self._combat_ui.card_status(
             self.game, card
         )
-        return {
+        attacker_selection_active = self._combat_ui.is_drafting_attackers(
+            self.game, self.game.players[self.perspective_index].id
+        )
+        result = {
             "id": str(card.id),
             "name": card.name,
             "isToken": card.is_token,
             "background": background,
             "foreground": foreground,
+            "artCropUrl": image_urls.get("art_crop", ""),
+            "fullCardUrl": image_urls.get("full_card", ""),
             "tapped": card.tapped,
+            "attackerSelectionActive": attacker_selection_active,
+            "attackerEligible": bool(
+                attacker_selection_active
+                and self.game.can_declare_attacker(card)
+            ),
             "selected": (
                 card.id in self.selected_card_ids
                 or f"card:{card.id}" in self._choices.fireball_target_keys
@@ -1389,6 +1445,30 @@ class UiPresentationBuilder:
             if card.zone is Zone.BATTLEFIELD
             else [],
         }
+        preview_status = []
+        if card.zone is Zone.BATTLEFIELD:
+            if result["isCreature"]:
+                preview_status.append(
+                    f"Current power/toughness: {result['power']}/{result['toughness']}"
+                )
+            if card.damage:
+                preview_status.append(f"Damage marked: {card.damage}")
+            if card.tapped:
+                preview_status.append("Tapped")
+            if enchanted_card is not None:
+                preview_status.append(f"Enchanting {enchanted_card.name}")
+            if card.counters:
+                counters = ", ".join(
+                    f"{amount} {name}" for name, amount in card.counters.items() if amount
+                )
+                if counters:
+                    preview_status.append(f"Counters: {counters}")
+            if combat_detail:
+                preview_status.append(combat_detail)
+        if result["rulesText"] != card.definition.rules_text:
+            preview_status.append(result["rulesText"].split("\n\n")[-1])
+        result["previewStatus"] = "\n".join(preview_status)
+        return result
 
     @staticmethod
     def _displayed_rules_text(card: Card) -> str:

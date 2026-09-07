@@ -73,6 +73,7 @@ class CombatUiController:
     def set_attacking_band(
         self, game: GameState, selected_ids: set[UUID]
     ) -> str:
+        self.sync(game)
         combat = game.combat
         if combat is None or combat.step is not CombatStep.DECLARE_ATTACKERS:
             raise RuntimeError("The game is not waiting for attacking bands.")
@@ -95,6 +96,17 @@ class CombatUiController:
         if existing is not None:
             self._attacking_band_draft.remove(existing)
             return "Disbanded the selected attackers."
+        selected_cards = tuple(
+            card
+            for card in game.active_player.battlefield
+            if card.id in selected_set
+        )
+        if not all(game.can_declare_attacker(card) for card in selected_cards):
+            raise ValueError("Every member of a band must be eligible to attack.")
+        if not game.can_form_attacking_band(selected_cards):
+            raise ValueError(
+                "All but at most one creature in an attacking band must have Banding."
+            )
         shortened = [
             tuple(card_id for card_id in band if card_id not in selected_set)
             for band in self._attacking_band_draft
@@ -102,6 +114,25 @@ class CombatUiController:
         self._attacking_band_draft = [band for band in shortened if len(band) >= 2]
         self._attacking_band_draft.append(selected)
         return f"Created a band of {len(selected)} attackers."
+
+    def can_set_attacking_band(
+        self, game: GameState, selected_ids: set[UUID]
+    ) -> bool:
+        """Whether the current selection may be banded or disbanded."""
+
+        self.sync(game)
+        selected = tuple(
+            card
+            for card in game.active_player.battlefield
+            if card.id in selected_ids
+        )
+        selected_set = {card.id for card in selected}
+        if any(
+            set(band) == selected_set
+            for band in self._attacking_band_draft
+        ):
+            return True
+        return game.can_form_attacking_band(selected)
 
     def attacking_bands(self, game: GameState) -> list[tuple[Card, ...]]:
         cards = {card.id: card for card in game.active_player.battlefield}
@@ -124,6 +155,28 @@ class CombatUiController:
             card_id for band in self._attacking_band_draft for card_id in band
         )
         return [card for card in game.active_player.battlefield if card.id in ids]
+
+    def is_drafting_attackers(
+        self, game: GameState, perspective_id: str
+    ) -> bool:
+        combat = game.combat
+        return bool(
+            combat is not None
+            and combat.step is CombatStep.DECLARE_ATTACKERS
+            and game.active_player.id == perspective_id
+        )
+
+    def selectable_attacker(
+        self,
+        game: GameState,
+        perspective_id: str,
+        card: Card | None,
+    ) -> bool:
+        return bool(
+            card is not None
+            and self.is_drafting_attackers(game, perspective_id)
+            and game.can_declare_attacker(card)
+        )
 
     def is_drafting(self, game: GameState, perspective_id: str) -> bool:
         combat = game.combat

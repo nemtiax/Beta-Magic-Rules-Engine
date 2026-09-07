@@ -15,6 +15,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
+from beta_magic.ui import GameViewModel
 
 
 class DiscardEffectTests(unittest.TestCase):
@@ -64,16 +65,34 @@ class DiscardEffectTests(unittest.TestCase):
         self.card(GRIZZLY_BEARS, self.bob, Zone.HAND)
         self.alice.mana_pool.colorless = 3
 
-        self.game.activate_ability(self.alice.id, scepter, 0)
-        self.game.complete_pending_activation((self.bob,))
+        view = GameViewModel(self.game)
+        view.activateAbility(str(scepter.id), 0)
+
+        self.assertIsNone(self.game.pending_activation)
+        self.assertFalse(view.state["targeting"])
+        self.assertEqual(self.game.batch_abilities[0].targets, ())
+        self.assertTrue(scepter.tapped)
+        self.assertEqual(self.alice.mana_pool.colorless, 0)
+        self.assertIs(
+            self.game.players[self.game.priority_player_index], self.bob
+        )
         self.resolve_priority()
 
-        self.assertTrue(scepter.tapped)
         self.assertEqual(self.game.pending_discard_choices[0].player_id, self.bob.id)
         with self.assertRaises(ValueError):
             self.game.choose_discard(self.alice.id, (chosen,))
         self.game.choose_discard(self.bob.id, (chosen,))
         self.assertIn(chosen, self.bob.graveyard)
+
+    def test_disrupting_scepter_can_only_be_activated_during_its_turn(self) -> None:
+        scepter = self.card(DISRUPTING_SCEPTER, self.bob, Zone.BATTLEFIELD)
+        self.bob.mana_pool.colorless = 3
+
+        with self.assertRaisesRegex(RuntimeError, "only be activated during your turn"):
+            self.game.activate_ability(self.bob.id, scepter, 0)
+
+        self.assertFalse(scepter.tapped)
+        self.assertEqual(self.bob.mana_pool.colorless, 3)
 
     def test_hypnotic_specter_triggers_only_after_player_damage(self) -> None:
         specter = self.card(HYPNOTIC_SPECTER, self.alice, Zone.BATTLEFIELD)

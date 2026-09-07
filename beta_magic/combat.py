@@ -78,6 +78,30 @@ class CombatMixin:
             )
         )
 
+    def can_declare_attacker(self, card: Card) -> bool:
+        """Return whether ``card`` is currently eligible to attack."""
+
+        return bool(
+            self.combat is not None
+            and self.combat.step is CombatStep.DECLARE_ATTACKERS
+            and self._can_attack(card)
+        )
+
+    def can_form_attacking_band(self, cards: Iterable[Card]) -> bool:
+        """Whether ``cards`` can be declared together as one attacking band."""
+
+        band = tuple(cards)
+        return bool(
+            len(band) >= 2
+            and len({card.id for card in band}) == len(band)
+            and all(self.can_declare_attacker(card) for card in band)
+            and sum(
+                KeywordAbility.BANDING not in self.creature_abilities(card)
+                for card in band
+            )
+            <= 1
+        )
+
     def _individual_blocking_error(
         self, blocker: Card, attacker: Card, defender: PlayerState
     ) -> str | None:
@@ -290,12 +314,7 @@ class CombatMixin:
                 raise ValueError("every member of a band must be a declared attacker")
             if banded_ids & {card.id for card in band}:
                 raise ValueError("an attacker may belong to only one band")
-            without_banding = [
-                card
-                for card in band
-                if KeywordAbility.BANDING not in self.creature_abilities(card)
-            ]
-            if len(without_banding) > 1:
+            if not self.can_form_attacking_band(band):
                 raise ValueError(
                     "all but at most one creature in an attacking band must have Banding"
                 )

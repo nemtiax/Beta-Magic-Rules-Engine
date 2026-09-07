@@ -1520,7 +1520,7 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: gameState.canDeclareAttackers
-                                text: "Declare attackers"
+                                text: gameState.declareAttackersLabel
                                 onClicked: gameBridge.declareAttackers()
                             }
                             Button {
@@ -1531,7 +1531,7 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: gameState.canDeclareBlockers
-                                text: "Declare blockers"
+                                text: gameState.declareBlockersLabel
                                 onClicked: gameBridge.declareBlockers()
                             }
                             Button {
@@ -1848,7 +1848,8 @@ ApplicationWindow {
                     Layout.preferredHeight: 200
                     playerData: gameState.perspective
                     interactive: true
-                    selectionOnly: gameState.settingBlockers || gameState.canChooseLich
+                    selectionOnly: gameState.canDeclareAttackers
+                                   || gameState.settingBlockers || gameState.canChooseLich
                                    || gameState.canChooseKudzu || gameState.canChooseClone
                                    || gameState.canChooseDoppelganger
                     targeting: gameState.targeting
@@ -1864,6 +1865,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 88
                     playerData: gameState.perspective
+                    selectionOnly: gameState.canDeclareAttackers
                     onSelected: function(cardId) { gameBridge.toggleCard(cardId) }
                     onActivated: function(cardId) { gameBridge.activateCard(cardId) }
                     onAbilityActivated: function(cardId, abilityIndex) {

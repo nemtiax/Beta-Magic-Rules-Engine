@@ -151,7 +151,6 @@ class AbilityActivationMixin:
                 ActivatedTapAbility,
                 ActivatedUnblockableAbility,
                 ActivatedTemporaryAbility,
-                ActivatedDiscardAbility,
                 ActivatedAttackRequirementAbility,
                 ActivatedLandTypeAbility,
                 ActivatedInterruptUntapAbility,
@@ -217,6 +216,19 @@ class AbilityActivationMixin:
             self.consecutive_passes = 0
             return None
         if isinstance(ability, ActivatedRevealHandAbility):
+            self.pay_mana(player, ability.mana_cost)
+            if ability.tap_cost:
+                self._tap_permanent(card)
+            self.batch_abilities.append(
+                AbilityOnStack(card, card.name, player.id, ability, ())
+            )
+            self.interruptible_spell_id = None
+            self.priority_player_index = (
+                self.players.index(player) + 1
+            ) % len(self.players)
+            self.consecutive_passes = 0
+            return None
+        if isinstance(ability, ActivatedDiscardAbility):
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
@@ -434,6 +446,12 @@ class AbilityActivationMixin:
             raise RuntimeError(
                 f"{card.name} can only be activated during an opponent's turn before the attack"
             )
+        if (
+            isinstance(ability, ActivatedDiscardAbility)
+            and ability.controller_turn_only
+            and player is not self.active_player
+        ):
+            raise RuntimeError(f"{card.name} can only be activated during your turn")
         if isinstance(ability, ActivatedLandTypeAbility) and (
             ability.activation_phase is not None
             and (
@@ -497,6 +515,8 @@ class AbilityActivationMixin:
             isinstance(ability, ActivatedPreventDamageAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedRevealHandAbility) and ability.tap_cost
+        ) or (
+            isinstance(ability, ActivatedDiscardAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedDamageAbility) and ability.tap_cost
         ) or (

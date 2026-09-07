@@ -400,14 +400,12 @@ class ActivatedRevealHandAbility:
 
 @dataclass(frozen=True, slots=True)
 class ActivatedDiscardAbility:
-    """A targeted fast effect that makes an opponent choose discards."""
+    """An untargeted fast effect that makes an opponent choose discards."""
 
     mana_cost: ManaCost
     amount: int = 1
     tap_cost: bool = True
-    target_requirement: TargetRequirement = field(
-        default_factory=lambda: TargetRequirement(players=True, opponent_only=True)
-    )
+    controller_turn_only: bool = True
 
     @property
     def label(self) -> str:
@@ -632,7 +630,6 @@ TargetedActivatedAbility = (
     | ActivatedTapAbility
     | ActivatedUnblockableAbility
     | ActivatedTemporaryAbility
-    | ActivatedDiscardAbility
     | ActivatedAttackRequirementAbility
     | ActivatedLandTypeAbility
     | ActivatedInterruptUntapAbility
@@ -670,6 +667,7 @@ ActivatedAbility = (
     | ActivatedDrawAbility
     | ActivatedCreateTokenAbility
     | ActivatedRevealHandAbility
+    | ActivatedDiscardAbility
     | ActivatedExtraTurnAbility
     | ActivatedUntapAbility
     | ActivatedEventLifeGainAbility

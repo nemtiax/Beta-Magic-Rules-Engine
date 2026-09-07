@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import random
+from typing import Protocol, Sequence, TypeVar
 
 from .card_defs.catalog import ALL_CARDS, card_named
 from .card_defs.lands import BASIC_LANDS
 from .cards import CardDefinition
 from .game import GameState, PlayerState
+from .sealed import BetaStarterGenerator
+
+
+_T = TypeVar("_T")
+
+
+class _Sampler(Protocol):
+    def sample(self, population: Sequence[_T], k: int) -> list[_T]: ...
 
 
 def _cards(*names: str) -> tuple[CardDefinition, ...]:
@@ -166,6 +176,36 @@ def make_demo_game(*, ante: bool = False) -> GameState:
     return _make_game(
         "player-1", "Player 1", deck,
         "player-2", "Player 2", deck,
+        shuffle=True, ante=ante,
+    )
+
+
+def make_random_starter_game(
+    *,
+    ante: bool = False,
+    rng: _Sampler | None = None,
+) -> GameState:
+    """Create a game from two independently sampled 60-card Beta starters.
+
+    Unsupported cards are omitted from the virtual sheets. Ante cards are also
+    omitted unless ante is enabled, so each resulting playable library still
+    contains the full printed 2/13/45 starter composition.
+    """
+
+    available_names = {
+        definition.name
+        for definition in ALL_CARDS
+        if ante or not definition.requires_ante
+    }
+    generator = BetaStarterGenerator(
+        rng=random.Random() if rng is None else rng,
+        available_names=available_names,
+    )
+    first_deck = _cards(*generator.generate_starter())
+    second_deck = _cards(*generator.generate_starter())
+    return _make_game(
+        "worzel", "Worzel", first_deck,
+        "thomil", "Thomil", second_deck,
         shuffle=True, ante=ante,
     )
 

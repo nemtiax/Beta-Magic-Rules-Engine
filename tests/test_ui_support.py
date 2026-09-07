@@ -42,6 +42,7 @@ from beta_magic import (
     VANILLA_WALLS,
     GameStatus,
     GameState,
+    Card,
     CardDefinition,
     PlayerState,
     CardType,
@@ -411,6 +412,9 @@ class DemoGameTests(unittest.TestCase):
         data = view_model._card_data(creature)
         self.assertEqual(data["manaCost"], creature.definition.mana_cost.compact)
         self.assertNotIn("{", data["manaCost"])
+        self.assertIn("artCropUrl", data)
+        self.assertIn("fullCardUrl", data)
+        self.assertIn("previewStatus", data)
 
     def test_battlefield_view_separates_lands_and_nonlands(self) -> None:
         view_model = GameViewModel(make_test_game())
@@ -436,6 +440,56 @@ class DemoGameTests(unittest.TestCase):
         self.assertEqual(
             [card["name"] for card in data["battlefieldNonlands"]], [creature.name]
         )
+
+    def test_battlefield_view_groups_and_orders_land_columns(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        player = view_model.game.players[0]
+        player.battlefield.clear()
+        definitions = (
+            *([BASIC_LANDS[1]] * 5),
+            *([TROPICAL_ISLAND] * 2),
+            *([BASIC_LANDS[0]] * 2),
+        )
+        player.battlefield.extend(
+            Card(
+                definition,
+                player.id,
+                controller_id=player.id,
+                zone=Zone.BATTLEFIELD,
+            )
+            for definition in definitions
+        )
+
+        columns = view_model.state["perspective"]["battlefieldLandColumns"]
+        self.assertEqual(
+            [[card["name"] for card in column["cards"]] for column in columns],
+            [
+                ["Plains", "Plains"],
+                ["Island", "Island", "Island", "Island"],
+                ["Island"],
+                ["Tropical Island", "Tropical Island"],
+            ],
+        )
+
+    def test_battlefield_view_orders_creatures_before_other_nonlands(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        player = view_model.game.players[0]
+        player.battlefield.clear()
+        player.battlefield.extend(
+            Card(
+                definition,
+                player.id,
+                controller_id=player.id,
+                zone=Zone.BATTLEFIELD,
+            )
+            for definition in (SOL_RING, HILL_GIANT)
+        )
+
+        names = [
+            card["name"]
+            for card in view_model.state["perspective"]["battlefieldNonlands"]
+        ]
+        self.assertEqual(names, ["Hill Giant", "Sol Ring"])
 
     def test_seeded_test_decks_are_small_repeatable_and_two_color(self) -> None:
         first = make_test_game()
@@ -924,6 +978,22 @@ class DemoGameTests(unittest.TestCase):
             game.pass_priority(priority.id)
 
         self.assertIn(target, alice.hand)
+
+    def test_zone_piles_include_every_graveyard_and_set_aside_card(self) -> None:
+        view_model = GameViewModel(make_test_game())
+        player = view_model.game.players[0]
+        for destination, zone in (
+            (player.graveyard, Zone.GRAVEYARD),
+            (player.exile, Zone.EXILE),
+        ):
+            for _ in range(6):
+                card = player.library.pop()
+                card.zone = zone
+                destination.append(card)
+
+        player_data = view_model.state["perspective"]
+        self.assertEqual(len(player_data["graveyard"]), 6)
+        self.assertEqual(len(player_data["exile"]), 6)
 
     def test_ui_can_target_player_with_damage_instant(self) -> None:
         game = make_test_game()

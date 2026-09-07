@@ -48,6 +48,21 @@ Common interactions:
   blockers.
 - Hover over a card to show its full details in the inspection pane.
 
+### Optional card images
+
+Both the gameplay and draft UIs can use locally downloaded Beta artwork. From
+the repository root, run:
+
+```console
+python tools/download_card_images.py
+```
+
+This fills the shared, Git-ignored `card_images/` directory with art crops for
+the compact battlefield and hand cards, full-card scans for the preview panes,
+and a manifest used by both interfaces. Existing files are skipped, so the
+download can be resumed. Without the images, both UIs retain their color-coded
+text-card fallback.
+
 Spells and ordinary fast effects do not use the modern stack. They collect
 into a 1993-style simultaneous batch, while interrupts use their own
 LIFO-like resolution sequence. The interface therefore asks both players to
@@ -77,6 +92,19 @@ For example:
 ```console
 python -m beta_magic.ui --protection-test-decks
 ```
+
+Use `--random-starter-decks` to give each player an independently generated
+60-card Beta starter instead of a seeded test deck:
+
+```console
+python -m beta_magic.ui --random-starter-decks
+```
+
+Each starter samples two rare-sheet slots, 13 uncommon-sheet slots, and 45
+common-sheet slots from Beta's historical 121-card sheets, including their
+original basic-land distribution. Until the final unsupported cards are added,
+those cards are omitted from gameplay starters; ante cards are likewise omitted
+unless `--ante` is supplied. The rarity-slot counts remain unchanged.
 
 Deck definitions and game factories live in `beta_magic/decks.py`.
 
@@ -137,6 +165,7 @@ beta_magic/
   abilities.py            activated abilities and target requirements
   effects.py              spell, continuous, upkeep, and combat effects
   decks.py                deterministic UI deck lists
+  sealed.py               historical Beta booster and starter collation
   ui.py                    Qt-facing view model and command-line entry point
   ui_choices.py            transient picker and dialog state
   ui_combat.py             transient combat selection and assignment coordination

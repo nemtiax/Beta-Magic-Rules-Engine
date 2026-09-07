@@ -8,6 +8,8 @@ Rectangle {
     property bool selectionOnly: false
     property bool targetable: false
     property bool tabMode: false
+    readonly property bool hasArt: cardData.artCropUrl
+                                    && cardData.artCropUrl.toString().length > 0
     signal selected(string cardId)
     signal activated(string cardId)
     signal abilityActivated(string cardId, int abilityIndex)
@@ -34,6 +36,25 @@ Rectangle {
 
     Rectangle {
         anchors.fill: parent
+        anchors.margins: card.tabMode ? 3 : 4
+        radius: 4
+        color: cardData.background
+        clip: true
+
+        Image {
+            anchors.fill: parent
+            source: cardData.artCropUrl || ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
+            smooth: true
+            mipmap: true
+            visible: card.hasArt && status !== Image.Error
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
         anchors.margins: card.tabMode ? 3 : 5
         radius: 4
         color: "transparent"
@@ -49,9 +70,11 @@ Rectangle {
         anchors.leftMargin: card.tabMode ? 5 : 7
         width: parent.width - (card.tabMode ? 34 : 39)
         text: cardData.name
-        color: cardData.foreground
+        color: card.hasArt ? "white" : cardData.foreground
         font.bold: true
         font.pixelSize: card.tabMode ? 10 : 12
+        style: card.hasArt ? Text.Outline : Text.Normal
+        styleColor: "#d9000000"
         horizontalAlignment: Text.AlignLeft
         wrapMode: card.tabMode ? Text.NoWrap : Text.WordWrap
         elide: card.tabMode ? Text.ElideRight : Text.ElideNone
@@ -62,9 +85,11 @@ Rectangle {
         anchors.right: parent.right
         anchors.margins: card.tabMode ? 5 : 7
         text: cardData.manaCost
-        color: cardData.foreground
+        color: card.hasArt ? "white" : cardData.foreground
         font.bold: true
         font.pixelSize: card.tabMode ? 10 : 12
+        style: card.hasArt ? Text.Outline : Text.Normal
+        styleColor: "#d9000000"
     }
 
     Text {
@@ -75,8 +100,11 @@ Rectangle {
         visible: !card.tabMode && cardData.isCreature
         text: cardData.power + "/" + cardData.toughness
               + (cardData.damage ? "  · " + cardData.damage + " damage" : "")
-        color: cardData.foreground
+        color: card.hasArt ? "white" : cardData.foreground
         font.pixelSize: 11
+        font.bold: card.hasArt
+        style: card.hasArt ? Text.Outline : Text.Normal
+        styleColor: "#d9000000"
     }
 
     Rectangle {
@@ -105,21 +133,14 @@ Rectangle {
 
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.margins: 5
-        visible: !card.tabMode && cardData.tapped
-        text: "T"
-        color: cardData.foreground
-        font.bold: true
-    }
-
     MouseArea {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: card.selectionOnly ? Qt.LeftButton
+        acceptedButtons: card.selectionOnly
+                         ? (cardData.attackerSelectionActive
+                            && !cardData.attackerEligible
+                            ? Qt.NoButton : Qt.LeftButton)
                          : card.interactive || card.targetable
                            ? Qt.LeftButton | Qt.RightButton : Qt.NoButton
         onEntered: card.inspected(cardData)

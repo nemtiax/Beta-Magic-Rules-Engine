@@ -36,6 +36,7 @@ from .decks import (
     make_demo_game,
     make_enchantment_test_game,
     make_protection_test_game,
+    make_random_starter_game,
     make_test_game,
     make_timed_event_test_game,
     make_x_test_game,
@@ -412,6 +413,19 @@ class GameViewModel(QObject):
                 card = candidate
         combat = self.game.combat
         perspective_id = self.game.players[self.perspective_index].id
+        drafting_attackers = self._combat_ui.is_drafting_attackers(
+            self.game, perspective_id
+        )
+        if drafting_attackers:
+            candidate = self._card_by_id(UUID(card_id))
+            if self._combat_ui.selectable_attacker(
+                self.game, perspective_id, candidate
+            ):
+                card = candidate
+            elif candidate is not None:
+                self._tell_current("That card is not eligible to attack.")
+                self.stateChanged.emit()
+                return
         drafting_blocks = self._combat_ui.is_drafting(self.game, perspective_id)
         if drafting_blocks:
             candidate = self._card_by_id(UUID(card_id))
@@ -2244,6 +2258,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="use deterministic 20-card decks focused on Banding",
     )
+    deck_group.add_argument(
+        "--random-starter-decks",
+        action="store_true",
+        help="give both players independently generated 60-card Beta starters",
+    )
     return parser.parse_args(argv)
 
 
@@ -2256,7 +2275,9 @@ def main(argv: list[str] | None = None) -> int:
     # interpret options owned by the game.
     app = QGuiApplication([sys.argv[0]])
     app.setApplicationName("Beta Magic")
-    if args.banding_test_decks:
+    if args.random_starter_decks:
+        game_factory = make_random_starter_game
+    elif args.banding_test_decks:
         game_factory = make_banding_test_game
     elif args.aura_test_decks:
         game_factory = make_aura_test_game
