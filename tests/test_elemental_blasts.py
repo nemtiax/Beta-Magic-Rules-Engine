@@ -120,12 +120,15 @@ class ElementalBlastTests(unittest.TestCase):
         self.assertEqual(bolt.zone, Zone.STACK)
 
         self.pass_twice()
+        self.assertEqual(bolt.zone, Zone.STACK)
+        self.pass_twice()
         self.assertEqual(self.bob.life, 17)
 
     def test_destroy_mode_uses_the_regeneration_pathway(self) -> None:
         troll = self.put_in_play(self.alice, UTHDEN_TROLL)
         blast = self.put_in_hand(self.bob, BLUE_ELEMENTAL_BLAST)
         self.bob.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.begin_cast(blast, mode="Destroy permanent")
         self.game.complete_pending_cast((troll,))
 
@@ -138,6 +141,7 @@ class ElementalBlastTests(unittest.TestCase):
         elemental = self.put_in_play(self.alice, WATER_ELEMENTAL)
         blast = self.put_in_hand(self.bob, RED_ELEMENTAL_BLAST)
         self.bob.mana_pool.red = 1
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.begin_cast(blast, mode="Destroy permanent")
         self.game.complete_pending_cast((elemental,))
 

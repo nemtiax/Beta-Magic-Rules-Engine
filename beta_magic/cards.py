@@ -409,6 +409,8 @@ class Card:
     land_word_changes: dict[str, str] = field(default_factory=dict)
     plus_one_counters: int = 0
     counters: dict[str, int] = field(default_factory=dict)
+    # Actual casting as a Summon spell, distinct from entering play or merely
+    # having summoning sickness. Siren's Call and Nettling Imp care about this.
     summoned_turn: int | None = None
     land_type_marks: dict[UUID, tuple[str, int]] = field(default_factory=dict)
     persistent_effect_instance_id: UUID | None = None

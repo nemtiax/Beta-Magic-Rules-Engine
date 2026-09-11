@@ -77,8 +77,9 @@ class DamagePreventionTests(unittest.TestCase):
         self.alice.mana_pool.white = 1
         self.game.begin_cast(salve)
         self.game.complete_pending_cast((self.alice,))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
         self.assertEqual(self.alice.life, 18)
         self.assertIn(salve, self.alice.graveyard)
 

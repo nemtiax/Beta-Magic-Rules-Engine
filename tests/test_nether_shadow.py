@@ -73,6 +73,7 @@ class NetherShadowTests(unittest.TestCase):
 
         self.resolve_batch()
         self.assertIn(shadow, self.alice.battlefield)
+        self.assertIsNone(shadow.summoned_turn)
         self.assertEqual(self.alice.mana_pool.total, 0)
 
     def test_returned_shadow_can_attack_that_turn(self):

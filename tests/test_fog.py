@@ -77,6 +77,23 @@ class FogTests(unittest.TestCase):
         self.assertIn(blocker, self.bob.battlefield)
         self.assertEqual((attacker.damage, blocker.damage), (0, 0))
 
+    def test_skips_empty_damage_windows(self) -> None:
+        attacker = self.permanent(self.alice, HILL_GIANT)
+        blocker = self.permanent(self.bob, GRIZZLY_BEARS)
+        self.game.pause_for_damage_windows = True
+        self.cast_fog()
+        self.reach_damage(attacker, blocker)
+        resolved_before = len(self.game.resolved_damage_incidents)
+
+        self.game.deal_combat_damage()
+
+        self.assertIsNone(self.game.pending_damage)
+        self.assertIsNone(self.game.combat)
+        self.assertEqual(
+            len(self.game.resolved_damage_incidents), resolved_before
+        )
+        self.assertEqual((attacker.damage, blocker.damage), (0, 0))
+
     def test_prevents_unblocked_and_trample_damage_to_player(self) -> None:
         mammoth = self.permanent(self.alice, WAR_MAMMOTH)
         goblin = self.permanent(self.bob, MONSS_GOBLIN_RAIDERS)

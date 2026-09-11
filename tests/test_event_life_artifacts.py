@@ -104,6 +104,9 @@ class EventLifeArtifactTests(unittest.TestCase):
         self.assertFalse(self.game.can_activate_ability(self.alice.id, star, 0))
 
         self.pass_current_priority()
+        self.assertFalse(self.game.can_activate_ability(self.alice.id, star, 0))
+        self.pass_current_priority()
+        self.pass_current_priority()
         self.assertTrue(self.game.can_activate_ability(self.alice.id, star, 0))
         self.game.activate_ability(self.alice.id, star, 0)
         self.assertEqual(self.alice.mana_pool.total, 0)
@@ -145,6 +148,8 @@ class EventLifeArtifactTests(unittest.TestCase):
         self.alice.mana_pool.colorless = 2
         self.cast_bolt(self.alice, self.bob)
         self.pass_current_priority()
+        self.pass_current_priority()
+        self.pass_current_priority()
 
         self.game.activate_ability(self.alice.id, first, 0)
         self.pass_current_priority()
@@ -158,10 +163,14 @@ class EventLifeArtifactTests(unittest.TestCase):
         self.alice.mana_pool.colorless = 2
         self.cast_bolt(self.alice, self.bob)
         self.pass_current_priority()
+        self.pass_current_priority()
+        self.pass_current_priority()
         self.game.activate_ability(self.alice.id, star, 0)
 
         # Bob now has priority and adds another red spell to the same batch.
         self.cast_bolt(self.bob, self.alice)
+        self.pass_current_priority()
+        self.pass_current_priority()
         self.assertTrue(self.game.can_activate_ability(self.alice.id, star, 0))
         self.game.activate_ability(self.alice.id, star, 0)
         self.resolve_current_batch()
@@ -209,6 +218,7 @@ class EventLifeArtifactTests(unittest.TestCase):
         net = self.put_in_play(self.alice, SOUL_NET)
         creature = self.put_in_play(self.bob, GRIZZLY_BEARS)
         self.alice.mana_pool.colorless = 1
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.cast_bolt(self.bob, creature)
 
         self.resolve_current_batch()

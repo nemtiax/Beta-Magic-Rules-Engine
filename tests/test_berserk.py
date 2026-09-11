@@ -5,6 +5,7 @@ from beta_magic import (
     DRUDGE_SKELETONS,
     GIANT_GROWTH,
     GRIZZLY_BEARS,
+    HOLY_STRENGTH,
     PLAGUE_RATS,
     SWAMP,
     Card,
@@ -79,6 +80,27 @@ class BerserkTests(unittest.TestCase):
         self.cast(BERSERK, second)
         self.cast(GIANT_GROWTH, second)
         self.assertEqual(self.game.creature_power(second), 7)
+
+    def test_doubles_enchantment_bonus_that_was_already_active(self) -> None:
+        bear = self.permanent(self.alice, GRIZZLY_BEARS)
+        strength = Card(HOLY_STRENGTH, self.alice.id, zone=Zone.HAND)
+        self.alice.hand.append(strength)
+        strength.enchanted_card_id = bear.id
+        self.game._move_card(strength, Zone.BATTLEFIELD)
+
+        self.cast(BERSERK, bear)
+
+        self.assertEqual(self.game.creature_power(bear), 6)
+
+    def test_enchantment_bonus_applied_after_berserk_is_not_doubled(self) -> None:
+        bear = self.permanent(self.alice, GRIZZLY_BEARS)
+        self.cast(BERSERK, bear)
+        strength = Card(HOLY_STRENGTH, self.alice.id, zone=Zone.HAND)
+        self.alice.hand.append(strength)
+        strength.enchanted_card_id = bear.id
+        self.game._move_card(strength, Zone.BATTLEFIELD)
+
+        self.assertEqual(self.game.creature_power(bear), 5)
 
     def test_multiplier_recalculates_when_variable_base_power_changes(self) -> None:
         first = self.permanent(self.alice, PLAGUE_RATS)

@@ -10,6 +10,8 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.card_defs import (
+    FROZEN_SHADE,
+    GIANT_GROWTH,
     GRIZZLY_BEARS,
     HOLY_STRENGTH,
     BLACK_KNIGHT,
@@ -80,6 +82,47 @@ class SwordsToPlowsharesTests(unittest.TestCase):
         self.assertNotIn(bear, self.bob.graveyard)
         self.assertEqual(self.bob.life, 25)
         self.assertIn(spell, self.alice.graveyard)
+
+    def test_pump_cast_in_response_increases_life_gain(self) -> None:
+        bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        swords = Card(SWORDS_TO_PLOWSHARES, self.alice.id, zone=Zone.HAND)
+        growth = Card(GIANT_GROWTH, self.bob.id, zone=Zone.HAND)
+        self.alice.hand.append(swords)
+        self.bob.hand.append(growth)
+        self.alice.mana_pool.white = 1
+        self.bob.mana_pool.green = 1
+
+        self.game.begin_cast(swords)
+        self.game.complete_pending_cast((bear,))
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+        self.game.begin_cast(growth)
+        self.game.complete_pending_cast((bear,))
+        while self.game.stack:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+
+        self.assertIs(bear.zone, Zone.EXILE)
+        self.assertEqual(self.bob.life, 25)
+
+    def test_activated_pump_in_response_increases_life_gain(self) -> None:
+        shade = self.put_in_play(self.bob, FROZEN_SHADE)
+        swords = Card(SWORDS_TO_PLOWSHARES, self.alice.id, zone=Zone.HAND)
+        self.alice.hand.append(swords)
+        self.alice.mana_pool.white = 1
+        self.bob.mana_pool.black = 1
+
+        self.game.begin_cast(swords)
+        self.game.complete_pending_cast((shade,))
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, shade, 0)
+        while self.game.stack or self.game.batch_abilities:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+
+        self.assertIs(shade.zone, Zone.EXILE)
+        self.assertEqual(self.bob.life, 21)
 
     def test_controller_not_owner_gains_life(self) -> None:
         bear = self.put_in_play(self.bob, GRIZZLY_BEARS)

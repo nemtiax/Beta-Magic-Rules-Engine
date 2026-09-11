@@ -96,6 +96,7 @@ class OptionalUpkeepPaymentTests(unittest.TestCase):
         creature.tapped = True
         self.enter_upkeep()
         self.alice.mana_pool.colorless = 8
+        self.game.confirm_timed_event_order(self.alice.id)
 
         self.game.choose_upkeep_payment(self.alice.id, pay=True)
         self.finish_event()

@@ -318,6 +318,7 @@ class MagicalHackAndSleightTests(unittest.TestCase):
         )
         self.resolve_interrupt()
         self.resolve_interrupt()
+        self.resolve_interrupt()
 
         self.assertEqual(self.alice.life, 13)
         self.assertEqual(salve.zone, Zone.GRAVEYARD)

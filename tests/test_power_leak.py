@@ -89,6 +89,7 @@ class PowerLeakTests(unittest.TestCase):
         self.permanent(self.bob, POWER_LEAK, attached=enchantment)
         self.alice.mana_pool.colorless = 1
         self.enter_upkeep()
+        self.game.confirm_timed_event_order(self.alice.id)
 
         self.game.choose_partial_upkeep_payment("a", 1)
         self.resolve_event()

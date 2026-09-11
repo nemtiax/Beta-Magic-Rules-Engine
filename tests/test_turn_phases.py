@@ -57,6 +57,42 @@ class TurnPhaseTests(unittest.TestCase):
         self.assertEqual(self.alice.mana_pool.total, 0)
         self.assertEqual(self.alice.life, 18)
 
+    def test_active_player_has_first_announcement_in_a_neutral_phase(self) -> None:
+        self.game.advance_phase()
+        spell = Card(ZERO_INSTANT, self.bob.id, zone=Zone.HAND)
+        self.bob.hand.append(spell)
+
+        self.assertEqual(
+            self.game.action_priority_player_index,
+            self.game.active_player_index,
+        )
+        with self.assertRaisesRegex(RuntimeError, "Alice has priority"):
+            self.game.begin_cast(spell)
+
+        self.game.propose_phase_advance()
+        self.game.begin_cast(spell)
+        self.assertIn(spell, self.game.stack)
+
+    def test_batch_resolution_returns_neutral_announcement_to_active_player(
+        self,
+    ) -> None:
+        self.game.advance_phase()
+        active_spell = Card(ZERO_INSTANT, self.alice.id, zone=Zone.HAND)
+        inactive_spell = Card(ZERO_INSTANT, self.bob.id, zone=Zone.HAND)
+        self.alice.hand.append(active_spell)
+        self.bob.hand.append(inactive_spell)
+
+        self.game.begin_cast(active_spell)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.assertIsNone(self.game.priority_player_index)
+        self.assertTrue(self.game.player_has_action_priority(self.alice.id))
+        self.assertFalse(self.game.player_has_action_priority(self.bob.id))
+        with self.assertRaisesRegex(RuntimeError, "Alice has priority"):
+            self.game.begin_cast(inactive_spell)
+
     def test_action_during_phase_close_requires_both_players_to_pass_again(self) -> None:
         self.game.advance_phase()
         spell = Card(ZERO_INSTANT, self.bob.id, zone=Zone.HAND)
@@ -65,8 +101,9 @@ class TurnPhaseTests(unittest.TestCase):
 
         self.game.begin_cast(spell)
         self.assertEqual(self.game.consecutive_passes, 0)
-        self.game.pass_priority(self.alice.id)
-        self.game.pass_priority(self.bob.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
         self.assertEqual(spell.zone, Zone.GRAVEYARD)
         self.assertEqual(self.game.current_phase, TurnPhase.UPKEEP)

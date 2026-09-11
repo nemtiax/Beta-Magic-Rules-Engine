@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .abilities import ActivatedGraveyardReturnAbility
 from .cards import Card
@@ -43,6 +43,7 @@ class PendingTimedEvent:
     affected_player_id: str
     affected_player_name: str
     effect: UpkeepEffect
+    id: UUID = field(default_factory=uuid4)
     attached_permanent_id: UUID | None = None
     payment_decision: bool | None = None
     payment_amount: int | None = None
@@ -101,6 +102,14 @@ class PendingTimedEvent:
             f"{self.source_name}: {self.effect.amount} damage to "
             f"{self.affected_player_name}"
         )
+
+
+@dataclass(slots=True)
+class PendingTimedEventOrderChoice:
+    """The active player orders the actions arising in their upkeep."""
+
+    player_id: str
+    event_ids_first_to_last: list[UUID]
 
 
 @dataclass(slots=True)
@@ -446,7 +455,14 @@ class TurnFlowMixin:
             raise RuntimeError("a new turn can only begin after the End phase")
         self._empty_mana_pools()
         self._finish_turn_effects()
-        if self.pending_destruction is not None:
+        if (
+            self.pending_damage is not None
+            or self.pending_destruction is not None
+            or self.event_opportunities
+        ):
+            self.pending_life_loss_checkpoint = True
+            return self.active_player
+        if self._check_life_loss_checkpoint():
             return self.active_player
         if self.creature_deaths_this_turn:
             for player in self.players:
@@ -907,6 +923,50 @@ class TurnFlowMixin:
             and self._timed_event_source(event) is not None
         )
 
+    def move_timed_event_order(
+        self, player_id: str, event_id: UUID, direction: int
+    ) -> None:
+        """Move one upkeep action earlier or later in the pending order."""
+
+        choice = self.pending_timed_event_order
+        if choice is None:
+            raise RuntimeError("there is no upkeep order waiting for a choice")
+        if choice.player_id != player_id:
+            raise RuntimeError(f"{self.player(choice.player_id).name} must choose")
+        if direction not in {-1, 1}:
+            raise ValueError("upkeep order movement must be earlier or later")
+        try:
+            index = choice.event_ids_first_to_last.index(event_id)
+        except ValueError as error:
+            raise ValueError("that action is not in the pending upkeep") from error
+        destination = index + direction
+        if not 0 <= destination < len(choice.event_ids_first_to_last):
+            return
+        (
+            choice.event_ids_first_to_last[index],
+            choice.event_ids_first_to_last[destination],
+        ) = (
+            choice.event_ids_first_to_last[destination],
+            choice.event_ids_first_to_last[index],
+        )
+
+    def confirm_timed_event_order(self, player_id: str) -> None:
+        """Commit the active player's first-to-last upkeep action order."""
+
+        choice = self.pending_timed_event_order
+        if choice is None:
+            raise RuntimeError("there is no upkeep order waiting for a choice")
+        if choice.player_id != player_id:
+            raise RuntimeError(f"{self.player(choice.player_id).name} must choose")
+        events = {event.id: event for event in self.timed_events}
+        chosen_ids = choice.event_ids_first_to_last
+        if len(chosen_ids) != len(events) or set(chosen_ids) != set(events):
+            raise RuntimeError("the pending upkeep actions have changed")
+        self.timed_events = [events[event_id] for event_id in chosen_ids]
+        self.pending_timed_event_order = None
+        self.priority_player_index = self.active_player_index
+        self.consecutive_passes = 0
+
     def _resolve_timed_event(self) -> None:
         """Resolve the first mandatory event after its response window closes."""
 
@@ -1142,7 +1202,8 @@ class TurnFlowMixin:
             self.next_turn()
         else:
             self._empty_mana_pools()
-            self._enter_phase(next_phase)
+            if not self._check_life_loss_checkpoint():
+                self._enter_phase(next_phase)
         assert self.current_phase is not None
         return self.current_phase
 
@@ -1284,6 +1345,7 @@ class TurnFlowMixin:
             for permanent in player.battlefield
         ]
         self.timed_events = []
+        self.pending_timed_event_order = None
         for source in battlefield:
             for effect in source.definition.upkeep_effects:
                 if isinstance(effect, UpkeepHandSizeDamageEffect):
@@ -1422,7 +1484,14 @@ class TurnFlowMixin:
                         attached_permanent_id=attached.id if attached else None,
                     )
                 )
-        if self.timed_events:
+        if len(self.timed_events) > 1:
+            self.pending_timed_event_order = PendingTimedEventOrderChoice(
+                self.active_player.id,
+                [event.id for event in self.timed_events],
+            )
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+        elif self.timed_events:
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
 

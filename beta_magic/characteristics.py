@@ -493,8 +493,17 @@ class CharacteristicsMixin:
     def _continuous_effects_for(
         self, creature: Card
     ) -> Iterable[ContinuousEffect]:
-        yield from self.combat_creature_effects.get(creature.id, ())
-        yield from self.temporary_creature_effects.get(creature.id, ())
+        ordered_effects: list[tuple[int, int, ContinuousEffect]] = []
+
+        def queue(effect: ContinuousEffect, sequence: int | None) -> None:
+            ordered_effects.append(
+                (sequence or 0, len(ordered_effects), effect)
+            )
+
+        for effect in self.combat_creature_effects.get(creature.id, ()):
+            queue(effect, effect.application_sequence)
+        for effect in self.temporary_creature_effects.get(creature.id, ()):
+            queue(effect, effect.application_sequence)
         attacking = self.combat is not None and creature in self.combat.attackers
         sources = sorted(
             (
@@ -630,7 +639,21 @@ class CharacteristicsMixin:
                             power=effect.power + power,
                             toughness=effect.toughness + toughness,
                         )
-                    yield effect
+                    queue(effect, source.battlefield_entry_sequence)
+
+        for _, _, effect in sorted(ordered_effects):
+            yield effect
+
+    def _timestamp_continuous_effect(
+        self, effect: ContinuousEffect
+    ) -> ContinuousEffect:
+        """Record when a temporary or combat-scoped modifier began."""
+
+        self.battlefield_entry_sequence += 1
+        return replace(
+            effect,
+            application_sequence=self.battlefield_entry_sequence,
+        )
 
     @staticmethod
     def continuous_permanent_is_active(source: Card) -> bool:

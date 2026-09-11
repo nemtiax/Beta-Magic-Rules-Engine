@@ -187,6 +187,27 @@ class DemoGameTests(unittest.TestCase):
         game.pass_priority(game.players[1].id)
         self.assertTrue(view_model.state["canDeclareBlockers"])
 
+    def test_neutral_action_controls_belong_only_to_active_player(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+        view_model.advance()
+
+        self.assertTrue(view_model.state["canAct"])
+        self.assertTrue(
+            view_model.state["perspective"]["hand"][0]["actionEnabled"]
+        )
+
+        view_model.switchPerspective()
+        self.assertFalse(view_model.state["canAct"])
+        self.assertFalse(
+            view_model.state["perspective"]["hand"][0]["actionEnabled"]
+        )
+
+        view_model.switchPerspective()
+        view_model.advance()
+        view_model.switchPerspective()
+        self.assertTrue(view_model.state["canAct"])
+
     def test_auto_pass_applies_to_later_priority_windows_in_current_turn(self) -> None:
         game = make_test_game()
         view_model = GameViewModel(game)
@@ -993,6 +1014,10 @@ class DemoGameTests(unittest.TestCase):
 
         view_model.activateCard(str(regrowth.id))
 
+        self.assertEqual(
+            view_model.state["message"],
+            "Choose a target card in your graveyard for Regrowth.",
+        )
         graveyard_data = view_model.state["perspective"]["graveyard"]
         self.assertEqual(len(graveyard_data), 7)
         target_data = next(card for card in graveyard_data if card["id"] == str(target.id))
@@ -1040,10 +1065,10 @@ class DemoGameTests(unittest.TestCase):
         view_model.targetPlayer(game.players[1].id)
 
         self.assertFalse(view_model.state["targeting"])
-        view_model.switchPerspective()
-        view_model.passPriority()
-        view_model.switchPerspective()
-        view_model.passPriority()
+        while game.stack:
+            if game.priority_player_index != view_model.perspective_index:
+                view_model.switchPerspective()
+            view_model.passPriority()
         self.resolve_damage_windows(view_model)
         self.assertEqual(game.players[1].life, 16)
         self.assertEqual(caster.life, 18)

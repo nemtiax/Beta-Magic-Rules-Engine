@@ -38,8 +38,9 @@ class EarthbindTests(unittest.TestCase):
     def resolve_cast(self, card, target):
         self.game.begin_cast(card)
         self.game.complete_pending_cast((target,))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
     def test_only_currently_flying_creatures_are_legal_targets(self) -> None:
         flyer = self.permanent(self.bob, AIR_ELEMENTAL)

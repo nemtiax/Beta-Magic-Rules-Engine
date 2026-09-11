@@ -59,7 +59,8 @@ class ForkTests(unittest.TestCase):
         self.assertEqual(self.game.stack_spells[copy.id].caster_id, self.bob.id)
         self.assertEqual(self.game.stack_spells[copy.id].targets, (self.alice,))
 
-        self.pass_twice()
+        self.pass_twice()  # Lightning Bolt becomes successfully cast.
+        self.pass_twice()  # The ordinary batch resolves.
         self.assertEqual(self.alice.life, 17)
         self.assertEqual(self.bob.life, 17)
         self.assertNotIn(copy, self.bob.graveyard)
@@ -79,7 +80,8 @@ class ForkTests(unittest.TestCase):
         self.assertEqual(copy_state.x_value, 4)
         self.assertEqual(copy_state.targets, (bear, self.alice))
 
-        self.pass_twice()
+        self.pass_twice()  # Fireball becomes successfully cast.
+        self.pass_twice()  # The ordinary batch resolves.
         self.assertIn(bear, self.bob.graveyard)
         self.assertEqual(self.alice.life, 18)
         self.assertEqual(self.bob.life, 15)

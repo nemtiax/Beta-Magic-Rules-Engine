@@ -453,6 +453,106 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: timedEventOrderPicker
+        anchors.centerIn: parent
+        width: 680
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.timedEventOrderChoice
+                 && !gameState.graveyardReturnChoice
+        title: "Choose permanent upkeep order"
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.timedEventOrderPlayer === gameState.perspective.id
+                      ? "Arrange the queued permanent upkeep actions from first to last. The top row resolves first; later actions see any changes made by earlier ones."
+                      : "Waiting for the active player to order their permanent upkeep actions."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Rectangle {
+                visible: gameState.timedEventOrderPlayer === gameState.perspective.id
+                color: "#202832"
+                border.color: "#465565"
+                radius: 5
+                Layout.fillWidth: true
+                implicitHeight: eventOrderColumn.implicitHeight + 16
+
+                ColumnLayout {
+                    id: eventOrderColumn
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 6
+
+                    Repeater {
+                        model: gameState.timedEventOrderItems
+                        RowLayout {
+                            required property var modelData
+                            required property int index
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Label {
+                                text: index === 0
+                                      ? (index + 1) + " - FIRST"
+                                      : index === gameState.timedEventOrderItems.length - 1
+                                        ? (index + 1) + " - LAST"
+                                        : (index + 1).toString()
+                                color: index === 0 ? "#ffd978" : "#aebdca"
+                                font.bold: index === 0
+                                Layout.preferredWidth: 82
+                            }
+                            Label {
+                                text: modelData.label
+                                color: "#ffffff"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onEntered: {
+                                        if (modelData.sourceCard
+                                                && modelData.sourceCard.id)
+                                            window.inspectedCard = modelData.sourceCard
+                                    }
+                                }
+                            }
+                            Button {
+                                text: "Earlier"
+                                enabled: index > 0
+                                onClicked: gameBridge.moveTimedEventOrder(
+                                    modelData.id, -1
+                                )
+                            }
+                            Button {
+                                text: "Later"
+                                enabled: index < gameState.timedEventOrderItems.length - 1
+                                onClicked: gameBridge.moveTimedEventOrder(
+                                    modelData.id, 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Button {
+                visible: gameState.timedEventOrderPlayer === gameState.perspective.id
+                text: "Confirm first-to-last order"
+                Layout.fillWidth: true
+                onClicked: gameBridge.confirmTimedEventOrder()
+            }
+            Button {
+                visible: gameState.timedEventOrderPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
         id: graveyardOrderPicker
         anchors.centerIn: parent
         width: 480
@@ -1618,7 +1718,7 @@ ApplicationWindow {
                             Button {
                                 visible: gameState.priorityRequired
                                 enabled: gameState.hasPriority
-                                text: "Pass priority"
+                                text: gameState.priorityPassLabel
                                 onClicked: gameBridge.passPriority()
                             }
                             Button {

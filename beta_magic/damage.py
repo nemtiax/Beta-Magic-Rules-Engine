@@ -46,6 +46,7 @@ class DamagePacket:
     colors: frozenset[Color] = field(default_factory=frozenset)
     combat: bool = False
     trample: bool = False
+    trample_defender_id: str | None = None
     first_strike: bool = False
     life_gain_player_id: str | None = None
     life_gain_cap: int | None = None
@@ -117,6 +118,8 @@ class PlayerDamageRecord:
     source_controller_id: str | None = None
     colors: frozenset[Color] = field(default_factory=frozenset)
     combat: bool = False
+    trample: bool = False
+    trample_defender_id: str | None = None
     reversed_amount: int = 0
 
     @property

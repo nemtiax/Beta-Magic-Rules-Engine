@@ -91,6 +91,7 @@ class TriggeredDamageAuraTests(unittest.TestCase):
         land = self.permanent(self.bob, ISLAND)
         self.permanent(self.alice, PSYCHIC_VENOM, attached=land)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, land, 0)
 
         self.assertEqual(self.bob.mana_pool.blue, 1)

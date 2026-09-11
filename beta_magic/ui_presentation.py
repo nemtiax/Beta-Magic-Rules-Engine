@@ -145,6 +145,20 @@ class UiPresentationBuilder:
         untap_choice = self.game.pending_untap_choice
         counter_rewind = self.game.current_counter_rewind()
         upkeep_land_choice = self.game.pending_upkeep_land_loss
+        timed_event_order_choice = self.game.pending_timed_event_order
+        timed_event_order_items: list[dict[str, Any]] = []
+        if timed_event_order_choice is not None:
+            events_by_id = {event.id: event for event in self.game.timed_events}
+            for event_id in timed_event_order_choice.event_ids_first_to_last:
+                event = events_by_id.get(event_id)
+                if event is None:
+                    continue
+                source = self.game._timed_event_source(event)
+                timed_event_order_items.append({
+                    "id": str(event.id),
+                    "label": event.label,
+                    "sourceCard": self._card_data(source) if source is not None else {},
+                })
         kudzu_choice = (
             self.game.pending_kudzu_choices[0]
             if self.game.pending_kudzu_choices else None
@@ -225,6 +239,7 @@ class UiPresentationBuilder:
             or draw_choice is not None
             or graveyard_return_choice is not None
             or graveyard_order_choice is not None
+            or timed_event_order_choice is not None
             or self.game.pending_kudzu_choices
             or self.game.pending_creature_copy_choices
             or self.game.pending_doppelganger_choices
@@ -250,6 +265,10 @@ class UiPresentationBuilder:
         )
         can_channel = bool(
             channel_maximum and channel_timing_open and channel_choice_free
+        )
+        can_act = bool(
+            channel_choice_free
+            and self.game.player_has_action_priority(perspective.id)
         )
         can_choose_fireball = self._can_choose_fireball()
         fireball_targets: list[dict[str, Any]] = []
@@ -301,6 +320,7 @@ class UiPresentationBuilder:
             or damage_incident is not None
             or destruction_incident is not None
             or self.game.pending_phase_advance is not None
+            or self.game.pending_action_response is not None
             or combat_response
         )
         idle = not (
@@ -480,6 +500,12 @@ class UiPresentationBuilder:
                 ]
                 if graveyard_order_choice is not None else []
             ),
+            "timedEventOrderChoice": timed_event_order_choice is not None,
+            "timedEventOrderPlayer": (
+                timed_event_order_choice.player_id
+                if timed_event_order_choice is not None else ""
+            ),
+            "timedEventOrderItems": timed_event_order_items,
             "demonicAttorneyChoice": demonic_attorney_choice is not None,
             "demonicAttorneyOpponent": (
                 self.game.player(demonic_attorney_choice.opponent_id).name
@@ -1139,6 +1165,12 @@ class UiPresentationBuilder:
                 if self.game.priority_player_index is not None
                 else ""
             ),
+            "priorityPassLabel": (
+                "Pass interrupts"
+                if self.game.interruptible_spell_id is not None
+                else "Pass priority"
+            ),
+            "canAct": can_act,
             "hasPriority": (
                 self.game.priority_player_index == self.perspective_index
             ),
@@ -1245,22 +1277,27 @@ class UiPresentationBuilder:
             ),
             key=lambda card: (
                 river_order.get(self._river_side_label(card), 1),
-                0 if card.definition.is_basic_land else 1,
-                _BASIC_LAND_ORDER.get(card.name, len(_BASIC_LAND_ORDER))
-                if card.definition.is_basic_land
-                else card.name.casefold(),
+                0
+                if self._displayed_card_name(card) in _BASIC_LAND_ORDER
+                else 1,
+                _BASIC_LAND_ORDER.get(
+                    self._displayed_card_name(card),
+                    len(_BASIC_LAND_ORDER),
+                ),
+                self._displayed_card_name(card).casefold(),
             ),
         )
         land_columns: list[dict[str, Any]] = []
         for land in battlefield_lands:
+            displayed_name = self._displayed_card_name(land)
             if (
                 not land_columns
-                or land_columns[-1]["name"] != land.name
+                or land_columns[-1]["name"] != displayed_name
                 or land_columns[-1]["side"] != self._river_side_label(land)
                 or len(land_columns[-1]["cards"]) == 4
             ):
                 land_columns.append({
-                    "name": land.name,
+                    "name": displayed_name,
                     "side": self._river_side_label(land),
                     "cards": [],
                 })
@@ -1309,7 +1346,11 @@ class UiPresentationBuilder:
 
     def _tomb_mark_label(self, mark: Any) -> str:
         land = self._card_by_id(mark.land_id)
-        land_name = land.name if land is not None else "Departed land"
+        land_name = (
+            self._displayed_card_name(land)
+            if land is not None
+            else "Departed land"
+        )
         siblings = sorted(
             (
                 item for item in self.game.cyclopean_tomb_marks
@@ -1329,6 +1370,7 @@ class UiPresentationBuilder:
         background, foreground = self._card_colors(card)
         image_urls = image_urls_for(card.name)
         current_card_types = self.game.card_types(card)
+        displayed_name = self._displayed_card_name(card)
         displayed_subtypes = (
             self.game.land_subtypes(card)
             if card.zone is Zone.BATTLEFIELD
@@ -1390,13 +1432,16 @@ class UiPresentationBuilder:
         river_side = self._river_side_label(card)
         result = {
             "id": str(card.id),
-            "name": card.name,
+            "name": displayed_name,
             "isToken": card.is_token,
             "background": background,
             "foreground": foreground,
             "artCropUrl": image_urls.get("art_crop", ""),
             "fullCardUrl": image_urls.get("full_card", ""),
             "tapped": card.tapped,
+            "actionEnabled": self.game.player_has_action_priority(
+                perspective_id
+            ),
             "attackerSelectionActive": attacker_selection_active,
             "attackerEligible": bool(
                 attacker_selection_active
@@ -1456,10 +1501,6 @@ class UiPresentationBuilder:
                 self.game.creature_power(card)
                 if CardType.CREATURE in current_card_types
                 and card.zone is Zone.BATTLEFIELD
-                and (
-                    card.definition.power is not None
-                    or card.definition.variable_stats is not None
-                )
                 else "*"
                 if card.definition.variable_stats is not None
                 else card.definition.power
@@ -1470,10 +1511,6 @@ class UiPresentationBuilder:
                 self.game.creature_toughness(card)
                 if CardType.CREATURE in current_card_types
                 and card.zone is Zone.BATTLEFIELD
-                and (
-                    card.definition.toughness is not None
-                    or card.definition.variable_stats is not None
-                )
                 else "*"
                 if card.definition.variable_stats is not None
                 else card.definition.toughness
@@ -1519,7 +1556,11 @@ class UiPresentationBuilder:
                 )
             ),
             "rulesText": self._displayed_rules_text(card),
-            "attachedTo": enchanted_card.name if enchanted_card else "",
+            "attachedTo": (
+                self._displayed_card_name(enchanted_card)
+                if enchanted_card is not None
+                else ""
+            ),
             "attachments": [
                 self._card_data(attachment)
                 for owner in self.game.players
@@ -1572,7 +1613,15 @@ class UiPresentationBuilder:
             if card.tapped:
                 preview_status.append("Tapped")
             if enchanted_card is not None:
-                preview_status.append(f"Enchanting {enchanted_card.name}")
+                preview_status.append(
+                    f"Enchanting {self._displayed_card_name(enchanted_card)}"
+                )
+            if card.chosen_land_subtype is not None:
+                preview_status.append(
+                    f"Chosen land type: {card.chosen_land_subtype}"
+                )
+            if displayed_name != card.name:
+                preview_status.append(f"Current name: {displayed_name}")
             if card.counters:
                 counters = ", ".join(
                     f"{amount} {name}" for name, amount in card.counters.items() if amount
@@ -1588,6 +1637,18 @@ class UiPresentationBuilder:
             preview_status.append(result["rulesText"].split("\n\n")[-1])
         result["previewStatus"] = "\n".join(preview_status)
         return result
+
+    def _displayed_card_name(self, card: Card) -> str:
+        """Return a land's current rules name for battlefield presentation."""
+
+        if (
+            card.zone is Zone.BATTLEFIELD
+            and CardType.LAND in card.definition.card_types
+        ):
+            subtypes = self.game.land_subtypes(card)
+            if len(subtypes) == 1 and subtypes[0] in _BASIC_LAND_ORDER:
+                return subtypes[0]
+        return card.name
 
     def _river_side_label(self, card: Card) -> str:
         side = self._combat_ui.river_side_for(self.game, card)

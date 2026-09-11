@@ -88,6 +88,7 @@ class GraveyardSpellTests(unittest.TestCase):
         self.assertIn(elves, self.alice.battlefield)
         self.assertEqual(elves.controller_id, self.alice.id)
         self.assertEqual(elves.entered_battlefield_turn, self.game.turn_number)
+        self.assertIsNone(elves.summoned_turn)
         self.alice.mana_pool.green = 0
         self.assertFalse(self.game.can_activate_ability(self.alice.id, elves, 0))
         self.game.begin_combat()

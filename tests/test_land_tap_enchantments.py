@@ -63,6 +63,7 @@ class LandTapEnchantmentTests(unittest.TestCase):
         self.permanent(self.alice, LIFETAP)
         forest = self.permanent(self.bob, FOREST)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, forest, 0)
         self.assertEqual(self.alice.life, 20)
         self.pass_event_window()
@@ -84,11 +85,12 @@ class LandTapEnchantmentTests(unittest.TestCase):
         converted_forest = self.permanent(self.bob, FOREST)
         self.permanent(self.alice, EVIL_PRESENCE, attached_to=converted_forest)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, bayou, 0)
         self.pass_event_window()
         self.assertEqual(self.alice.life, 21)
 
-        self.game.priority_player_index = None
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, converted_forest, 0)
         self.assertEqual(self.game.event_opportunities, [])
         self.assertEqual(self.alice.life, 21)
@@ -97,6 +99,7 @@ class LandTapEnchantmentTests(unittest.TestCase):
         self.permanent(self.alice, MANABARBS)
         forest = self.permanent(self.bob, FOREST)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, forest, 0)
         self.pass_event_window()
         self.assertEqual(self.bob.life, 19)
@@ -135,6 +138,7 @@ class LandTapEnchantmentTests(unittest.TestCase):
         self.permanent(self.alice, LIFETAP)
         forest = self.permanent(self.bob, FOREST)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, forest, 0)
         self.assertEqual(len(self.game.event_opportunities), 2)
         self.pass_event_window()

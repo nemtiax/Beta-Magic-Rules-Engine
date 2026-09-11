@@ -7,15 +7,120 @@
   We interpret "you" as the owner of that graveyard. Each affected owner
   orders their own simultaneous group from bottom to top before play resumes.
 
-- Add player choice for true timing paradoxes, where simultaneous effects
-  require an order. The FAQ gives that choice to the caster of the last effect.
-- Generalize response windows beyond spells and the existing combat windows,
-  especially after land plays and before phase endings.
+- Add player choice for true fast-effect-batch timing paradoxes, where effects
+  described as simultaneous nevertheless require an order. The FAQ gives that
+  choice to the caster of the last effect. This is distinct from upkeep actions,
+  whose ordering is now explicitly chosen before they begin resolving.
 - Vesuvan Doppelganger currently clears all counters gained while wearing its
   old form. This matches every implemented Beta counter source, which places
   counters through the copied creature's own abilities. If a future external
   effect can place counters on it, track counter provenance so counters from
   enchantments or other outside effects survive a form change as ruled.
+
+# Announcement priority
+
+- We resolve the rulebook's simultaneous-announcement conflict by giving the
+  active player the first announcement in every otherwise neutral action
+  window. Only one player may announce at a time; an ordinary spell or fast
+  effect hands the next response to the opponent. This serialization is not
+  the modern stack: ordinary effects still resolve in a simultaneous Beta
+  batch, and interrupts retain their separate immediate ordering.
+- A land play is a completed non-fast action. The opponent receives the first
+  response opportunity and may initiate successive fast-effect batches before
+  declining. Tapping a land for mana remains an immediate interrupt-speed
+  action which does not itself surrender priority.
+- The FAQ's statement that interrupts are always allowed applies inside the
+  prevention, redirection, and regeneration parts of damage resolution and
+  inside a destroy effect's regeneration window. Such an interrupt opens a
+  nested interrupt sequence; once it finishes, the surrounding resolution
+  window resumes without advancing. Any destruction caused by an interrupt
+  is likewise completed before its surrounding damage or destruction window.
+
+# Interrupt windows
+
+- Announcing any spell first opens a dedicated interrupt-only window around
+  that spell. Its targets, modes, X value, and costs have already been fixed,
+  but it is not yet successfully cast. The opponent receives the first
+  opportunity, then the caster; both must explicitly decline before ordinary
+  instants and fast effects may be announced in response.
+- During that window, only interrupt spells, abilities expressly usable as
+  interrupts, and mana abilities usable at interrupt speed may be announced.
+  Mana production resolves immediately, retains the acting player's
+  opportunity, and invalidates passes already made in the current window.
+- Interrupts create nested interrupt opportunities and resolve before their
+  subject. Spell and activated interrupts share the rulebook's special
+  ordering: those controlled by the caster of the interrupted spell take
+  effect before the opponent's interrupts to that same spell, while an
+  interrupt that targets another interrupt is resolved before its target.
+- Once both players decline further interrupts, a surviving non-interrupt
+  spell becomes successfully cast and joins the ordinary simultaneous batch.
+  A fresh ordinary-response round begins with its caster's opponent. A
+  successfully cast spell is no longer a legal target for Counterspell,
+  Spell Blast, or an Elemental Blast's counter mode.
+- Announcing a later ordinary spell therefore permanently closes the earlier
+  spell's interrupt window and opens a new interrupt window only for the later
+  spell. Interrupts in that new window cannot reach backward to the earlier
+  spell. For example, after Lightning Bolt's interrupt window closes, casting
+  Giant Growth in response makes Giant Growth (and interrupts cast upon it),
+  not Lightning Bolt, the current interruptible spell.
+
+# Upkeep action ordering
+
+- The active player explicitly arranges all queued permanent upkeep actions
+  from first to last, following the FAQ's permission to resolve their upkeep
+  in any order. Each action then receives its own response window before
+  resolution.
+- Applicability is checked again when an action is reached. If an earlier
+  action removed its source or otherwise made it inapplicable, it is skipped;
+  it does not retain an effect merely because it appeared in the initial list.
+
+# Life-total loss timing
+
+- Ordinary damage and life loss may leave a player at zero or less without
+  immediately ending the duel. Life totals are checked after phase-ending
+  mana burn and at the beginning and end of each attack, following the FAQ;
+  the player may recover before the next such checkpoint. Decking, concession,
+  and Lich's explicit loss conditions remain irreversible.
+
+# Trample damage resolution
+
+- Under the FAQ sequence, trample is redirection rather than an early combat
+  assignment. The full assigned packet first accumulates on its blocker;
+  protection and optional prevention apply there before unprevented excess is
+  redirected to the defending player as a new packet. Non-trample damage uses
+  the blocker's remaining toughness before trample damage does.
+- A creature that regenerated before combat damage remains an attacker or
+  blocker, but combat damage cannot be assigned to or dealt by it. A sole
+  regenerated blocker therefore keeps a trampler blocked without producing a
+  packet from which damage can trample over. If other blockers remain, damage
+  is assigned among those eligible blockers and excess can trample normally.
+  A regenerated Banding blocker still grants its controller the right to
+  distribute damage among the remaining blockers (WotC Rules Team 9/15/94).
+
+# Berserk and continuous-effect order
+
+- Power modifiers are replayed in the order they began, as required by the
+  Berserk ruling. Berserk therefore doubles bonuses that were already active,
+  but a modifier created after Berserk applies afterward. Changes to a
+  creature's underlying or variable power recalculate the complete ordered
+  sequence rather than snapshotting the doubled value.
+
+# Summoning and attack restrictions
+
+- `summoned_turn` records only a nonartifact creature cast as a Summon spell;
+  it is deliberately distinct from entering play this turn or changing
+  controller. Siren's Call and Nettling Imp exempt true summons, but affect
+  summoning-sick creatures produced by Resurrection, Animate Dead, animation,
+  artifact casting, or a control change, as specified by their rulings.
+
+# Copied characteristics on battlefield departure
+
+- A copy reverts to its printed card as it leaves play, but death processing
+  first snapshots its last battlefield definition and name. Abilities such as
+  Personal Incarnation's owner life loss therefore still apply to Clone and
+  Vesuvan Doppelganger copies that go from play to the graveyard; exile and
+  other destinations do not trigger that penalty.
+
 # Cyclopean Tomb
 
 - We apply the November 1994 erratum that its mire effects begin unwinding

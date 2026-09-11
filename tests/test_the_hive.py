@@ -82,6 +82,9 @@ class TheHiveTests(unittest.TestCase):
                 self.setUp()
                 _, wasp = self.make_wasp()
                 spell = self.card(self.bob, spell_definition, Zone.HAND)
+                self.game.priority_player_index = self.game.players.index(
+                    self.bob
+                )
                 if spell_definition is SHATTER:
                     self.bob.mana_pool.red = 1
                     self.bob.mana_pool.colorless = 1

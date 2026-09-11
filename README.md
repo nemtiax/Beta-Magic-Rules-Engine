@@ -67,6 +67,9 @@ Spells and ordinary fast effects do not use the modern stack. They collect
 into a 1993-style simultaneous batch, while interrupts use their own
 LIFO-like resolution sequence. The interface therefore asks both players to
 pass at several points where a modern Magic client might behave differently.
+At each neutral action window the active player announces first; thereafter
+only the player shown as having priority may add an action. Playing a land
+gives the opponent a fast-effect response opportunity before play continues.
 
 The UI is intentionally a rules-development tool rather than a polished game
 client. When a creature has multiple combat opponents, a dedicated picker

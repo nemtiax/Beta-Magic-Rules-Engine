@@ -4,6 +4,7 @@ from beta_magic import (
     ANIMATE_WALL,
     DRUDGE_SKELETONS,
     GRIZZLY_BEARS,
+    INSTILL_ENERGY,
     NETTLING_IMP,
     SEA_SERPENT,
     SIRENS_CALL,
@@ -48,6 +49,7 @@ class AttackCompulsionTests(unittest.TestCase):
             self.game.pass_priority(player.id)
 
     def nettle(self, target):
+        self.game.priority_player_index = self.game.players.index(self.alice)
         self.game.activate_ability(self.alice.id, self.imp, 0)
         self.game.complete_pending_activation((target,))
         self.resolve_priority()
@@ -68,12 +70,24 @@ class AttackCompulsionTests(unittest.TestCase):
         warded = self.permanent(self.bob, WHITE_KNIGHT)
         summoned = self.permanent(self.bob, GRIZZLY_BEARS, summoned=True)
         legal_bear = self.permanent(self.bob, GRIZZLY_BEARS)
+        self.game.priority_player_index = self.game.players.index(self.alice)
         self.game.activate_ability(self.alice.id, self.imp, 0)
         legal = self.game.legal_targets_for()
         self.assertIn(legal_bear, legal)
         self.assertNotIn(wall, legal)
         self.assertNotIn(warded, legal)
         self.assertNotIn(summoned, legal)
+
+    def test_imp_can_target_a_control_changed_summoning_sick_creature(self):
+        bear = self.permanent(self.bob, GRIZZLY_BEARS)
+        bear.controller_at_turn_start_id = self.alice.id
+        self.assertTrue(self.game.has_summoning_sickness(bear))
+        self.assertIsNone(bear.summoned_turn)
+
+        self.game.priority_player_index = self.game.players.index(self.alice)
+        self.game.activate_ability(self.alice.id, self.imp, 0)
+
+        self.assertIn(bear, self.game.legal_targets_for())
 
     def test_nettled_creature_that_attacks_survives(self):
         bear = self.permanent(self.bob, GRIZZLY_BEARS)
@@ -122,6 +136,7 @@ class AttackCompulsionTests(unittest.TestCase):
         old_bear.tapped = True
         call = self.hand(self.alice, SIRENS_CALL)
         self.alice.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
         self.game.begin_cast(call)
         self.resolve_priority()
         late_bear = self.permanent(self.bob, GRIZZLY_BEARS)
@@ -133,12 +148,43 @@ class AttackCompulsionTests(unittest.TestCase):
         self.assertIn(wall, self.bob.battlefield)
         self.assertIn(late_bear, self.bob.battlefield)
 
+    def test_sirens_call_affects_control_changed_creature_despite_sickness(self):
+        bear = self.permanent(self.bob, GRIZZLY_BEARS)
+        bear.controller_at_turn_start_id = self.alice.id
+        self.assertTrue(self.game.has_summoning_sickness(bear))
+        self.assertIsNone(bear.summoned_turn)
+        call = self.hand(self.alice, SIRENS_CALL)
+        self.alice.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
+
+        self.game.begin_cast(call)
+        self.resolve_priority()
+        self.finish_current_turn()
+
+        self.assertIn(bear, self.bob.graveyard)
+
+    def test_sirens_call_exempts_a_true_summon_even_if_it_can_attack(self):
+        bear = self.permanent(self.bob, GRIZZLY_BEARS, summoned=True)
+        energy = self.permanent(self.bob, INSTILL_ENERGY)
+        energy.enchanted_card_id = bear.id
+        self.assertTrue(self.game.may_attack_with_summoning_sickness(bear))
+        call = self.hand(self.alice, SIRENS_CALL)
+        self.alice.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
+
+        self.game.begin_cast(call)
+        self.resolve_priority()
+        self.finish_current_turn()
+
+        self.assertIn(bear, self.bob.battlefield)
+
     def test_sirens_call_can_force_an_animated_wall_but_never_destroys_it(self):
         wall = self.permanent(self.bob, WALL_OF_WOOD)
         aura = self.permanent(self.bob, ANIMATE_WALL)
         aura.enchanted_card_id = wall.id
         call = self.hand(self.alice, SIRENS_CALL)
         self.alice.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
         self.game.begin_cast(call)
         self.resolve_priority()
         self.game.begin_combat()

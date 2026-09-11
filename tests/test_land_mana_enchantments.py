@@ -55,6 +55,7 @@ class LandManaEnchantmentTests(unittest.TestCase):
         island = self.permanent(self.bob, ISLAND)
         self.permanent(self.alice, WILD_GROWTH, attached_to=island)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, island, 0)
 
         self.assertEqual(self.bob.mana_pool.blue, 1)
@@ -92,6 +93,7 @@ class LandManaEnchantmentTests(unittest.TestCase):
         self.assertEqual(self.bob.mana_pool.total, 0)
 
         island.tapped = False
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, island, 0)
         self.assertEqual(self.bob.mana_pool.blue, 2)
 
@@ -99,6 +101,7 @@ class LandManaEnchantmentTests(unittest.TestCase):
         self.permanent(self.alice, MANA_FLARE)
         bayou = self.permanent(self.bob, BAYOU)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, bayou, 1)
 
         self.assertEqual(self.bob.mana_pool.green, 2)

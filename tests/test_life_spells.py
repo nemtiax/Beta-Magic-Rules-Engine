@@ -42,8 +42,9 @@ class StreamOfLifeTests(unittest.TestCase):
         self.assertEqual(self.game.stack_spells[self.spell.id].x_value, 3)
         self.assertEqual(self.alice.mana_pool.total, 2)
 
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
 
         self.assertEqual(self.bob.life, 23)
         self.assertIn(self.spell, self.alice.graveyard)

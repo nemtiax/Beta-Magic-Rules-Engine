@@ -23,8 +23,9 @@ class DemonicTutorTests(unittest.TestCase):
         self.alice.mana_pool.black = 1
         self.alice.mana_pool.colorless = 1
         self.game.begin_cast(tutor)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         return tutor
 
     def test_resolves_to_private_mandatory_library_search(self) -> None:

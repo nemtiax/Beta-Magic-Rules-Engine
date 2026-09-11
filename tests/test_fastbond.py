@@ -32,39 +32,43 @@ class FastbondTests(unittest.TestCase):
     def land(self, definition=FOREST) -> Card:
         return self.add_card(self.alice, definition, Zone.HAND)
 
+    def play_land(self, land: Card) -> None:
+        self.game.play_land(land)
+        self.game.pass_priority(self.bob.id)
+
     def test_first_land_is_free_and_each_later_land_deals_one_damage(self) -> None:
         self.add_fastbond()
         lands = [self.land(), self.land(ISLAND), self.land(PLAINS)]
-        self.game.play_land(lands[0])
+        self.play_land(lands[0])
         self.assertEqual(self.alice.life, 20)
-        self.game.play_land(lands[1])
+        self.play_land(lands[1])
         self.assertEqual(self.alice.life, 19)
-        self.game.play_land(lands[2])
+        self.play_land(lands[2])
         self.assertEqual(self.alice.life, 18)
         self.assertEqual(self.game.lands_played_this_turn, 3)
 
     def test_playing_fastbond_after_normal_land_does_not_grant_a_new_free_land(self) -> None:
         first = self.land()
         second = self.land()
-        self.game.play_land(first)
+        self.play_land(first)
         self.add_fastbond()
-        self.game.play_land(second)
+        self.play_land(second)
         self.assertEqual(self.alice.life, 19)
 
     def test_second_fastbond_does_not_reset_the_land_counter(self) -> None:
         self.add_fastbond()
-        self.game.play_land(self.land())
-        self.game.play_land(self.land())
+        self.play_land(self.land())
+        self.play_land(self.land())
         self.assertEqual(self.alice.life, 19)
         self.add_fastbond()
-        self.game.play_land(self.land())
+        self.play_land(self.land())
         self.assertEqual(self.game.lands_played_this_turn, 3)
         self.assertEqual(self.alice.life, 17)
 
     def test_losing_all_fastbonds_restores_normal_land_limit(self) -> None:
         fastbond = self.add_fastbond()
-        self.game.play_land(self.land())
-        self.game.play_land(self.land())
+        self.play_land(self.land())
+        self.play_land(self.land())
         self.game._move_card(fastbond, Zone.GRAVEYARD)
         with self.assertRaisesRegex(RuntimeError, "already played a land"):
             self.game.play_land(self.land())
@@ -78,7 +82,7 @@ class FastbondTests(unittest.TestCase):
 
     def test_opponents_fastbond_does_not_grant_permission(self) -> None:
         self.add_card(self.bob, FASTBOND, Zone.BATTLEFIELD)
-        self.game.play_land(self.land())
+        self.play_land(self.land())
         with self.assertRaisesRegex(RuntimeError, "already played a land"):
             self.game.play_land(self.land())
 

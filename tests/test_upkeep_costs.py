@@ -120,7 +120,9 @@ class UpkeepCostTests(unittest.TestCase):
 
         self.game.begin_cast(bolt)
         self.game.complete_pending_cast((forces,))
-        self.finish_event()
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         self.assertIn(forces, self.alice.graveyard)
         self.assertFalse(self.game.upkeep_payment_required)
 

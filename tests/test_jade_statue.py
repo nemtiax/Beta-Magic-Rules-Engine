@@ -12,6 +12,7 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.ui import GameViewModel
 
 
 class JadeStatueTests(unittest.TestCase):
@@ -78,6 +79,16 @@ class JadeStatueTests(unittest.TestCase):
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertNotIn(CardType.CREATURE, self.game.card_types(statue))
+
+    def test_animated_stats_are_exposed_to_the_ui(self):
+        statue = self.permanent(self.alice, JADE_STATUE)
+        self.game.begin_combat()
+        self.animate(statue)
+
+        data = GameViewModel(self.game)._card_data(statue)
+
+        self.assertTrue(data["isCreature"])
+        self.assertEqual((data["power"], data["toughness"]), (3, 6))
 
     def test_new_statue_cannot_attack_but_can_animate_for_defense(self):
         statue = self.permanent(

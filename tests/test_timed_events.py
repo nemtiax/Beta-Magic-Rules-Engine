@@ -45,6 +45,8 @@ class TimedEventTests(unittest.TestCase):
         self.assertIs(self.game.current_phase, TurnPhase.UPKEEP)
 
     def pass_event(self) -> None:
+        if self.game.pending_timed_event_order is not None:
+            self.game.confirm_timed_event_order(self.alice.id)
         for _ in range(2):
             player = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(player.id)
@@ -83,7 +85,7 @@ class TimedEventTests(unittest.TestCase):
 
         self.game.begin_cast(disenchant)
         self.game.complete_pending_cast((tablet,))
-        for _ in range(2):
+        while self.game.stack:
             player = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(player.id)
 

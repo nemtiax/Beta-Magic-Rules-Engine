@@ -419,6 +419,10 @@ class CombatMixin:
         # closed the response window and entered DECLARE_ATTACKERS.
         if self.combat is not None and self.combat.step is CombatStep.ATTACK_RESPONSE:
             self._empty_mana_pools()
+            if self._check_life_loss_checkpoint():
+                self.combat = None
+                self.combat_creature_effects.clear()
+                raise RuntimeError("the game ended at the beginning of the attack")
             if self._begin_river_defender_assignment(
                 CombatStep.DECLARE_ATTACKERS
             ):
@@ -1005,6 +1009,7 @@ class CombatMixin:
         self._empty_mana_pools()
         self.combat = None
         self.combat_creature_effects.clear()
+        self.pending_life_loss_checkpoint = True
         targets = [
             DestructionTarget(card.id, card.name, True)
             for player in self.players
@@ -1018,6 +1023,7 @@ class CombatMixin:
             # Ending combat can itself change characteristics, notably
             # Gaea's Liege returning to its defending Forest count.
             self.check_state_based_actions()
+            self._restore_pending_context_priority()
 
     def _validate_damage_assignments(
         self, assignments: dict[Card, dict[Card, int]]
@@ -1029,10 +1035,16 @@ class CombatMixin:
         for attacker in self.combat.attackers:
             if attacker.zone is not Zone.BATTLEFIELD:
                 continue
+            if attacker.id in self.combat.regenerated_card_ids:
+                allocations[attacker] = {}
+                continue
             power = max(0, self.creature_power(attacker))
             blockers = self.combat.blockers[attacker.id]
             living_blockers = [
-                blocker for blocker in blockers if blocker.zone is Zone.BATTLEFIELD
+                blocker
+                for blocker in blockers
+                if blocker.zone is Zone.BATTLEFIELD
+                and blocker.id not in self.combat.regenerated_card_ids
             ]
             if not living_blockers:
                 allocations[attacker] = {}
@@ -1057,11 +1069,15 @@ class CombatMixin:
             for blocker in blockers
         }
         for blocker in blocking_creatures:
+            if blocker.id in self.combat.regenerated_card_ids:
+                allocations[blocker] = {}
+                continue
             blocked_attackers = [
                 attacker
                 for attacker in self.combat.attackers
                 if blocker in self.combat.blockers[attacker.id]
                 and attacker.zone is Zone.BATTLEFIELD
+                and attacker.id not in self.combat.regenerated_card_ids
             ]
             if len(blocked_attackers) < 2:
                 continue
@@ -1090,6 +1106,13 @@ class CombatMixin:
         """Deal one simultaneous damage wave and remove lethal creatures."""
 
         assert self.combat is not None
+        if self.prevent_combat_damage_this_turn:
+            # Fog says that no combat damage is dealt. Do not manufacture an
+            # empty first-strike or regular incident: there is consequently
+            # no prevention, redirection, or regeneration window to pass
+            # through. The caller still performs normal end-of-combat
+            # cleanup, including non-damage destruction such as Basilisk's.
+            return False
         self._begin_damage_incident(
             DamageIncidentKind.FIRST_STRIKE_COMBAT
             if first_strike
@@ -1138,36 +1161,19 @@ class CombatMixin:
                 else:
                     for blocker, amount in allocations.get(attacker, {}).items():
                         if blocker.zone is Zone.BATTLEFIELD:
-                            if KeywordAbility.TRAMPLE in self.creature_abilities(attacker):
-                                toughness_left = max(
-                                    0,
-                                    self.creature_toughness(blocker)
-                                    - blocker.damage,
-                                )
-                                blocker_damage = min(amount, toughness_left)
+                            if blocker.id not in self.combat.regenerated_card_ids:
                                 self._deal_damage(
-                                    defender,
-                                    amount - blocker_damage,
+                                    blocker,
+                                    amount,
                                     attacker.name,
                                     source_card=attacker,
                                     combat=True,
-                                    trample=True,
+                                    trample=(
+                                        KeywordAbility.TRAMPLE
+                                        in self.creature_abilities(attacker)
+                                    ),
                                     first_strike=first_strike,
                                 )
-                            else:
-                                blocker_damage = amount
-                            self._deal_damage(
-                                blocker,
-                                blocker_damage,
-                                attacker.name,
-                                source_card=attacker,
-                                combat=True,
-                                trample=(
-                                    KeywordAbility.TRAMPLE
-                                    in self.creature_abilities(attacker)
-                                ),
-                                first_strike=first_strike,
-                            )
                         elif KeywordAbility.TRAMPLE in self.creature_abilities(attacker):
                             self._deal_damage(
                                 defender,

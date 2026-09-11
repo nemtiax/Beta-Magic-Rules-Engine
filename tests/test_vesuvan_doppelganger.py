@@ -9,6 +9,7 @@ from beta_magic import (
     GAEAS_LIEGE,
     GRIZZLY_BEARS,
     HILL_GIANT,
+    PERSONAL_INCARNATION,
     PHANTASMAL_FORCES,
     RESURRECTION,
     SOL_RING,
@@ -87,6 +88,15 @@ class VesuvanDoppelgangerTests(unittest.TestCase):
         self.assertFalse(doppelganger.tapped)
         self.assertEqual(doppelganger.damage, 0)
         self.assertTrue(doppelganger.definition.is_vesuvan_doppelganger)
+
+    def test_copied_incarnation_death_applies_to_doppelgangers_owner(self) -> None:
+        incarnation = self.card(self.bob, PERSONAL_INCARNATION)
+        doppelganger = self.cast_doppelganger(incarnation)
+
+        self.game._move_card(doppelganger, Zone.GRAVEYARD)
+
+        self.assertEqual(self.alice.life, 10)
+        self.assertEqual(doppelganger.name, "Vesuvan Doppelganger")
 
     def test_initial_copy_rejects_animation_and_blue_protection(self) -> None:
         ring = self.card(self.bob, SOL_RING)

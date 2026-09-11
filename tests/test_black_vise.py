@@ -40,6 +40,8 @@ class BlackViseTests(unittest.TestCase):
         self.assertIs(self.game.current_phase, TurnPhase.UPKEEP)
 
     def resolve_events(self) -> None:
+        if self.game.pending_timed_event_order is not None:
+            self.game.confirm_timed_event_order(self.alice.id)
         while self.game.timed_events:
             for _ in range(2):
                 player = self.game.players[self.game.priority_player_index]
@@ -117,6 +119,8 @@ class BlackViseTests(unittest.TestCase):
         game.players[0].draw(7)
         game.advance_phase()
         vise.tapped = True
+        if game.pending_timed_event_order is not None:
+            game.confirm_timed_event_order(game.active_player.id)
         while game.timed_events:
             for _ in range(2):
                 player = game.players[game.priority_player_index]

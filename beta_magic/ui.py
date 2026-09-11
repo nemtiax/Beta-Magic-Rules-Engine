@@ -59,6 +59,7 @@ from .ui_presentation import UiPresentationBuilder, mana_text
 from .ui_combat import CombatUiController
 from .ui_choices import TransientChoiceState
 from .ui_messages import UiMessageStore
+from .ui_targeting import target_choice_prompt
 
 
 class GameViewModel(QObject):
@@ -139,6 +140,46 @@ class GameViewModel(QObject):
 
         player_id = self.game.players[self.perspective_index].id
         self._messages.tell(player_id, message)
+
+    def _pending_target_prompt(self, *, detail: str | None = None) -> str:
+        """Describe the target currently awaited by the rules engine."""
+
+        if self.game.pending_cast is not None:
+            pending = self.game.pending_cast
+            requirement = pending.spell.definition.target_requirement
+            assert requirement is not None
+            target_zones: frozenset[Zone] | None = None
+            if pending.spell.definition.casting_mode_target_zones:
+                mode_index = pending.spell.definition.casting_modes.index(
+                    pending.chosen_mode
+                )
+                target_zones = frozenset(
+                    {
+                        pending.spell.definition.casting_mode_target_zones[
+                            mode_index
+                        ]
+                    }
+                )
+            return target_choice_prompt(
+                requirement,
+                pending.spell.name,
+                target_zones=target_zones,
+                target_count=pending.x_value,
+                detail=detail,
+            )
+        if self.game.pending_activation is not None:
+            pending = self.game.pending_activation
+            ability = self.game.activated_abilities(pending.source)[
+                pending.ability_index
+            ]
+            requirement = getattr(ability, "target_requirement", None)
+            assert requirement is not None
+            return target_choice_prompt(
+                requirement,
+                f"{pending.source.name}'s ability",
+                detail=detail,
+            )
+        raise RuntimeError("there is no pending target choice")
 
     @Property("QVariantMap", notify=stateChanged)
     def state(self) -> dict[str, Any]:
@@ -232,6 +273,7 @@ class GameViewModel(QObject):
                 or self.game.pending_draw_choice is not None
                 or self.game.pending_graveyard_return_choice is not None
                 or self.game.pending_graveyard_order_choices
+                or self.game.pending_timed_event_order is not None
                 or self.game.pending_kudzu_choices
                 or self.game.pending_creature_copy_choices
                 or self.game.pending_doppelganger_choices
@@ -658,7 +700,7 @@ class GameViewModel(QObject):
                 if pending is not None:
                     self._prompt(
                         player.id,
-                        f"Choose a target in play for {card.name}.",
+                        self._pending_target_prompt(),
                         observer_message=(
                             f"{player.name} is choosing a target for {card.name}."
                         ),
@@ -723,7 +765,7 @@ class GameViewModel(QObject):
                     (
                         f"Choose damage to prevent with {card.name} (X={x_value})."
                         if card.definition.is_guardian_angel
-                        else f"Choose a target for {card.name} (X={x_value})."
+                        else self._pending_target_prompt(detail=f"X={x_value}")
                     ),
                     f"{player.name} is choosing a target for {card.name}.",
                 )
@@ -762,7 +804,7 @@ class GameViewModel(QObject):
             if pending is not None:
                 player = self.game.players[self.perspective_index]
                 self._prompt_current(
-                    f"Choose a target in play for {card.name} ({subtype}).",
+                    self._pending_target_prompt(detail=subtype),
                     f"{player.name} is choosing a target for {card.name}.",
                 )
             else:
@@ -793,7 +835,7 @@ class GameViewModel(QObject):
             if pending is not None:
                 player = self.game.players[self.perspective_index]
                 self._prompt_current(
-                    f"Choose a target for {card.name} ({mode}).",
+                    self._pending_target_prompt(detail=mode),
                     f"{player.name} is choosing a target for {card.name}.",
                 )
             else:
@@ -885,7 +927,7 @@ class GameViewModel(QObject):
         ) and pending[0] is not None:
             self._prompt(
                 player.id,
-                f"Choose a target for {card.name}'s ability.",
+                self._pending_target_prompt(),
                 observer_message=(
                     f"{player.name} is choosing a target for {card.name}'s ability."
                 ),
@@ -1218,6 +1260,28 @@ class GameViewModel(QObject):
         self._run(
             lambda: self.game.confirm_graveyard_order(choice.player_id),
             "Confirmed graveyard order.",
+        )
+
+    @Slot(str, int)
+    def moveTimedEventOrder(self, event_id: str, direction: int) -> None:
+        choice = self.game.pending_timed_event_order
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.move_timed_event_order(
+                choice.player_id, UUID(event_id), direction
+            ),
+            "Adjusted upkeep order.",
+        )
+
+    @Slot()
+    def confirmTimedEventOrder(self) -> None:
+        choice = self.game.pending_timed_event_order
+        if choice is None:
+            return
+        self._run(
+            lambda: self.game.confirm_timed_event_order(choice.player_id),
+            "Confirmed upkeep order; the first action is ready.",
         )
 
     @Slot(str)

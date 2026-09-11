@@ -188,8 +188,14 @@ class PumpCreatureTests(unittest.TestCase):
         self.bob.hand.append(bolt)
         self.bob.mana_pool.red = 1
         self.alice.mana_pool.black = 3
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.begin_cast(bolt)
         self.game.complete_pending_cast((shade,))
+
+        # Finish Lightning Bolt's dedicated interrupt window before adding
+        # ordinary fast-effect responses to its batch.
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
 
         for _ in range(3):
             self.game.activate_ability(self.alice.id, shade, 0)

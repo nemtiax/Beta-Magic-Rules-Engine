@@ -31,7 +31,7 @@ from .abilities import (
     ActivatedUnblockableAbility,
 )
 from .cards import Card
-from .casting import SpellOnStack
+from .casting import AbilityOnStack, SpellOnStack
 from .combat import AttackRequirement, PendingFalseOrdersChoice
 from .damage import DamageIncidentKind, DamageRecipientKind
 from .destruction import DestructionIncident, DestructionTarget
@@ -295,6 +295,10 @@ class PriorityBatchResolutionMixin:
         assert self.combat is not None
         if self.combat.step is CombatStep.ATTACK_RESPONSE:
             self._empty_mana_pools()
+            if self._check_life_loss_checkpoint():
+                self.combat = None
+                self.combat_creature_effects.clear()
+                return
             if not self._begin_river_defender_assignment(
                 CombatStep.DECLARE_ATTACKERS
             ):
@@ -314,11 +318,67 @@ class PriorityBatchResolutionMixin:
     def pass_priority(self, player_id: str) -> tuple[Card, ...] | None:
         """Pass once; unanimous passes resolve a batch or pending timed event."""
 
-        if self.pending_damage is not None:
-            self._pass_damage_priority(player_id)
+        # Every announced spell first has a dedicated interrupt-only window.
+        # Interrupts are also always legal inside damage prevention,
+        # redirection, and regeneration windows. Finish the current or nested
+        # interrupt sequence before a pass advances ordinary batch timing or
+        # the surrounding incident.
+        if (
+            self.interruptible_spell_id is not None
+            or (
+                self.stack
+                and CardType.INTERRUPT in self.stack[-1].definition.card_types
+            )
+        ) or self.interrupt_abilities:
+            self._require_no_pending_action(allow_stack=True, allow_damage=True)
+            if self.priority_player_index is None:
+                raise RuntimeError("the interrupt sequence has no priority player")
+            player = self.player(player_id)
+            if player is not self.players[self.priority_player_index]:
+                raise RuntimeError(
+                    f"{self.players[self.priority_player_index].name} has priority"
+                )
+            self._clear_land_tap_undo_window()
+            self.consecutive_passes += 1
+            if self.consecutive_passes < len(self.players):
+                self.priority_player_index = (
+                    self.priority_player_index + 1
+                ) % len(self.players)
+                return None
+            if any(
+                CardType.INTERRUPT in card.definition.card_types
+                for card in self.stack
+            ) or self.interrupt_abilities:
+                interrupt, ability = self._next_interrupt_to_resolve()
+                if interrupt is not None:
+                    return self._resolve_interrupt(interrupt)
+                assert ability is not None
+                self._resolve_counter_ability(ability)
+                return ()
+
+            # No interrupt remains above the current ordinary spell. It is
+            # now successfully cast and may receive ordinary instant and
+            # fast-effect responses. Those responses start a fresh pass
+            # sequence with the spell caster's opponent.
+            root_id = self.interruptible_spell_id
+            assert root_id is not None
+            root = self.stack_spells.get(root_id)
+            self.interruptible_spell_id = None
+            self.consecutive_passes = 0
+            if root is None:
+                self._restore_pending_context_priority()
+                return None
+            caster = self.player(root.caster_id)
+            self.priority_player_index = (
+                self.players.index(caster) + 1
+            ) % len(self.players)
             return None
+
         if self.pending_destruction is not None:
             self._pass_destruction_priority(player_id)
+            return None
+        if self.pending_damage is not None:
+            self._pass_damage_priority(player_id)
             return None
         self._require_no_pending_action(allow_stack=True)
         if (
@@ -327,6 +387,7 @@ class PriorityBatchResolutionMixin:
             and not self.timed_events
             and not self.event_opportunities
             and self.pending_phase_advance is None
+            and self.pending_action_response is None
             and not self._combat_response_pending()
             or self.priority_player_index is None
         ):
@@ -355,29 +416,12 @@ class PriorityBatchResolutionMixin:
             return None
 
         if self.stack or self.batch_abilities:
-            if (
-                self.stack
-                and CardType.INTERRUPT
-                in self.stack[-1].definition.card_types
-            ):
-                resolved = self._resolve_interrupt()
-                return resolved
-            if self.interrupt_abilities:
-                self._resolve_counter_ability()
-                return ()
             resolved = self._resolve_batch()
             if (
                 self.pending_damage is None
                 and self.pending_destruction is None
             ):
-                self.consecutive_passes = 0
-                self.priority_player_index = (
-                    self.active_player_index
-                    if self.timed_events or self.event_opportunities
-                    or self.pending_phase_advance is not None
-                    or self._combat_response_pending()
-                    else None
-                )
+                self._restore_pending_context_priority()
             return resolved
 
         if self.event_opportunities:
@@ -386,14 +430,7 @@ class PriorityBatchResolutionMixin:
                 self.pending_damage is None
                 and self.pending_destruction is None
             ):
-                self.consecutive_passes = 0
-                self.priority_player_index = (
-                    self.active_player_index
-                    if self.timed_events or self.event_opportunities
-                    or self.pending_phase_advance is not None
-                    or self._combat_response_pending()
-                    else None
-                )
+                self._restore_pending_context_priority()
             return ()
 
         if self.pending_phase_advance is not None:
@@ -407,19 +444,18 @@ class PriorityBatchResolutionMixin:
             self._close_combat_response_window()
             return ()
 
+        if self.pending_action_response is not None:
+            self.pending_action_response = None
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+            return ()
+
         self._resolve_timed_event()
         if (
             self.pending_damage is None
             and self.pending_destruction is None
         ):
-            self.consecutive_passes = 0
-            self.priority_player_index = (
-                self.active_player_index
-                if self.timed_events or self.event_opportunities
-                or self.pending_phase_advance is not None
-                or self._combat_response_pending()
-                else None
-            )
+            self._restore_pending_context_priority()
         return ()
 
     def _discard_random(
@@ -782,27 +818,49 @@ class PriorityBatchResolutionMixin:
         self.check_state_based_actions()
         return chosen
 
-    def _resolve_interrupt(self) -> tuple[Card, ...]:
-        """Resolve the newest interrupt immediately, before its target spell."""
+    def _next_interrupt_to_resolve(
+        self,
+    ) -> tuple[Card | None, AbilityOnStack | None]:
+        """Select the next spell or activated interrupt under Beta ordering."""
 
-        interrupts = [
-            card
+        spell_interrupts = [
+            (card, self.stack_spells[card.id])
             for card in self.stack
             if CardType.INTERRUPT in card.definition.card_types
         ]
+        ability_interrupts = list(self.interrupt_abilities)
+        interrupt_states: list[SpellOnStack | AbilityOnStack] = [
+            state for _, state in spell_interrupts
+        ]
+        interrupt_states.extend(ability_interrupts)
         targeted_interrupt_ids = {
             target.id
-            for card in interrupts
-            for target in self.stack_spells[card.id].targets
+            for state in interrupt_states
+            for target in state.targets
             if isinstance(target, Card)
             and CardType.INTERRUPT in target.definition.card_types
         }
-        resolvable = [
-            card for card in interrupts if card.id not in targeted_interrupt_ids
+        candidates: list[
+            tuple[
+                Card | None,
+                AbilityOnStack | None,
+                SpellOnStack | AbilityOnStack,
+            ]
+        ] = [
+            (card, None, state)
+            for card, state in spell_interrupts
+            if card.id not in targeted_interrupt_ids
         ]
+        candidates.extend((None, state, state) for state in ability_interrupts)
 
-        def interrupt_rank(card: Card) -> tuple[int, int, int]:
-            state = self.stack_spells[card.id]
+        def interrupt_rank(
+            candidate: tuple[
+                Card | None,
+                AbilityOnStack | None,
+                SpellOnStack | AbilityOnStack,
+            ]
+        ) -> tuple[int, int, int]:
+            _, _, state = candidate
             target = (
                 state.targets[0]
                 if state.targets and isinstance(state.targets[0], Card)
@@ -828,11 +886,22 @@ class PriorityBatchResolutionMixin:
                 if target is not None and target.id in self.stack_spells
                 else None
             )
-            caster_first = int(state.caster_id == target_caster_id)
-            declaration_order = self.stack.index(card)
-            return depth, caster_first, -declaration_order
+            controller_id = (
+                state.caster_id
+                if isinstance(state, SpellOnStack)
+                else state.controller_id
+            )
+            caster_first = int(controller_id == target_caster_id)
+            return depth, caster_first, -state.declaration_sequence
 
-        interrupt = max(resolvable, key=interrupt_rank)
+        if not candidates:
+            raise RuntimeError("there is no unresolved interrupt")
+        interrupt, ability, _ = max(candidates, key=interrupt_rank)
+        return interrupt, ability
+
+    def _resolve_interrupt(self, interrupt: Card) -> tuple[Card, ...]:
+        """Resolve the selected interrupt immediately, before its target."""
+
         spell = self.stack_spells.pop(interrupt.id)
         target = (
             spell.targets[0]
@@ -930,6 +999,13 @@ class PriorityBatchResolutionMixin:
             and target.zone is Zone.BATTLEFIELD
             and destruction_effect is not None
         ):
+            if self.pending_destruction is not None:
+                self.suspended_destruction_incidents.append(
+                    (
+                        self.pending_destruction,
+                        self.resume_interrupts_after_destruction,
+                    )
+                )
             self.pending_destruction = DestructionIncident(
                 [
                     DestructionTarget(
@@ -1055,24 +1131,23 @@ class PriorityBatchResolutionMixin:
             self.priority_player_index = self.players.index(
                 self.player(underlying.caster_id)
             )
-        elif (
-            self.batch_abilities
-            or self.event_opportunities
-            or self.pending_phase_advance is not None
-            or self._combat_response_pending()
-        ):
-            self.priority_player_index = self.active_player_index
         else:
-            self.priority_player_index = None
+            self._restore_pending_context_priority()
         if self.pending_destruction is not None:
             self._open_destruction_incident()
         self.check_state_based_actions()
         return (interrupt,)
 
-    def _resolve_counter_ability(self) -> None:
+    def _resolve_counter_ability(self, state: AbilityOnStack) -> None:
         """Resolve a Deathgrip/Lifeforce activation in the interrupt sequence."""
 
-        state = self.interrupt_abilities.pop(0)
+        self.interrupt_abilities.pop(
+            next(
+                index
+                for index, candidate in enumerate(self.interrupt_abilities)
+                if candidate is state
+            )
+        )
         ability = state.ability
         assert isinstance(ability, ActivatedCounterSpellAbility)
         target = state.targets[0] if state.targets else None
@@ -1093,15 +1168,8 @@ class PriorityBatchResolutionMixin:
             self.priority_player_index = self.players.index(
                 self.player(underlying.caster_id)
             )
-        elif (
-            self.batch_abilities
-            or self.event_opportunities
-            or self.pending_phase_advance is not None
-            or self._combat_response_pending()
-        ):
-            self.priority_player_index = self.active_player_index
         else:
-            self.priority_player_index = None
+            self._restore_pending_context_priority()
         self.check_state_based_actions()
 
     def _resolve_batch(self) -> tuple[Card, ...]:
@@ -1118,6 +1186,7 @@ class PriorityBatchResolutionMixin:
         # changes zones or characteristics.
         legal: dict[UUID, bool] = {}
         legal_spell_targets: dict[UUID, tuple[Card | PlayerState, ...]] = {}
+        control_aura_entered = False
         for spell in spells:
             requirement = spell.card.definition.target_requirement
             if requirement is not None:
@@ -1226,7 +1295,6 @@ class PriorityBatchResolutionMixin:
                     target.controller_id = spell.caster_id
                     self._move_card(target, Zone.BATTLEFIELD)
                     target.entered_battlefield_turn = self.turn_number
-                    target.summoned_turn = self.turn_number
                     card.enchanted_card_id = target.id
                     continue
                 if card.definition.copies_artifact:
@@ -1271,6 +1339,14 @@ class PriorityBatchResolutionMixin:
                     )
                     else None
                 )
+                if (
+                    card.enchanted_card_id is not None
+                    and any(
+                        effect.controls_attached_card
+                        for effect in card.definition.continuous_effects
+                    )
+                ):
+                    control_aura_entered = True
                 if card.definition.consecrates_attached_land:
                     target_land = next(
                         (
@@ -1306,16 +1382,26 @@ class PriorityBatchResolutionMixin:
                         source_card=card,
                         source_controller_id=spell.caster_id,
                     )
+                cast_definition = card.printed_definition or card.definition
                 if (
-                    CardType.CREATURE in card.definition.card_types
-                    and CardType.ARTIFACT not in card.definition.card_types
+                    CardType.CREATURE in cast_definition.card_types
+                    and CardType.ARTIFACT not in cast_definition.card_types
                 ):
                     card.summoned_turn = self.turn_number
                 if copied_animated_creature:
                     self._destroy_permanents((card,))
 
+        # Aura attachments are established above as part of permanent entry.
+        # Reconcile control only after every permanent in the simultaneous
+        # batch has entered, so Control Magic and Steal Artifact take effect
+        # through the normal batch-casting path just as they do through the
+        # direct compatibility path.
+        if control_aura_entered:
+            self._reconcile_control_effects()
+
         pending_destruction: list[tuple[Card, bool]] = []
         pending_regeneration: list[Card] = []
+        pending_exile: list[tuple[Card, ExileTargetsEffect]] = []
         for spell in spells:
             card = spell.card
             if not legal[card.id] or card.definition.is_permanent:
@@ -1379,11 +1465,13 @@ class PriorityBatchResolutionMixin:
                             self.temporary_creature_effects.setdefault(
                                 target.id, []
                             ).append(
-                                ContinuousEffect(
-                                    power=power,
-                                    toughness=toughness,
-                                    power_multiplier=effect.power_multiplier,
-                                    granted_abilities=effect.granted_abilities,
+                                self._timestamp_continuous_effect(
+                                    ContinuousEffect(
+                                        power=power,
+                                        toughness=toughness,
+                                        power_multiplier=effect.power_multiplier,
+                                        granted_abilities=effect.granted_abilities,
+                                    )
                                 )
                             )
                             if effect.destroy_at_end_of_turn_if_attacked:
@@ -1500,15 +1588,7 @@ class PriorityBatchResolutionMixin:
                     for creature in tuple(self.active_player.battlefield):
                         if (
                             CardType.CREATURE not in self.card_types(creature)
-                            or (
-                                (
-                                    self.has_summoning_sickness(creature)
-                                    or creature.summoned_turn == self.turn_number
-                                )
-                                and not self.may_attack_with_summoning_sickness(
-                                    creature
-                                )
-                            )
+                            or creature.summoned_turn == self.turn_number
                         ):
                             continue
                         is_wall = "Wall" in creature.definition.subtypes
@@ -1620,18 +1700,8 @@ class PriorityBatchResolutionMixin:
                             target.entered_battlefield_turn = self.turn_number
                 elif isinstance(effect, ExileTargetsEffect):
                     for target in resolved_targets:
-                        if not isinstance(target, Card):
-                            continue
-                        controller = self.player(
-                            target.controller_id or target.owner_id
-                        )
-                        life_gain = (
-                            max(0, self.creature_power(target))
-                            if effect.controller_gains_life_equal_to_power
-                            else 0
-                        )
-                        self._move_card(target, Zone.EXILE)
-                        self._gain_life(controller, life_gain)
+                        if isinstance(target, Card):
+                            pending_exile.append((target, effect))
                 elif isinstance(effect, ReverseDamageEffect):
                     if spell.damage_source_key is None:
                         continue
@@ -1646,8 +1716,6 @@ class PriorityBatchResolutionMixin:
                     if not self._lich_count(caster.id):
                         caster.life += reversed_damage
                     self._gain_life(caster, reversed_damage)
-                    if caster.life > 0:
-                        caster.has_lost = False
                 elif isinstance(effect, RetroactiveDamageTransferEffect):
                     target = next(
                         (item for item in resolved_targets if isinstance(item, Card)),
@@ -1658,8 +1726,6 @@ class PriorityBatchResolutionMixin:
                     consumed = self._consume_player_damage(caster.id)
                     if not self._lich_count(caster.id):
                         caster.life += sum(amount for _, amount in consumed)
-                    if caster.life > 0:
-                        caster.has_lost = False
                     for record, amount in consumed:
                         self._deal_damage(
                             target,
@@ -1798,7 +1864,11 @@ class PriorityBatchResolutionMixin:
                     if isinstance(target, Card):
                         self.temporary_creature_effects.setdefault(
                             target.id, []
-                        ).append(ContinuousEffect(unblockable=True))
+                        ).append(
+                            self._timestamp_continuous_effect(
+                                ContinuousEffect(unblockable=True)
+                            )
+                        )
             elif isinstance(declared.ability, ActivatedTemporaryAbility):
                 for target in declared.targets:
                     if not isinstance(target, Card):
@@ -1806,8 +1876,12 @@ class PriorityBatchResolutionMixin:
                     self.temporary_creature_effects.setdefault(
                         target.id, []
                     ).append(
-                        ContinuousEffect(
-                            granted_abilities=declared.ability.granted_abilities
+                        self._timestamp_continuous_effect(
+                            ContinuousEffect(
+                                granted_abilities=(
+                                    declared.ability.granted_abilities
+                                )
+                            )
                         )
                     )
                     if declared.ability.destroy_at_end_of_turn:
@@ -1835,7 +1909,6 @@ class PriorityBatchResolutionMixin:
                     declared.source.controller_id = declared.controller_id
                     self._move_card(declared.source, Zone.BATTLEFIELD)
                     declared.source.entered_battlefield_turn = self.turn_number
-                    declared.source.summoned_turn = self.turn_number
             elif isinstance(declared.ability, ActivatedRevealHandAbility):
                 self._queue_opponent_hand_reveal(declared.controller_id)
             elif isinstance(declared.ability, ActivatedDiscardAbility):
@@ -1907,10 +1980,12 @@ class PriorityBatchResolutionMixin:
                 self.combat_creature_effects.setdefault(
                     declared.source.id, []
                 ).append(
-                    ContinuousEffect(
-                        granted_card_types=frozenset({CardType.CREATURE}),
-                        base_power=declared.ability.power,
-                        base_toughness=declared.ability.toughness,
+                    self._timestamp_continuous_effect(
+                        ContinuousEffect(
+                            granted_card_types=frozenset({CardType.CREATURE}),
+                            base_power=declared.ability.power,
+                            base_toughness=declared.ability.toughness,
+                        )
                     )
                 )
             else:
@@ -1919,14 +1994,38 @@ class PriorityBatchResolutionMixin:
                         self.temporary_creature_effects.setdefault(
                             target.id, []
                         ).append(
-                            ContinuousEffect(
-                                power=declared.ability.power,
-                                toughness=declared.ability.toughness,
-                                granted_abilities=(
-                                    declared.ability.granted_abilities
-                                ),
+                            self._timestamp_continuous_effect(
+                                ContinuousEffect(
+                                    power=declared.ability.power,
+                                    toughness=declared.ability.toughness,
+                                    granted_abilities=(
+                                        declared.ability.granted_abilities
+                                    ),
+                                )
                             )
                         )
+
+        # Swords to Plowshares counts the creature's full power immediately
+        # before it leaves play.  Pump spells and abilities announced in
+        # response belong to this same Beta batch, so all of their modifiers
+        # must exist before that power is measured.  Snapshot every result
+        # before moving any target, since multiple exile effects in one batch
+        # are simultaneous as well.
+        exile_results = [
+            (
+                target,
+                self.player(target.controller_id or target.owner_id),
+                (
+                    max(0, self.creature_power(target))
+                    if effect.controller_gains_life_equal_to_power
+                    else 0
+                ),
+            )
+            for target, effect in pending_exile
+        ]
+        for target, controller, life_gain in exile_results:
+            self._move_card(target, Zone.EXILE)
+            self._gain_life(controller, life_gain)
 
         destruction_by_card: dict[Card, bool] = {}
         for card, regeneration_allowed in pending_destruction:

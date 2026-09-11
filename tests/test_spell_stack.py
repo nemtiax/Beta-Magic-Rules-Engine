@@ -49,6 +49,14 @@ class SpellStackTests(unittest.TestCase):
         player = self.game.players[self.game.priority_player_index]
         return self.game.pass_priority(player.id)
 
+    def resolve_batch(self):
+        resolved = None
+        while self.game.stack or self.game.batch_abilities:
+            result = self.pass_current_priority()
+            if result:
+                resolved = result
+        return resolved
+
     def test_spell_waits_until_both_players_pass(self) -> None:
         bolt = self.cast_bolt(self.alice, self.bob)
 
@@ -60,6 +68,10 @@ class SpellStackTests(unittest.TestCase):
 
         self.assertIsNone(self.pass_current_priority())
         self.assertEqual(self.bob.life, 20)
+        self.assertIsNone(self.pass_current_priority())
+        self.assertIsNone(self.game.interruptible_spell_id)
+        self.assertEqual(self.game.players[self.game.priority_player_index], self.bob)
+        self.assertIsNone(self.pass_current_priority())
         self.assertEqual(self.pass_current_priority(), (bolt,))
 
         self.assertEqual(self.bob.life, 17)
@@ -68,11 +80,12 @@ class SpellStackTests(unittest.TestCase):
 
     def test_response_and_original_resolve_in_one_batch(self) -> None:
         first = self.cast_bolt(self.alice, self.bob)
+        self.pass_current_priority()
+        self.pass_current_priority()
         response = self.cast_bolt(self.bob, self.alice)
 
         self.assertEqual(self.game.stack, [first, response])
-        self.pass_current_priority()
-        self.pass_current_priority()
+        self.resolve_batch()
 
         self.assertEqual(self.alice.life, 17)
         self.assertEqual(self.bob.life, 17)
@@ -83,10 +96,11 @@ class SpellStackTests(unittest.TestCase):
     ) -> None:
         bear = self.put_in_play(self.bob)
         original = self.cast_bolt(self.alice, bear)
+        self.pass_current_priority()
+        self.pass_current_priority()
         response = self.cast_bolt(self.bob, bear)
 
-        self.pass_current_priority()
-        self.pass_current_priority()
+        self.resolve_batch()
         self.assertIn(response, self.bob.graveyard)
         self.assertIn(bear, self.bob.graveyard)
         self.assertIn(original, self.alice.graveyard)
@@ -107,8 +121,7 @@ class SpellStackTests(unittest.TestCase):
 
         self.assertIn(bear, self.game.stack)
         self.assertNotIn(bear, self.alice.battlefield)
-        self.pass_current_priority()
-        self.pass_current_priority()
+        self.resolve_batch()
         self.assertIn(bear, self.alice.battlefield)
 
 

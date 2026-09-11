@@ -182,12 +182,14 @@ Rectangle {
                 return
             if (card.selectionOnly)
                 return
-            if (cardData.activatedAbilities.length === 1)
-                card.abilityActivated(
-                    cardData.id, cardData.activatedAbilities[0].index)
+            if (cardData.activatedAbilities.length === 1) {
+                if (cardData.activatedAbilities[0].enabled)
+                    card.abilityActivated(
+                        cardData.id, cardData.activatedAbilities[0].index)
+            }
             else if (cardData.activatedAbilities.length > 1)
                 abilityMenu.popup()
-            else
+            else if (cardData.actionEnabled)
                 card.activated(cardData.id)
         }
     }

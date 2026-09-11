@@ -188,6 +188,39 @@ class UiCombatLinkTests(unittest.TestCase):
             [4, 0],
         )
 
+    def test_regenerated_blocker_is_omitted_from_damage_assignment_picker(self):
+        self.game.combat.step = CombatStep.DAMAGE
+        self.game.combat.blockers[self.angel.id] = [
+            self.bear_one,
+            self.bear_two,
+        ]
+        self.game.combat.regenerated_card_ids.add(self.bear_one.id)
+
+        state = self.view.state
+
+        self.assertFalse(state["choosingCombatDamage"])
+
+    def test_regenerated_banding_blocker_still_controls_damage_assignment(self):
+        banding_blocker = self.creature(self.defender, BENALISH_HERO)
+        self.game.combat.step = CombatStep.DAMAGE
+        self.game.combat.blockers[self.angel.id] = [
+            banding_blocker,
+            self.bear_one,
+            self.bear_two,
+        ]
+        self.game.combat.regenerated_card_ids.add(banding_blocker.id)
+        self.view.perspective_index = 1
+
+        state = self.view.state
+
+        self.assertTrue(state["choosingCombatDamage"])
+        assignment = state["combatDamageAssignments"][0]
+        self.assertEqual(assignment["playerId"], self.defender.id)
+        self.assertEqual(
+            {recipient["id"] for recipient in assignment["recipients"]},
+            {str(self.bear_one.id), str(self.bear_two.id)},
+        )
+
     def test_damage_picker_requires_full_assignment_before_confirming(self):
         self.game.combat.step = CombatStep.DAMAGE
         self.game.combat.blockers[self.angel.id] = [

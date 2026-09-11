@@ -68,8 +68,9 @@ class DrainLifeTests(unittest.TestCase):
         self.alice.mana_pool.black = 4
         self.alice.mana_pool.colorless = 1
         self.begin(3, self.bob)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         packet = self.game.pending_damage.packets[0]
         packet.prevented = 2
         self.resolve()

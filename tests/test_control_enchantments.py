@@ -55,6 +55,22 @@ class ControlEnchantmentTests(unittest.TestCase):
         self.game.cast_enchantment(aura, target)
         return aura
 
+    def cast_aura_through_batch(
+        self, player: PlayerState, definition, target: Card
+    ) -> Card:
+        self.game.active_player_index = self.game.players.index(player)
+        aura = self.put_in_hand(player, definition)
+        player.mana_pool.blue = 2
+        player.mana_pool.colorless = 2
+        self.game.begin_cast(aura)
+        self.game.complete_pending_cast((target,))
+        while self.game.stack or self.game.batch_abilities:
+            priority_player = self.game.players[
+                self.game.priority_player_index
+            ]
+            self.game.pass_priority(priority_player.id)
+        return aura
+
     def test_definitions_target_creatures_and_artifacts(self) -> None:
         self.assertEqual(
             CONTROL_ENCHANTMENTS,
@@ -88,6 +104,26 @@ class ControlEnchantmentTests(unittest.TestCase):
         self.assertEqual(aura.controller_id, self.alice.id)
         self.assertIn(aura, self.alice.battlefield)
         self.game.validate()
+
+    def test_control_auras_take_control_through_batch_casting(self) -> None:
+        for definition, target_definition in (
+            (CONTROL_MAGIC, GRIZZLY_BEARS),
+            (STEAL_ARTIFACT, SOL_RING),
+        ):
+            with self.subTest(aura=definition.name):
+                target = self.put_in_play(self.bob, target_definition)
+
+                aura = self.cast_aura_through_batch(
+                    self.alice, definition, target
+                )
+
+                self.assertEqual(target.owner_id, self.bob.id)
+                self.assertEqual(target.base_controller_id, self.bob.id)
+                self.assertEqual(target.controller_id, self.alice.id)
+                self.assertIn(target, self.alice.battlefield)
+                self.assertNotIn(target, self.bob.battlefield)
+                self.assertEqual(aura.enchanted_card_id, target.id)
+                self.game.validate()
 
     def test_removing_aura_restores_baseline_controller(self) -> None:
         creature = self.put_in_play(self.bob, GRIZZLY_BEARS)

@@ -12,8 +12,10 @@ from beta_magic import (
     HILL_GIANT,
     KeywordAbility,
     LIVING_LANDS,
+    PERSONAL_INCARNATION,
     RESURRECTION,
     SOL_RING,
+    SOUL_NET,
     UNSUMMON,
     Card,
     CardType,
@@ -109,9 +111,35 @@ class CloneTests(unittest.TestCase):
 
         self.assertIn(CardType.ARTIFACT, self.game.card_types(clone))
         self.assertIn(CardType.CREATURE, self.game.card_types(clone))
+        self.assertEqual(clone.summoned_turn, self.game.turn_number)
         self.assertEqual(clone.counters, {})
         self.assertEqual(self.game.creature_power(clone), 0)
         self.assertEqual(self.game.creature_toughness(clone), 4)
+
+    def test_copied_incarnation_death_uses_battlefield_characteristics(self) -> None:
+        incarnation = self.card(self.bob, PERSONAL_INCARNATION)
+        self.card(self.bob, SOUL_NET)
+        clone = self.cast_clone(incarnation)
+        self.alice.life = 15
+
+        self.game._move_card(clone, Zone.GRAVEYARD)
+
+        self.assertEqual(self.alice.life, 7)
+        self.assertEqual(clone.name, "Clone")
+        self.assertTrue(
+            any(
+                opportunity.label == "Personal Incarnation died"
+                for opportunity in self.game.event_opportunities
+            )
+        )
+
+    def test_exiled_incarnation_copy_does_not_cause_life_loss(self) -> None:
+        incarnation = self.card(self.bob, PERSONAL_INCARNATION)
+        clone = self.cast_clone(incarnation)
+
+        self.game._move_card(clone, Zone.EXILE)
+
+        self.assertEqual(self.alice.life, 20)
 
     def test_animated_artifacts_and_lands_are_not_clone_targets(self) -> None:
         ring = self.card(self.bob, SOL_RING)

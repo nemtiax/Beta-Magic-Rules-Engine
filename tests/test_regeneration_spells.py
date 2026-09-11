@@ -51,10 +51,13 @@ class RegenerationSpellTests(unittest.TestCase):
 
         self.game.begin_cast(bolt)
         self.game.complete_pending_cast((bear,))
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
         self.game.begin_cast(ward)
         self.game.complete_pending_cast((bear,))
-        self.game.pass_priority(self.alice.id)
-        self.game.pass_priority(self.bob.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
         self.assertIn(bear, self.bob.battlefield)
         self.assertTrue(bear.tapped)
@@ -73,10 +76,13 @@ class RegenerationSpellTests(unittest.TestCase):
 
         self.game.begin_cast(tunnel)
         self.game.complete_pending_cast((wall,))
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
         self.game.begin_cast(ward)
         self.game.complete_pending_cast((wall,))
-        self.game.pass_priority(self.alice.id)
-        self.game.pass_priority(self.bob.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
         self.assertIn(wall, self.bob.graveyard)
 

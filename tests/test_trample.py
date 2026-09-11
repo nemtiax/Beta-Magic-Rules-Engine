@@ -6,13 +6,18 @@ from beta_magic import (
     PlayerState,
     TRAMPLE_CREATURES,
     TurnPhase,
+    UTHDEN_TROLL,
     WAR_MAMMOTH,
     Zone,
 )
 from beta_magic.card_defs import (
+    CIRCLE_OF_PROTECTION_GREEN,
+    GREEN_WARD,
     GRIZZLY_BEARS,
     MONSS_GOBLIN_RAIDERS,
+    SAMITE_HEALER,
 )
+from beta_magic.damage import DamageIncidentKind
 
 
 def player(player_id: str) -> PlayerState:
@@ -68,6 +73,90 @@ class TrampleTests(unittest.TestCase):
         self.assertIn(bear, self.bob.graveyard)
         self.assertEqual(self.bob.life, 18)
 
+    def test_protection_prevents_damage_before_trample_redirects(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        ward = self.put_in_play(self.bob, GREEN_WARD)
+        ward.enchanted_card_id = bear.id
+        self.reach_damage(mammoth, [bear])
+
+        self.game.deal_combat_damage()
+
+        self.assertEqual(self.bob.life, 20)
+        self.assertEqual(bear.damage, 0)
+        self.assertIn(bear, self.bob.battlefield)
+
+    def test_blocker_prevention_reduces_excess_trample_damage(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        healer = self.put_in_play(self.bob, SAMITE_HEALER)
+        self.game.pause_for_damage_windows = True
+        self.reach_damage(mammoth, [bear])
+        self.game.deal_combat_damage()
+
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, healer, 0)
+        packet = next(
+            packet
+            for packet in self.game.pending_damage.packets
+            if packet.recipient_id == bear.id
+        )
+        self.game.prevent_damage(self.bob.id, packet.id)
+        while self.game.pending_damage is not None:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+
+        self.assertEqual(self.bob.life, 20)
+        self.assertIn(bear, self.bob.graveyard)
+
+    def test_redirected_trample_damage_gets_a_new_prevention_window(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        goblin = self.put_in_play(self.bob, MONSS_GOBLIN_RAIDERS)
+        circle = self.put_in_play(self.bob, CIRCLE_OF_PROTECTION_GREEN)
+        self.game.pause_for_damage_windows = True
+        self.reach_damage(mammoth, [goblin])
+        self.bob.mana_pool.colorless = 1
+        self.game.deal_combat_damage()
+
+        while not any(
+            packet.recipient_id == self.bob.id
+            for packet in self.game.pending_damage.packets
+        ):
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, circle, 0)
+        packet = self.game.pending_damage.packets[0]
+        self.game.prevent_damage(self.bob.id, packet.id)
+        while self.game.pending_damage is not None:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+
+        self.assertEqual(self.bob.life, 20)
+
+    def test_nontrample_damage_is_applied_before_trample_damage(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        goblin = self.put_in_play(self.alice, MONSS_GOBLIN_RAIDERS)
+        bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        self.game._begin_damage_incident(DamageIncidentKind.COMBAT)
+        self.game._deal_damage(
+            bear, 1, goblin.name, source_card=goblin, combat=True
+        )
+        self.game._deal_damage(
+            bear,
+            3,
+            mammoth.name,
+            source_card=mammoth,
+            combat=True,
+            trample=True,
+            trample_defender_id=self.bob.id,
+        )
+
+        self.game._resolve_damage_incident()
+
+        self.assertEqual(self.bob.life, 18)
+        self.assertIn(bear, self.bob.graveyard)
+
     def test_attacker_can_pile_damage_on_one_of_multiple_blockers(self) -> None:
         mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
         goblin = self.put_in_play(self.bob, MONSS_GOBLIN_RAIDERS)
@@ -88,6 +177,33 @@ class TrampleTests(unittest.TestCase):
         self.bob.graveyard.append(goblin)
         self.game.deal_combat_damage()
         self.assertEqual(self.bob.life, 17)
+
+    def test_regenerated_blocker_stays_in_combat_and_stops_trample(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        troll = self.put_in_play(self.bob, UTHDEN_TROLL)
+        self.reach_damage(mammoth, [troll])
+        self.game.combat.regenerated_card_ids.add(troll.id)
+
+        self.game.deal_combat_damage()
+
+        self.assertEqual(self.bob.life, 20)
+        self.assertEqual(troll.damage, 0)
+        self.assertEqual(mammoth.damage, 0)
+        self.assertIn(troll, self.bob.battlefield)
+
+    def test_trample_uses_other_blockers_when_one_regenerated(self) -> None:
+        mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
+        troll = self.put_in_play(self.bob, UTHDEN_TROLL)
+        goblin = self.put_in_play(self.bob, MONSS_GOBLIN_RAIDERS)
+        self.reach_damage(mammoth, [troll, goblin])
+        self.game.combat.regenerated_card_ids.add(troll.id)
+
+        self.game.deal_combat_damage()
+
+        self.assertEqual(self.bob.life, 18)
+        self.assertEqual(troll.damage, 0)
+        self.assertIn(troll, self.bob.battlefield)
+        self.assertIn(goblin, self.bob.graveyard)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.ui import GameViewModel
 
 
 class LandConversionTests(unittest.TestCase):
@@ -80,14 +81,34 @@ class LandConversionTests(unittest.TestCase):
         pending = self.game.begin_cast(spell, land_subtype="Island")
         self.assertEqual(pending.chosen_land_subtype, "Island")
         self.game.complete_pending_cast((land,))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
         self.assertEqual(spell.chosen_land_subtype, "Island")
         self.assertEqual(self.game.land_subtypes(land), ("Island",))
         self.assertEqual(
             self.game.activated_abilities(land)[0].color, Color.BLUE
         )
+
+    def test_ui_displays_a_phantasmal_land_and_its_chosen_type(self):
+        land = self.permanent(self.bob, FOREST)
+        aura = self.aura(PHANTASMAL_TERRAIN, land, land_subtype="Island")
+        view = GameViewModel(self.game)
+
+        land_data = view._card_data(land)
+        aura_data = view._card_data(aura)
+
+        self.assertEqual(land_data["name"], "Island")
+        self.assertIn("Current name: Island", land_data["previewStatus"])
+        self.assertEqual(aura_data["attachedTo"], "Island")
+        self.assertIn(
+            "Chosen land type: Island",
+            aura_data["previewStatus"],
+        )
+
+        self.game._move_card(aura, Zone.GRAVEYARD)
+        self.assertEqual(view._card_data(land)["name"], "Forest")
 
     def test_conversion_changes_mountains_including_dual_lands(self):
         mountain = self.permanent(self.alice, MOUNTAIN)

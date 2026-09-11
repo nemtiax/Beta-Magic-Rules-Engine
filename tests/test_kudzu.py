@@ -49,6 +49,7 @@ class KudzuTests(unittest.TestCase):
         forest = self.permanent(self.alice, FOREST)
         kudzu = self.permanent(self.alice, KUDZU, attached_to=island)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, island, 0)
         self.close_event_window()
 
@@ -66,6 +67,7 @@ class KudzuTests(unittest.TestCase):
         island = self.permanent(self.bob, ISLAND)
         kudzu = self.permanent(self.alice, KUDZU, attached_to=island)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, island, 0)
         self.close_event_window()
 

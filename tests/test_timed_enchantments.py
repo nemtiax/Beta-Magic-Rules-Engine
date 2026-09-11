@@ -120,7 +120,7 @@ class TimedEnchantmentTests(unittest.TestCase):
 
         game.begin_cast(bolt)
         game.complete_pending_cast((creature,))
-        for _ in range(2):
+        while game.stack:
             player = game.players[game.priority_player_index]
             game.pass_priority(player.id)
         self.assertIn(creature, alice.graveyard)

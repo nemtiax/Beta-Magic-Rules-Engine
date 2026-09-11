@@ -75,6 +75,7 @@ class AnimateDeadTests(unittest.TestCase):
         self.assertEqual(self.game.creature_toughness(knight), 2)
         self.assertEqual(knight.definition.mana_cost.compact, "WW")
         self.assertTrue(self.game.has_summoning_sickness(knight))
+        self.assertIsNone(knight.summoned_turn)
 
     def test_removing_animate_dead_also_destroys_its_creature(self) -> None:
         bear = self.add(self.bob, GRIZZLY_BEARS, Zone.GRAVEYARD)

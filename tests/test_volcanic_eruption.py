@@ -33,6 +33,11 @@ class VolcanicEruptionTests(unittest.TestCase):
         self.alice.hand.append(card)
         return card
 
+    def resolve_batch(self) -> None:
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
     def test_dual_lands_with_mountain_subtype_are_legal_targets(self) -> None:
         mountain = self.permanent(self.bob, MOUNTAIN)
         badlands = self.permanent(self.bob, BADLANDS)
@@ -85,8 +90,7 @@ class VolcanicEruptionTests(unittest.TestCase):
         self.alice.mana_pool.colorless = 2
         self.game.begin_cast(spell, x_value=2)
         self.game.complete_pending_cast((first, second))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        self.resolve_batch()
         self.assertEqual(first.zone, Zone.GRAVEYARD)
         self.assertEqual(second.zone, Zone.GRAVEYARD)
         self.assertEqual(bear.zone, Zone.GRAVEYARD)
@@ -104,8 +108,7 @@ class VolcanicEruptionTests(unittest.TestCase):
         # Stand in for an interrupt-speed characteristic change after the
         # targets and X have already been declared.
         second.land_type_marks[uuid4()] = ("Island", 1)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        self.resolve_batch()
 
         self.assertEqual(first.zone, Zone.GRAVEYARD)
         self.assertEqual(second.zone, Zone.BATTLEFIELD)

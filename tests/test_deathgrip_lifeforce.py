@@ -3,6 +3,7 @@ import unittest
 from beta_magic import (
     DEATHGRIP,
     DEATHLACE,
+    DARK_RITUAL,
     GIANT_GROWTH,
     GRIZZLY_BEARS,
     LIFEFORCE,
@@ -88,6 +89,7 @@ class DeathgripLifeforceTests(unittest.TestCase):
         terror = self.hand(self.bob, TERROR)
         self.bob.mana_pool.black = 1
         self.bob.mana_pool.colorless = 1
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.begin_cast(terror)
         self.game.complete_pending_cast((self.bear,))
         self.alice.mana_pool.green = 2
@@ -117,7 +119,42 @@ class DeathgripLifeforceTests(unittest.TestCase):
         self.pass_both()  # Deathgrip now sees a black spell and does nothing.
         self.assertEqual(growth.zone, Zone.STACK)
         self.pass_both()  # Giant Growth resolves normally.
+        self.pass_both()
         self.assertEqual(self.game.creature_power(self.bear), 5)
+
+    def test_target_spell_caster_activated_interrupt_resolves_first(self):
+        grip = self.permanent(self.alice, DEATHGRIP)
+        growth = self.cast_growth()
+        lace = self.hand(self.bob, DEATHLACE)
+        self.bob.mana_pool.black = 1
+        self.game.begin_cast(lace)
+        self.game.complete_pending_cast((growth,))
+
+        # Alice declares her own-spell interrupt after Bob's interrupt spell.
+        # It nevertheless happens first under the rulebook's caster-first rule.
+        self.alice.mana_pool.black = 2
+        self.game.activate_ability(self.alice.id, grip, 0)
+        self.game.complete_pending_activation((growth,))
+        self.pass_both()
+
+        self.assertEqual(growth.zone, Zone.GRAVEYARD)
+        self.assertEqual(lace.zone, Zone.STACK)
+        self.pass_both()
+        self.assertEqual(lace.zone, Zone.GRAVEYARD)
+
+    def test_activated_interrupt_can_counter_an_interrupt_spell(self):
+        force = self.permanent(self.bob, LIFEFORCE)
+        ritual = self.hand(self.alice, DARK_RITUAL)
+        self.alice.mana_pool.black = 1
+        self.bob.mana_pool.green = 2
+
+        self.game.begin_cast(ritual)
+        self.game.activate_ability(self.bob.id, force, 0)
+        self.game.complete_pending_activation((ritual,))
+        self.pass_both()
+
+        self.assertEqual(ritual.zone, Zone.GRAVEYARD)
+        self.assertEqual(self.alice.mana_pool.black, 0)
 
 
 if __name__ == "__main__":

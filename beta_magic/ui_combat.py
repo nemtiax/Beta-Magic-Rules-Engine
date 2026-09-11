@@ -541,13 +541,25 @@ class CombatUiController:
         result: dict[Card, dict[Card, int]] = {}
         defender = game.player(combat.defending_player_id)
         for attacker in combat.attackers:
-            blockers = [blocker for blocker in combat.blockers[attacker.id]
-                        if blocker in defender.battlefield]
+            if attacker.id in combat.regenerated_card_ids:
+                continue
+            blockers = [
+                blocker
+                for blocker in combat.blockers[attacker.id]
+                if blocker in defender.battlefield
+                and blocker.id not in combat.regenerated_card_ids
+            ]
             if len(blockers) > 1:
                 result[attacker] = self._all_on_first(game, attacker, blockers)
         for blocker in defender.battlefield:
-            attackers = [attacker for attacker in combat.attackers
-                         if blocker in combat.blockers[attacker.id]]
+            if blocker.id in combat.regenerated_card_ids:
+                continue
+            attackers = [
+                attacker
+                for attacker in combat.attackers
+                if blocker in combat.blockers[attacker.id]
+                and attacker.id not in combat.regenerated_card_ids
+            ]
             if len(attackers) > 1:
                 result[blocker] = self._all_on_first(game, blocker, attackers)
         return result
@@ -559,16 +571,29 @@ class CombatUiController:
         defender = game.player(combat.defending_player_id)
         choices: list[tuple[Card, list[Card]]] = []
         for attacker in combat.attackers:
-            if attacker.zone is not Zone.BATTLEFIELD:
+            if (
+                attacker.zone is not Zone.BATTLEFIELD
+                or attacker.id in combat.regenerated_card_ids
+            ):
                 continue
-            blockers = [blocker for blocker in combat.blockers[attacker.id]
-                        if blocker in defender.battlefield]
+            blockers = [
+                blocker
+                for blocker in combat.blockers[attacker.id]
+                if blocker in defender.battlefield
+                and blocker.id not in combat.regenerated_card_ids
+            ]
             if len(blockers) > 1:
                 choices.append((attacker, blockers))
         for blocker in defender.battlefield:
-            attackers = [attacker for attacker in combat.attackers
-                         if blocker in combat.blockers[attacker.id]
-                         and attacker.zone is Zone.BATTLEFIELD]
+            if blocker.id in combat.regenerated_card_ids:
+                continue
+            attackers = [
+                attacker
+                for attacker in combat.attackers
+                if blocker in combat.blockers[attacker.id]
+                and attacker.zone is Zone.BATTLEFIELD
+                and attacker.id not in combat.regenerated_card_ids
+            ]
             if len(attackers) > 1:
                 choices.append((blocker, attackers))
         return choices
@@ -593,7 +618,8 @@ class CombatUiController:
         if source in combat.attackers:
             if any(
                 KeywordAbility.BANDING in game.creature_abilities(blocker)
-                for blocker in recipients
+                for blocker in combat.blockers[source.id]
+                if blocker.zone is Zone.BATTLEFIELD
             ):
                 return combat.defending_player_id
             return combat.attacking_player_id

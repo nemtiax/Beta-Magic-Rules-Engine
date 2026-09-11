@@ -92,6 +92,7 @@ class AbilityOnStack:
     targets: tuple[Card | PlayerState, ...]
     amount: int = 1
     event_id: UUID | None = None
+    declaration_sequence: int = 0
 
 
 @dataclass(slots=True)
@@ -110,6 +111,7 @@ class SpellOnStack:
     declared_target_requirement: TargetRequirement | None = None
     chosen_word_from: Color | str | None = None
     chosen_word_to: Color | str | None = None
+    declaration_sequence: int = 0
 
 
 class TargetingCastingMixin:
@@ -169,6 +171,11 @@ class TargetingCastingMixin:
         if not (is_instant or is_interrupt or is_sorcery):
             raise ValueError(
                 f"{card.name} is not an instant, interrupt, or sorcery"
+            )
+        if not is_interrupt and self.interruptible_spell_id is not None:
+            raise RuntimeError(
+                "both players must finish the current spell's interrupt "
+                "window before another spell"
             )
         if not is_interrupt and any(
             CardType.INTERRUPT in spell.definition.card_types
@@ -303,22 +310,19 @@ class TargetingCastingMixin:
             raise ValueError(
                 f"X cannot exceed the number of legal targets for {card.name}"
             )
-        if (
-            self.priority_player_index is not None
-            and caster is not self.players[self.priority_player_index]
-        ):
-            raise RuntimeError(
-                f"{self.players[self.priority_player_index].name} has priority"
-            )
         if card.definition.is_permanent:
             self._validate_permanent_cast(card, x_value=x_value)
+            self._require_action_priority(caster)
             return caster
-        return self._validate_nonpermanent_cast(card, x_value)
+        caster = self._validate_nonpermanent_cast(card, x_value)
+        self._require_action_priority(caster)
+        return caster
 
     def maximum_affordable_x(self, card: Card, target_count: int = 1) -> int:
         """Largest X the card's current holder can pay."""
 
         caster = self._caster_for(card)
+        self._require_action_priority(caster)
         cost = card.definition.mana_cost
         if not cost.x_symbols:
             raise ValueError(f"{card.name} has no X in its mana cost")
@@ -368,12 +372,21 @@ class TargetingCastingMixin:
             )
             for effect in card.definition.spell_effects
         )
+        is_interrupt = CardType.INTERRUPT in card.definition.card_types
         self._require_no_pending_action(
-            allow_stack=True, allow_damage=damage_window_effect
+            allow_stack=True,
+            # The era FAQ expressly permits interrupts throughout damage
+            # resolution.  The same interrupt sequence is also available in
+            # a destroy effect's dedicated regeneration window.
+            allow_damage=damage_window_effect or is_interrupt,
         )
-        if self.pending_damage is not None and (
-            not damage_window_effect
-            or self.pending_damage.step is not DamageResolutionStep.PREVENTION
+        if (
+            self.pending_damage is not None
+            and not is_interrupt
+            and (
+                not damage_window_effect
+                or self.pending_damage.step is not DamageResolutionStep.PREVENTION
+            )
         ):
             raise RuntimeError(
                 "this spell can only be cast during the damage-prevention window"
@@ -875,6 +888,7 @@ class TargetingCastingMixin:
             self.check_state_based_actions()
             return
         if isinstance(ability, ActivatedCounterSpellAbility):
+            self.interrupt_declaration_sequence += 1
             self.interrupt_abilities.append(
                 AbilityOnStack(
                     pending.source,
@@ -882,6 +896,7 @@ class TargetingCastingMixin:
                     player.id,
                     ability,
                     chosen,
+                    declaration_sequence=self.interrupt_declaration_sequence,
                 )
             )
             # It belongs to the current spell's interrupt sequence. It does
@@ -1192,6 +1207,12 @@ class TargetingCastingMixin:
                 self._copy_creature_definition(card, targets[0])
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
+        cast_definition = card.printed_definition or card.definition
+        if (
+            CardType.CREATURE in cast_definition.card_types
+            and CardType.ARTIFACT not in cast_definition.card_types
+        ):
+            card.summoned_turn = self.turn_number
         card.enchanted_card_id = (
             targets[0].id
             if targets and not copies_artifact and not copies_creature
@@ -1249,6 +1270,7 @@ class TargetingCastingMixin:
             or self.interruptible_spell_id is None
         ):
             self.interruptible_spell_id = card.id
+        self.interrupt_declaration_sequence += 1
         self.stack_spells[card.id] = SpellOnStack(
             card=card,
             caster_id=caster.id,
@@ -1264,6 +1286,7 @@ class TargetingCastingMixin:
             declared_target_requirement=declared_requirement,
             chosen_word_from=chosen_word_from,
             chosen_word_to=chosen_word_to,
+            declaration_sequence=self.interrupt_declaration_sequence,
         )
         self.events.append(
             SpellCastEvent(

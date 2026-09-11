@@ -38,6 +38,7 @@ from .turn_flow import (
     PendingDrawChoice,
     PendingGraveyardReturnChoice,
     PendingTimedEvent,
+    PendingTimedEventOrderChoice,
     PendingTurnChoice,
     PendingUntapChoice,
     PendingUpkeepLandLossChoice,
@@ -62,6 +63,7 @@ from .damage import (
 )
 from .destruction import (
     DestructionIncident,
+    DestructionTarget,
 )
 from .priority_resolution import (
     BalanceChoice,
@@ -264,6 +266,14 @@ class LandTapUndo:
     consecutive_passes_before: int
 
 
+@dataclass(frozen=True, slots=True)
+class PendingActionResponse:
+    """A completed non-fast action awaiting the opponent's response."""
+
+    actor_id: str
+    description: str
+
+
 @dataclass(slots=True)
 class GameState(
     TargetingCastingMixin,
@@ -286,6 +296,7 @@ class GameState(
     stack: list[Card] = field(default_factory=list)
     stack_spells: dict[UUID, SpellOnStack] = field(default_factory=dict)
     interruptible_spell_id: UUID | None = None
+    interrupt_declaration_sequence: int = 0
     priority_player_index: int | None = None
     consecutive_passes: int = 0
     current_phase: TurnPhase | None = None
@@ -331,9 +342,14 @@ class GameState(
     destroy_at_end_of_turn_if_attacked: set[UUID] = field(default_factory=set)
     disintegrated_this_turn: set[UUID] = field(default_factory=set)
     timed_events: list[PendingTimedEvent] = field(default_factory=list)
+    pending_timed_event_order: PendingTimedEventOrderChoice | None = None
     pending_damage: DamageIncident | None = None
     resolved_damage_incidents: list[DamageIncident] = field(default_factory=list)
     pending_destruction: DestructionIncident | None = None
+    suspended_destruction_incidents: list[
+        tuple[DestructionIncident, bool]
+    ] = field(default_factory=list)
+    pending_life_loss_checkpoint: bool = False
     resume_interrupts_after_destruction: bool = False
     resolved_destruction_incidents: list[DestructionIncident] = field(
         default_factory=list
@@ -371,6 +387,7 @@ class GameState(
     rewound_during_untap: set[UUID] = field(default_factory=set)
     pending_upkeep_land_loss: PendingUpkeepLandLossChoice | None = None
     pending_phase_advance: TurnPhase | None = None
+    pending_action_response: PendingActionResponse | None = None
     vaults_untapping_next_turn: dict[str, set[UUID]] = field(
         default_factory=dict
     )
@@ -662,8 +679,6 @@ class GameState(
                     permanent.counters[counter_name] = (
                         permanent.counters.get(counter_name, 0) + lost
                     )
-        if player.life <= 0:
-            player.has_lost = True
         return lost, prevented
 
     def maximum_channel_mana(self, player_id: str) -> int:
@@ -694,13 +709,7 @@ class GameState(
         }:
             raise RuntimeError("Channel cannot be used during combat declarations")
         player = self.player(player_id)
-        if (
-            self.priority_player_index is not None
-            and player is not self.players[self.priority_player_index]
-        ):
-            raise RuntimeError(
-                f"{self.players[self.priority_player_index].name} has priority"
-            )
+        self._require_action_priority(player)
         maximum = self.maximum_channel_mana(player_id)
         if not 1 <= amount <= maximum:
             raise ValueError(f"choose an amount from 1 to {maximum}")
@@ -728,6 +737,20 @@ class GameState(
             return 0
         player.life += amount
         return amount
+
+    def _check_life_loss_checkpoint(self) -> bool:
+        """Apply Beta's delayed life-total loss check at a rules boundary."""
+
+        life_total_losers = tuple(
+            player
+            for player in self.players
+            if player.life <= 0 and not self._lich_count(player.id)
+        )
+        if not life_total_losers:
+            return False
+        for player in life_total_losers:
+            player.has_lost = True
+        return self._finish_if_players_lost()
 
     @staticmethod
     def _damage_source_key(source_id: UUID | None, source_name: str) -> str:
@@ -801,6 +824,12 @@ class GameState(
             raise RuntimeError("choose how many draw-phase draws to skip first")
         if self.pending_graveyard_return_choice is not None:
             raise RuntimeError("choose whether to return Nether Shadow first")
+        if self.pending_timed_event_order is not None:
+            choice = self.pending_timed_event_order
+            raise RuntimeError(
+                f"{self.player(choice.player_id).name} must order their upkeep "
+                "actions first"
+            )
         if self.pending_graveyard_order_choices:
             choice = self.pending_graveyard_order_choices[0]
             raise RuntimeError(
@@ -935,6 +964,110 @@ class GameState(
             raise RuntimeError(
                 "both players must pass priority on the pending rules event"
             )
+        if self.pending_action_response is not None and not allow_stack:
+            raise RuntimeError(
+                "the opponent must receive a fast-effect response opportunity first"
+            )
+
+    @property
+    def action_priority_player_index(self) -> int | None:
+        """Player currently entitled to announce a spell or fast effect.
+
+        ``priority_player_index`` continues to describe an explicit response
+        window that the players must pass. In an otherwise neutral action
+        window, Beta's timing rule gives the active player the first
+        announcement instead of allowing both players to race to act.
+        """
+
+        if self.priority_player_index is not None:
+            return self.priority_player_index
+        # Target and mode selection are part of an announcement already
+        # begun by this player. Keep that player's entitlement until the
+        # declaration is completed or cancelled.
+        if self.pending_cast is not None:
+            return self.players.index(self.player(self.pending_cast.caster_id))
+        if self.pending_activation is not None:
+            controller_id = (
+                self.pending_activation.source.controller_id
+                or self.pending_activation.source.owner_id
+            )
+            return self.players.index(self.player(controller_id))
+        if (
+            self.status is not GameStatus.IN_PROGRESS
+            or self.current_phase is None
+            or self.current_phase is TurnPhase.UNTAP
+            or self.combat is not None
+            and self.combat.step in {
+                CombatStep.DECLARE_ATTACKERS,
+                CombatStep.DECLARE_BLOCKERS,
+                CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+                CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+                CombatStep.DAMAGE,
+            }
+        ):
+            return None
+        try:
+            self._require_no_pending_action()
+        except RuntimeError:
+            return None
+        return self.active_player_index
+
+    def player_has_action_priority(self, player_id: str) -> bool:
+        """Whether a player may currently announce a spell or fast effect."""
+
+        index = self.action_priority_player_index
+        return bool(index is not None and self.players[index].id == player_id)
+
+    def _require_action_priority(self, player: PlayerState) -> None:
+        """Reject an announcement made by anyone but the current player."""
+
+        index = self.action_priority_player_index
+        if index is None:
+            raise RuntimeError("spells and fast effects cannot be announced now")
+        if player is not self.players[index]:
+            raise RuntimeError(f"{self.players[index].name} has priority")
+
+    def _interrupt_sequence_pending(self) -> bool:
+        """Whether only further interrupt-speed actions may be announced."""
+
+        return bool(
+            self.interruptible_spell_id is not None
+            or self.interrupt_abilities
+            or any(
+                CardType.INTERRUPT in card.definition.card_types
+                for card in self.stack
+            )
+        )
+
+    def _restore_pending_context_priority(self) -> None:
+        """Restore the next announcement opportunity after a resolution."""
+
+        self.consecutive_passes = 0
+        if (
+            self.pending_destruction is not None
+            or self.pending_damage is not None
+            or self.stack
+            or self.batch_abilities
+            or self.timed_events and self.pending_timed_event_order is None
+            or self.event_opportunities
+            or self.pending_phase_advance is not None
+            or self._combat_response_pending()
+        ):
+            self.priority_player_index = self.active_player_index
+        elif self.pending_action_response is not None:
+            actor = self.player(self.pending_action_response.actor_id)
+            self.priority_player_index = (
+                self.players.index(actor) + 1
+            ) % len(self.players)
+            # The completed non-fast action is the acting player's implicit
+            # pass. Only its opponent must decline this fresh response batch.
+            self.consecutive_passes = len(self.players) - 1
+        elif self.pending_life_loss_checkpoint:
+            self.pending_life_loss_checkpoint = False
+            self.priority_player_index = None
+            self._check_life_loss_checkpoint()
+        else:
+            self.priority_player_index = None
 
     def finish_hand_reveal(self, player_id: str) -> None:
         """Dismiss the oldest resolved private hand snapshot."""
@@ -1087,6 +1220,8 @@ class GameState(
         source_zone = card.zone
         was_land = CardType.LAND in self.card_types(card)
         was_creature = CardType.CREATURE in self.card_types(card)
+        departing_name = card.name
+        departing_definition = card.definition
         if (
             source_zone is Zone.BATTLEFIELD
             and destination is Zone.GRAVEYARD
@@ -1232,12 +1367,13 @@ class GameState(
             and was_creature
         ):
             self.creature_deaths_this_turn += 1
-            divisor = card.definition.owner_life_loss_on_death_divisor
+            divisor = departing_definition.owner_life_loss_on_death_divisor
             if divisor is not None:
                 owner = self.player(card.owner_id)
                 self._lose_life(owner, (owner.life + divisor - 1) // divisor)
             self._record_creature_death_opportunity(
                 card,
+                prior_name=departing_name,
                 prior_controller_id=prior_controller_id,
                 prior_toughness=prior_toughness,
                 creature_bonds=creature_bonds,
@@ -1555,7 +1691,6 @@ class GameState(
         self._copy_creature_definition(clone, creature)
         self._move_card(clone, Zone.BATTLEFIELD)
         clone.entered_battlefield_turn = self.turn_number
-        clone.summoned_turn = self.turn_number
         if choice.attachment_id is not None:
             aura = next(
                 (
@@ -1650,6 +1785,22 @@ class GameState(
                 )
             self._resolve_damage_incident()
         self.check_state_based_actions()
+        if self.pending_damage is None and self.pending_destruction is None:
+            opponent_index = (
+                self.active_player_index + 1
+            ) % len(self.players)
+            if self.event_opportunities:
+                # The land event's response window also supplies the
+                # opponent's required chance to react to the land play.
+                self.priority_player_index = opponent_index
+                self.consecutive_passes = 0
+            elif self.priority_player_index is None:
+                self.pending_action_response = PendingActionResponse(
+                    self.active_player.id,
+                    f"{card.name} was played",
+                )
+                self.priority_player_index = opponent_index
+                self.consecutive_passes = len(self.players) - 1
 
     def tap_land_for_mana(self, player_id: str, card: Card) -> None:
         """Compatibility shortcut for lands with exactly one mana ability."""
@@ -1723,6 +1874,7 @@ class GameState(
         self,
         creature: Card,
         *,
+        prior_name: str,
         prior_controller_id: str,
         prior_toughness: int,
         creature_bonds: tuple[
@@ -1758,7 +1910,7 @@ class GameState(
             self.event_opportunities.append(
                 RuleEventOpportunity(
                     RuleEventKind.CREATURE_DEATH,
-                    f"{creature.name} died",
+                    f"{prior_name} died",
                     card_id=creature.id,
                 )
             )
@@ -1766,7 +1918,7 @@ class GameState(
             self.event_opportunities.append(
                 RuleEventOpportunity(
                     RuleEventKind.CREATURE_DEATH,
-                    f"{source.name}: {creature.name} was destroyed",
+                    f"{source.name}: {prior_name} was destroyed",
                     card_id=creature.id,
                     damage=(
                         max(0, prior_toughness)
@@ -2180,8 +2332,12 @@ class GameState(
             card, targets, chosen_land_subtype=land_subtype
         )
 
-    def check_state_based_actions(self) -> None:
-        """Repeatedly remove creatures with nonpositive or lethally damaged toughness."""
+    def check_state_based_actions(
+        self,
+        *,
+        resolved_lethal_damage_ids: frozenset[UUID] = frozenset(),
+    ) -> None:
+        """Resolve nonpositive toughness and newly lethal marked damage."""
 
         while True:
             # Existing engine fixtures commonly use empty libraries as compact
@@ -2189,15 +2345,17 @@ class GameState(
             # non-ante callers may invoke ``finish_game`` explicitly.
             if self.ante_enabled and self._finish_if_players_lost():
                 return
-            doomed = [
-                card
-                for player in self.players
-                for card in player.battlefield
-                if CardType.CREATURE in self.card_types(card)
-                and not self.land_is_consecrated(card)
-                and (
-                    self.creature_toughness(card) <= 0
-                    or (
+            immediate: list[Card] = []
+            newly_lethal: list[Card] = []
+            for player in self.players:
+                for card in player.battlefield:
+                    if (
+                        CardType.CREATURE not in self.card_types(card)
+                        or self.land_is_consecrated(card)
+                    ):
+                        continue
+                    toughness = self.creature_toughness(card)
+                    lacks_landhome = (
                         card.definition.landhome is not None
                         and not self.player_controls_land_subtype(
                             card.controller_id or card.owner_id,
@@ -2206,20 +2364,46 @@ class GameState(
                             ),
                         )
                     )
-                    or (
+                    if (
+                        toughness <= 0
+                        or lacks_landhome
+                        or (
+                            card.id in resolved_lethal_damage_ids
+                            and card.damage >= toughness
+                        )
+                    ):
+                        immediate.append(card)
+                    elif (
                         self.pending_damage is None
-                        and card.damage >= self.creature_toughness(card)
+                        and card.damage >= toughness
+                    ):
+                        newly_lethal.append(card)
+
+            if immediate:
+                graveyard_lengths = self._graveyard_lengths()
+                for creature in immediate:
+                    if creature.zone is Zone.BATTLEFIELD:
+                        self._put_creature_in_graveyard(creature)
+                self._queue_new_graveyard_order_choices(graveyard_lengths)
+                # Removing one creature may lower another creature's dynamic
+                # toughness. Such a newly lethal creature has not yet had its
+                # regeneration opportunity, even during a damage death step.
+                continue
+
+            if newly_lethal:
+                if self.pending_destruction is None:
+                    self.pending_destruction = DestructionIncident(
+                        [
+                            DestructionTarget(card.id, card.name, True)
+                            for card in newly_lethal
+                        ]
                     )
-                )
-            ]
-            if not doomed:
+                    self._open_destruction_incident()
                 self.reconcile_raging_river()
                 return
-            graveyard_lengths = self._graveyard_lengths()
-            for creature in doomed:
-                if creature.zone is Zone.BATTLEFIELD:
-                    self._put_creature_in_graveyard(creature)
-            self._queue_new_graveyard_order_choices(graveyard_lengths)
+
+            self.reconcile_raging_river()
+            return
 
     def concede(self, player_id: str) -> None:
         """Concede the duel and award the ante to the remaining player."""
@@ -2249,6 +2433,8 @@ class GameState(
         winner_id = survivors[0].id if len(survivors) == 1 else None
         self.status = GameStatus.FINISHED
         self.priority_player_index = None
+        self.pending_action_response = None
+        self.pending_life_loss_checkpoint = False
         cards = tuple(card for player in self.players for card in player.ante)
         self.ante_award = AnteAward(
             winner_id,
@@ -2322,10 +2508,11 @@ class GameState(
         if bool(
             self.stack
             or self.batch_abilities
-            or self.timed_events
+            or self.timed_events and self.pending_timed_event_order is None
             or self.event_opportunities
             or self.pending_damage
             or self.pending_destruction
+            or self.pending_action_response
         ) != (
             self.priority_player_index is not None
         ):

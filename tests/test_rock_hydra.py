@@ -28,8 +28,9 @@ class RockHydraTests(unittest.TestCase):
         self.alice.mana_pool.red = 2
         self.alice.mana_pool.colorless = 4
         self.game.begin_cast(card, x_value=4)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         self.assertEqual(card.zone, Zone.BATTLEFIELD)
         self.assertEqual(card.counters["head"], 4)
         self.assertEqual((self.game.creature_power(card), self.game.creature_toughness(card)), (4, 4))

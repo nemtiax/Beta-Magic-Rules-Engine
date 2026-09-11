@@ -26,8 +26,9 @@ class NaturalSelectionTests(unittest.TestCase):
         self.alice.mana_pool.green = 1
         self.game.begin_cast(card)
         self.game.complete_pending_cast((target,))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         return card
 
     def test_can_target_either_players_library(self) -> None:

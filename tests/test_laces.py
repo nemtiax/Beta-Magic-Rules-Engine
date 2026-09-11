@@ -106,6 +106,8 @@ class LaceTests(unittest.TestCase):
 
         self.game.pass_priority(self.alice.id)
         self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
         self.assertEqual(creature.zone, Zone.BATTLEFIELD)
         self.assertEqual(self.game.card_colors(creature), {Color.BLUE})
 
@@ -114,6 +116,7 @@ class LaceTests(unittest.TestCase):
         self.permanent(self.alice, CRYSTAL_ROD)
         bolt = self.hand(self.bob, LIGHTNING_BOLT)
         self.bob.mana_pool.red = 1
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.begin_cast(bolt)
         self.game.complete_pending_cast((self.alice,))
         self.assertEqual(self.game.event_opportunities[0].spell_colors, {Color.RED})

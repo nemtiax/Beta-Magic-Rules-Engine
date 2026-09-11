@@ -79,6 +79,7 @@ class GauntletOfMightTests(unittest.TestCase):
         self.permanent(self.alice, GAUNTLET_OF_MIGHT)
         badlands = self.permanent(self.bob, BADLANDS)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, badlands, 0)
 
         self.assertEqual(self.bob.mana_pool.black, 1)
@@ -90,6 +91,7 @@ class GauntletOfMightTests(unittest.TestCase):
         mountain = self.permanent(self.bob, MOUNTAIN)
 
         self.assertEqual(self.game.land_subtypes(mountain), ("Plains",))
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, mountain, 0)
 
         self.assertEqual(self.bob.mana_pool.white, 1)
@@ -99,6 +101,7 @@ class GauntletOfMightTests(unittest.TestCase):
         self.permanent(self.alice, GAUNTLET_OF_MIGHT)
         mountain = self.permanent(self.bob, MOUNTAIN, owner_id=self.alice.id)
 
+        self.game.priority_player_index = self.game.players.index(self.bob)
         self.game.activate_ability(self.bob.id, mountain, 0)
 
         self.assertEqual(self.bob.mana_pool.red, 1)

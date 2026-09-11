@@ -172,14 +172,28 @@ class DamageIncidentTests(unittest.TestCase):
 
         self.game.deal_combat_damage()
 
-        incident = self.game.resolved_damage_incidents[-1]
-        self.assertEqual(incident.kind, DamageIncidentKind.COMBAT)
+        blocker_incident, defender_incident = (
+            self.game.resolved_damage_incidents[-2:]
+        )
+        self.assertEqual(blocker_incident.kind, DamageIncidentKind.COMBAT)
+        self.assertEqual(defender_incident.kind, DamageIncidentKind.COMBAT)
         self.assertEqual(
-            {(packet.recipient_id, packet.amount) for packet in incident.packets},
-            {(bear.id, 2), (self.bob.id, 1), (mammoth.id, 2)},
+            {
+                (packet.recipient_id, packet.amount)
+                for packet in blocker_incident.packets
+            },
+            {(bear.id, 3), (mammoth.id, 2)},
+        )
+        self.assertEqual(
+            {
+                (packet.recipient_id, packet.amount)
+                for packet in defender_incident.packets
+            },
+            {(self.bob.id, 1)},
         )
         mammoth_packets = [
             packet
+            for incident in (blocker_incident, defender_incident)
             for packet in incident.packets
             if packet.source_id == mammoth.id
         ]

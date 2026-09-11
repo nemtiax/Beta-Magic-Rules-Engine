@@ -22,8 +22,9 @@ class DemonicAttorneyTests(unittest.TestCase):
         self.alice.mana_pool.black = 2
         self.alice.mana_pool.colorless = 1
         self.game.begin_cast(card)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         return card
 
     def test_resolution_prompts_casters_opponent(self) -> None:

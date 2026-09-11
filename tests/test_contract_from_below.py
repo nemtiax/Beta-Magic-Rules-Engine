@@ -24,8 +24,9 @@ class ContractFromBelowTests(unittest.TestCase):
     def resolve(self, card):
         self.alice.mana_pool.black = 1
         self.game.begin_cast(card)
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
     def test_cannot_be_cast_when_not_playing_for_ante(self) -> None:
         alice = PlayerState.with_deck("a", "Alice", [SWAMP] * 10)

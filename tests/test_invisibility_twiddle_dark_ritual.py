@@ -63,6 +63,7 @@ class InvisibilityTwiddleDarkRitualTests(unittest.TestCase):
         self.game.complete_pending_cast((target,))
         target.tapped = True
         self.pass_both()
+        self.pass_both()
 
         self.assertTrue(target.tapped)
         self.assertIn(spell, self.alice.graveyard)

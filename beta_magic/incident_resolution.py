@@ -137,8 +137,6 @@ class DamageDestructionMixin:
         if not self._lich_count(caster.id):
             caster.life += prior
         self._gain_life(caster, prior + pending)
-        if caster.life > 0:
-            caster.has_lost = False
         self.priority_player_index = (
             self.players.index(caster) + 1
         ) % len(self.players)
@@ -154,8 +152,6 @@ class DamageDestructionMixin:
         consumed = self._consume_player_damage(caster.id)
         if not self._lich_count(caster.id):
             caster.life += sum(amount for _, amount in consumed)
-        if caster.life > 0:
-            caster.has_lost = False
         for record, amount in consumed:
             incident.redirected_packets.append(
                 DamagePacket(
@@ -168,6 +164,8 @@ class DamageDestructionMixin:
                     source_controller_id=record.source_controller_id,
                     colors=record.colors,
                     combat=record.combat,
+                    trample=record.trample,
+                    trample_defender_id=record.trample_defender_id,
                 )
             )
         transferred = sum(amount for _, amount in consumed)
@@ -193,6 +191,8 @@ class DamageDestructionMixin:
                     source_controller_id=packet.source_controller_id,
                     colors=packet.colors,
                     combat=packet.combat,
+                    trample=packet.trample,
+                    trample_defender_id=packet.trample_defender_id,
                     first_strike=packet.first_strike,
                     life_gain_player_id=packet.life_gain_player_id,
                     life_gain_cap=packet.life_gain_cap,
@@ -209,6 +209,10 @@ class DamageDestructionMixin:
     def _validate_redirection_activation(
         self, player_id: str, card: Card, ability_index: int
     ) -> tuple[PlayerState, ActivatedRedirectDamageAbility]:
+        if self._interrupt_sequence_pending():
+            raise RuntimeError(
+                "an interrupt sequence must finish before damage redirection"
+            )
         incident = self.pending_damage
         if (
             incident is None
@@ -340,6 +344,7 @@ class DamageDestructionMixin:
                 colors=packet.colors,
                 combat=packet.combat,
                 trample=packet.trample,
+                trample_defender_id=packet.trample_defender_id,
                 first_strike=packet.first_strike,
                 life_gain_player_id=packet.life_gain_player_id,
                 life_gain_cap=packet.life_gain_cap,
@@ -363,6 +368,10 @@ class DamageDestructionMixin:
     def _validate_prevention_activation(
         self, player_id: str, card: Card, ability_index: int
     ) -> tuple[PlayerState, ActivatedPreventDamageAbility]:
+        if self._interrupt_sequence_pending():
+            raise RuntimeError(
+                "an interrupt sequence must finish before damage prevention"
+            )
         incident = self.pending_damage
         if (
             incident is None
@@ -402,6 +411,10 @@ class DamageDestructionMixin:
         """Declare a prevention-mode instant during the FAQ prevention step."""
 
         self._require_no_pending_action(allow_stack=True, allow_damage=True)
+        if self._interrupt_sequence_pending():
+            raise RuntimeError(
+                "an interrupt sequence must finish before damage prevention"
+            )
         incident = self.pending_damage
         if (
             incident is None
@@ -662,6 +675,7 @@ class DamageDestructionMixin:
             incident is None
             or incident.step is not DamageResolutionStep.PREVENTION
             or self.pending_prevention is not None
+            or self._interrupt_sequence_pending()
         ):
             return []
         player = self.player(player_id)
@@ -716,6 +730,11 @@ class DamageDestructionMixin:
         self, player_id: str, card: Card, ability_index: int
     ) -> tuple[PlayerState, ActivatedRegenerationAbility, Card]:
         """Validate regeneration at the point lethal damage would kill a creature."""
+
+        if self._interrupt_sequence_pending():
+            raise RuntimeError(
+                "an interrupt sequence must finish before regeneration"
+            )
 
         in_damage_window = (
             self.pending_damage is not None
@@ -859,6 +878,7 @@ class DamageDestructionMixin:
         source_colors: frozenset[Color] | None = None,
         combat: bool = False,
         trample: bool = False,
+        trample_defender_id: str | None = None,
         first_strike: bool = False,
         life_gain_player_id: str | None = None,
         life_gain_cap: int | None = None,
@@ -900,6 +920,13 @@ class DamageDestructionMixin:
                 ),
                 combat=combat,
                 trample=trample,
+                trample_defender_id=(
+                    trample_defender_id
+                    if trample_defender_id is not None
+                    else self.combat.defending_player_id
+                    if trample and combat and self.combat is not None
+                    else None
+                ),
                 first_strike=first_strike,
                 life_gain_player_id=life_gain_player_id,
                 life_gain_cap=life_gain_cap,
@@ -1076,6 +1103,7 @@ class DamageDestructionMixin:
             raise RuntimeError("there is no damage incident to advance")
         if incident.step is DamageResolutionStep.PREVENTION:
             incident.step = DamageResolutionStep.REDIRECTION
+            self._redirect_trample_damage()
             self._redirect_unblocked_combat_damage()
             self.priority_player_index = self.active_player_index
             self.consecutive_passes = 0
@@ -1089,9 +1117,19 @@ class DamageDestructionMixin:
         if incident.step is not DamageResolutionStep.REGENERATION:
             raise RuntimeError("the damage incident is not in an actionable window")
 
+        resolved_lethal_damage_ids = frozenset(
+            card.id
+            for player in self.players
+            for card in player.battlefield
+            if CardType.CREATURE in self.card_types(card)
+            and self.creature_toughness(card) > 0
+            and card.damage >= self.creature_toughness(card)
+        )
         incident.step = DamageResolutionStep.DEATH
         self.pending_damage = None
-        self.check_state_based_actions()
+        self.check_state_based_actions(
+            resolved_lethal_damage_ids=resolved_lethal_damage_ids
+        )
         for player in self.players:
             for card in player.battlefield:
                 counters = incident.surviving_damage_triggers.get(card.id, 0)
@@ -1100,6 +1138,20 @@ class DamageDestructionMixin:
         incident.step = DamageResolutionStep.COMPLETE
         self.resolved_damage_incidents.append(incident)
         self.consecutive_passes = 0
+        self._resume_completed_damage_incident(incident)
+
+    def _resume_completed_damage_incident(
+        self, incident: DamageIncident
+    ) -> None:
+        """Continue after death checks belonging to a completed incident."""
+
+        if self.pending_destruction is not None:
+            # Removing one lethal creature can reduce another creature's
+            # positive toughness enough to make its marked damage lethal. Its
+            # distinct regeneration decision must finish before the action
+            # that produced the original damage can continue.
+            self.deferred_damage_continuation = incident
+            return
         if incident.redirected_packets:
             redirected = DamageIncident(
                 incident.kind,
@@ -1115,12 +1167,71 @@ class DamageDestructionMixin:
             self.deferred_damage_continuation = incident
             self.priority_player_index = self.active_player_index
             return
-        self.priority_player_index = (
-            self.active_player_index
-            if self.pending_phase_advance is not None
-            else None
-        )
+        self._restore_pending_context_priority()
         self._continue_after_damage_incident(incident)
+
+    def _redirect_trample_damage(self) -> None:
+        """Move unprevented excess trample damage past each blocker."""
+
+        incident = self.pending_damage
+        assert incident is not None
+        battlefield = {
+            card.id: card
+            for player in self.players
+            for card in player.battlefield
+        }
+        recipient_ids = {
+            packet.recipient_id
+            for packet in incident.packets
+            if packet.recipient_kind is DamageRecipientKind.CREATURE
+            and packet.trample
+        }
+        for recipient_id in recipient_ids:
+            creature = battlefield.get(recipient_id)
+            capacity = (
+                max(0, self.creature_toughness(creature) - creature.damage)
+                if creature is not None
+                else 0
+            )
+            packets = [
+                packet
+                for packet in incident.packets
+                if packet.recipient_kind is DamageRecipientKind.CREATURE
+                and packet.recipient_id == recipient_id
+            ]
+            # The FAQ applies ordinary damage first, then trample damage, so
+            # ordinary damage consumes the blocker's remaining toughness
+            # before excess trample damage is calculated.
+            for packet in sorted(packets, key=lambda item: item.trample):
+                remaining = packet.remaining
+                absorbed = min(capacity, remaining)
+                capacity -= absorbed
+                if not packet.trample:
+                    continue
+                excess = remaining - absorbed
+                defender_id = packet.trample_defender_id
+                if not excess or defender_id is None:
+                    continue
+                packet.redirected += excess
+                defender = self.player(defender_id)
+                incident.redirected_packets.append(
+                    DamagePacket(
+                        amount=excess,
+                        recipient_kind=DamageRecipientKind.PLAYER,
+                        recipient_id=defender.id,
+                        recipient_name=defender.name,
+                        source_name=packet.source_name,
+                        source_id=packet.source_id,
+                        source_controller_id=packet.source_controller_id,
+                        colors=packet.colors,
+                        combat=packet.combat,
+                        trample=True,
+                        trample_defender_id=defender.id,
+                        first_strike=packet.first_strike,
+                        life_gain_player_id=packet.life_gain_player_id,
+                        life_gain_cap=packet.life_gain_cap,
+                    )
+                )
 
     def _redirect_unblocked_combat_damage(self) -> None:
         """Apply mandatory Veteran Bodyguard redirection after prevention."""
@@ -1159,6 +1270,7 @@ class DamageDestructionMixin:
                         colors=packet.colors,
                         combat=packet.combat,
                         trample=False,
+                        trample_defender_id=None,
                         first_strike=packet.first_strike,
                         life_gain_player_id=packet.life_gain_player_id,
                         life_gain_cap=packet.life_gain_cap,
@@ -1216,6 +1328,8 @@ class DamageDestructionMixin:
                         source_controller_id=packet.source_controller_id,
                         colors=packet.colors,
                         combat=packet.combat,
+                        trample=packet.trample,
+                        trample_defender_id=packet.trample_defender_id,
                     )
                 )
                 self.events.append(
@@ -1460,15 +1574,34 @@ class DamageDestructionMixin:
         incident.step = DestructionResolutionStep.COMPLETE
         self.resolved_destruction_incidents.append(incident)
         self.consecutive_passes = 0
+        if self.pending_destruction is not None:
+            self.resume_interrupts_after_destruction = resume_interrupts
+            return
+        if self.suspended_destruction_incidents:
+            parent, parent_resume_interrupts = (
+                self.suspended_destruction_incidents.pop()
+            )
+            self.pending_destruction = parent
+            self.resume_interrupts_after_destruction = (
+                resume_interrupts or parent_resume_interrupts
+            )
+            if resume_interrupts and self.stack:
+                underlying = self.stack_spells[self.stack[-1].id]
+                self.priority_player_index = self.players.index(
+                    self.player(underlying.caster_id)
+                )
+            else:
+                self._restore_pending_context_priority()
+            return
+        if self.deferred_damage_continuation is not None:
+            damage_incident = self.deferred_damage_continuation
+            self.deferred_damage_continuation = None
+            self._resume_completed_damage_incident(damage_incident)
+            return
         if resume_interrupts and self.stack:
             underlying = self.stack_spells[self.stack[-1].id]
             self.priority_player_index = self.players.index(
                 self.player(underlying.caster_id)
             )
         else:
-            self.priority_player_index = (
-                self.active_player_index
-                if self.timed_events or self.event_opportunities
-                or self.pending_phase_advance is not None
-                else None
-            )
+            self._restore_pending_context_priority()

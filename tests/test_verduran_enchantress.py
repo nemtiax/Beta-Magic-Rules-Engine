@@ -43,6 +43,10 @@ class VerduranEnchantressTests(unittest.TestCase):
             self.game.pass_priority(player.id)
 
     def claim_draw(self, enchantress: Card) -> None:
+        while self.game.interruptible_spell_id is not None:
+            self.game.pass_priority(
+                self.game.players[self.game.priority_player_index].id
+            )
         while (
             self.game.players[self.game.priority_player_index] is not self.alice
         ):

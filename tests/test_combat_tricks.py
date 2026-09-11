@@ -57,6 +57,11 @@ class CombatTrickTests(unittest.TestCase):
             player = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(player.id)
 
+    def close_interrupt_window(self):
+        while self.game.interruptible_spell_id is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
     def test_definitions(self) -> None:
         self.assertEqual(TARGETED_PUMP_SPELLS, (GIANT_GROWTH, RIGHTEOUSNESS))
         self.assertEqual(GIANT_GROWTH.mana_cost.compact, "G")
@@ -111,6 +116,7 @@ class CombatTrickTests(unittest.TestCase):
     def test_growth_response_saves_creature_from_lightning_bolt(self) -> None:
         bear = self.put_in_play(self.bob)
         bolt = self.cast(self.alice, LIGHTNING_BOLT, bear)
+        self.close_interrupt_window()
         growth = self.cast(self.bob, GIANT_GROWTH, bear)
 
         self.resolve_batch()
@@ -124,6 +130,7 @@ class CombatTrickTests(unittest.TestCase):
     def test_growth_saves_creature_when_bolt_is_the_response(self) -> None:
         bear = self.put_in_play(self.alice)
         growth = self.cast(self.alice, GIANT_GROWTH, bear)
+        self.close_interrupt_window()
         bolt = self.cast(self.bob, LIGHTNING_BOLT, bear)
 
         self.resolve_batch()

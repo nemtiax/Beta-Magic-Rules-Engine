@@ -28,8 +28,9 @@ class DarkpactTests(unittest.TestCase):
     def resolve(self, card: Card, target: Card) -> None:
         self.game.begin_cast(card)
         self.game.complete_pending_cast((target,))
-        self.game.pass_priority(self.bob.id)
-        self.game.pass_priority(self.alice.id)
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
     def test_requires_ante_and_a_nonempty_library(self) -> None:
         card = self.darkpact()

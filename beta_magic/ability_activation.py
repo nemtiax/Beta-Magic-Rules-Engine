@@ -400,13 +400,6 @@ class AbilityActivationMixin:
         if self.current_phase is TurnPhase.UNTAP:
             raise RuntimeError("abilities cannot be activated during the Untap phase")
         player = self.player(player_id)
-        if (
-            self.priority_player_index is not None
-            and player is not self.players[self.priority_player_index]
-        ):
-            raise RuntimeError(
-                f"{self.players[self.priority_player_index].name} has priority"
-            )
         if card not in player.battlefield or card.zone is not Zone.BATTLEFIELD:
             raise ValueError("the permanent must be on that player's battlefield")
         if card.controller_id != player_id:
@@ -419,6 +412,17 @@ class AbilityActivationMixin:
                 raise RuntimeError("this ability is used from the graveyard")
         except IndexError as error:
             raise ValueError(f"{card.name} has no such activated ability") from error
+        if self._interrupt_sequence_pending() and not isinstance(
+            ability,
+            (
+                ActivatedManaAbility,
+                ActivatedInterruptUntapAbility,
+                ActivatedCounterSpellAbility,
+            ),
+        ):
+            raise RuntimeError(
+                "an interrupt sequence must finish before another fast effect"
+            )
         if not isinstance(
             ability,
             (
@@ -455,14 +459,16 @@ class AbilityActivationMixin:
                 ability,
                 (
                     ActivatedManaAbility,
+                    ActivatedInterruptUntapAbility,
+                    ActivatedCounterSpellAbility,
                     ActivatedPreventDamageAbility,
                     ActivatedRedirectDamageAbility,
                 ),
             )
         ):
             raise RuntimeError(
-                "only mana, prevention, redirection, and regeneration abilities "
-                "can be used during damage resolution"
+                "only interrupts, mana, prevention, redirection, and "
+                "regeneration abilities can be used during damage resolution"
             )
         if isinstance(ability, ActivatedAnimationAbility):
             if self.combat is None:
@@ -499,6 +505,16 @@ class AbilityActivationMixin:
                 f"{card.name} can only be activated during its controller's "
                 f"{ability.activation_phase.value}"
             )
+        if (
+            isinstance(ability, ActivatedUntapAbility)
+            and ability.controller_turn_only
+            and player is not self.active_player
+        ):
+            raise RuntimeError(f"{card.name} can only be used during your turn")
+        # Establish card-specific timing legality before reporting which
+        # player owns the current announcement opportunity, but check
+        # priority before costs and mutable status such as tapped state.
+        self._require_action_priority(player)
         if (
             isinstance(ability, ActivatedPumpAbility)
             and ability.affects_attached_creature
@@ -601,8 +617,6 @@ class AbilityActivationMixin:
             )
             if not affected.tapped:
                 raise RuntimeError(f"{affected.name} is already untapped")
-            if ability.controller_turn_only and player is not self.active_player:
-                raise RuntimeError(f"{card.name} can only be used during your turn")
             if (
                 ability.once_per_turn
                 and self.ability_activations_this_turn.get(card.id, 0)
@@ -624,6 +638,7 @@ class AbilityActivationMixin:
         """Largest repeated payment affordable for a scalable ability."""
 
         player = self.player(player_id)
+        self._require_action_priority(player)
         try:
             ability = self.activated_abilities(card)[ability_index]
         except IndexError as error:

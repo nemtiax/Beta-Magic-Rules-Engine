@@ -119,6 +119,7 @@ class TargetedDamageSpellTests(unittest.TestCase):
         bolt = self.put_in_hand(self.bob, LIGHTNING_BOLT)
         self.bob.mana_pool.red = 1
 
+        self.game.propose_phase_advance()
         self.game.begin_cast(bolt)
         self.game.complete_pending_cast((self.alice,))
         self.resolve_stack()

@@ -3,7 +3,9 @@ import unittest
 from beta_magic import (
     DRUDGE_SKELETONS,
     ELVISH_ARCHERS,
+    HOLY_STRENGTH,
     MOUNTAIN,
+    PLAGUE_RATS,
     LIVING_WALL,
     REGENERATION_CREATURES,
     ROYAL_ASSASSIN,
@@ -13,6 +15,7 @@ from beta_magic import (
     WALL_OF_BONE,
     WALL_OF_BRAMBLES,
     WILL_O_THE_WISP,
+    WEAKNESS,
     ZOMBIE_MASTER,
     REGENERATION,
     Card,
@@ -108,6 +111,76 @@ class RegenerationCreatureTests(unittest.TestCase):
         self.pass_window()
         self.assertIn(skeleton, self.bob.battlefield)
         self.assertNotIn(skeleton, self.bob.graveyard)
+
+    def test_losing_toughness_bonus_gives_marked_damage_regeneration_window(
+        self,
+    ) -> None:
+        skeleton = self.put_in_play(self.bob, DRUDGE_SKELETONS)
+        strength = self.put_in_play(self.bob, HOLY_STRENGTH)
+        strength.enchanted_card_id = skeleton.id
+        skeleton.damage = 1
+
+        self.game._move_card(strength, Zone.GRAVEYARD)
+        self.game.check_state_based_actions()
+
+        self.assertIn(skeleton, self.bob.battlefield)
+        self.assertEqual(
+            self.game.pending_destruction.step,
+            DestructionResolutionStep.REGENERATION,
+        )
+        self.bob.mana_pool.black = 1
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, skeleton, 0)
+        self.pass_window()
+
+        self.assertIn(skeleton, self.bob.battlefield)
+        self.assertEqual(skeleton.damage, 0)
+        self.assertTrue(skeleton.tapped)
+
+    def test_nonpositive_toughness_dies_without_regeneration_window(self) -> None:
+        skeleton = self.put_in_play(self.bob, DRUDGE_SKELETONS)
+        weakness = self.put_in_play(self.alice, WEAKNESS)
+        weakness.enchanted_card_id = skeleton.id
+
+        self.game.check_state_based_actions()
+
+        self.assertIn(skeleton, self.bob.graveyard)
+        self.assertIsNone(self.game.pending_destruction)
+
+    def test_resolved_lethal_damage_does_not_open_second_regeneration_window(
+        self,
+    ) -> None:
+        skeleton = self.put_in_play(self.bob, DRUDGE_SKELETONS)
+        self.game._deal_damage(skeleton, 1, "test")
+        self.reach_regeneration_window()
+
+        self.pass_window()
+
+        self.assertIn(skeleton, self.bob.graveyard)
+        self.assertIsNone(self.game.pending_destruction)
+
+    def test_damage_death_that_lowers_toughness_opens_fresh_regeneration_window(
+        self,
+    ) -> None:
+        first_rat = self.put_in_play(self.bob, PLAGUE_RATS)
+        second_rat = self.put_in_play(self.bob, PLAGUE_RATS)
+        second_rat.damage = 1
+        self.game._deal_damage(first_rat, 2, "test")
+        self.reach_regeneration_window()
+
+        self.pass_window()
+
+        self.assertIn(first_rat, self.bob.graveyard)
+        self.assertIn(second_rat, self.bob.battlefield)
+        self.assertEqual(
+            self.game.pending_destruction.step,
+            DestructionResolutionStep.REGENERATION,
+        )
+        self.assertIsNotNone(self.game.priority_player_index)
+
+        self.pass_window()
+        self.assertIn(second_rat, self.bob.graveyard)
+        self.assertIsNone(self.game.pending_destruction)
 
     def test_living_wall_uses_generic_mana_to_regenerate(self) -> None:
         wall = self.put_in_play(self.bob, LIVING_WALL)

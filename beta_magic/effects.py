@@ -796,6 +796,7 @@ class ContinuousEffect:
     toughness_per_count: int = 0
     count_divisor: int = 1
     round_toughness_up: bool = False
+    application_sequence: int | None = None
 
     def __post_init__(self) -> None:
         if self.power_multiplier < 1:
