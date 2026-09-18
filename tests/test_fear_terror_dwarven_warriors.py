@@ -1,22 +1,24 @@
 import unittest
 
-from beta_magic import (
-    DWARVEN_WARRIORS,
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.red import DWARVEN_WARRIORS
+from beta_magic.card_defs.black import (
     FEAR,
     TERROR,
+)
+from beta_magic import (
     Card,
-    ContinuousEffect,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
-    GRIZZLY_BEARS,
-    HILL_GIANT,
-    LIVING_WALL,
-    SCATHE_ZOMBIES,
-)
+from beta_magic.effects import ContinuousEffect
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic.card_defs.artifacts import LIVING_WALL
+from beta_magic.card_defs.black import SCATHE_ZOMBIES
 
 
 class FearTerrorDwarvenWarriorsTests(unittest.TestCase):
@@ -65,17 +67,17 @@ class FearTerrorDwarvenWarriorsTests(unittest.TestCase):
                     game.players[1], legal_definition, Zone.BATTLEFIELD
                 )
                 game.begin_combat()
-                game.declare_attackers([attacker])
-                game.declare_blockers({blocker: attacker})
+                declare_attackers(game, [attacker])
+                declare_blockers(game, {blocker: attacker})
 
         attacker = self.card(self.alice, GRIZZLY_BEARS, Zone.BATTLEFIELD)
         aura = self.card(self.alice, FEAR, Zone.BATTLEFIELD)
         aura.enchanted_card_id = attacker.id
         blocker = self.card(self.bob, GRIZZLY_BEARS, Zone.BATTLEFIELD)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         with self.assertRaisesRegex(ValueError, "cannot block"):
-            self.game.declare_blockers({blocker: attacker})
+            declare_blockers(self.game, {blocker: attacker})
 
     def test_terror_excludes_black_and_artifact_creatures(self):
         bear = self.card(self.bob, GRIZZLY_BEARS, Zone.BATTLEFIELD)
@@ -119,9 +121,9 @@ class FearTerrorDwarvenWarriorsTests(unittest.TestCase):
 
         blocker = self.card(self.bob, GRIZZLY_BEARS, Zone.BATTLEFIELD)
         self.game.begin_combat()
-        self.game.declare_attackers([small])
+        declare_attackers(self.game, [small])
         with self.assertRaisesRegex(ValueError, "cannot be blocked"):
-            self.game.declare_blockers({blocker: small})
+            declare_blockers(self.game, {blocker: small})
 
 
 if __name__ == "__main__":

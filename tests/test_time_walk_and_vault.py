@@ -1,15 +1,15 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import TIME_VAULT
+from beta_magic.card_defs.blue import TIME_WALK
 from beta_magic import (
-    TIME_VAULT,
-    TIME_WALK,
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class TimeWalkAndVaultTests(unittest.TestCase):

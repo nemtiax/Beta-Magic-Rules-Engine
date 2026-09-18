@@ -5,11 +5,12 @@ from beta_magic import (
     GameState,
     KeywordAbility,
     PlayerState,
-    SENGIR_VAMPIRE,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, HILL_GIANT
+from beta_magic.card_defs.black import SENGIR_VAMPIRE
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
 from beta_magic.cards import Card
 
 

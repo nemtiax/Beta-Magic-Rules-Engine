@@ -1,12 +1,14 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BADLANDS,
-    CONVERSION,
     FOREST,
-    GAUNTLET_OF_MIGHT,
     MOUNTAIN,
     PLAINS,
+)
+from beta_magic.card_defs.white import CONVERSION
+from beta_magic.card_defs.artifacts import GAUNTLET_OF_MIGHT
+from beta_magic import (
     Card,
     Color,
     GameState,
@@ -14,7 +16,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRAY_OGRE, SCATHE_ZOMBIES
+from beta_magic.card_defs.red import GRAY_OGRE
+from beta_magic.card_defs.black import SCATHE_ZOMBIES
 
 
 class GauntletOfMightTests(unittest.TestCase):

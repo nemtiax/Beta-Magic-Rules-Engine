@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 ApplicationWindow {
@@ -31,6 +32,14 @@ ApplicationWindow {
         "pack": [],
         "poolGroups": [],
         "poolCount": 0,
+        "deckGroups": [],
+        "deckCount": 0,
+        "deckDraftedCount": 0,
+        "sideboardGroups": [],
+        "sideboardCount": 0,
+        "basicLands": [],
+        "basicLandCount": 0,
+        "canSaveDeck": false,
         "preview": ({}),
         "packStyle": "",
         "advisorEnabled": false,
@@ -396,9 +405,11 @@ ApplicationWindow {
     component PoolCard: Item {
         id: poolCard
         required property var cardData
+        property string moveAction: ""
         property bool hasArt: cardData.artCropUrl
             && cardData.artCropUrl.toString().length > 0
         signal inspectRequested(string cardId)
+        signal moveRequested(string cardId)
 
         width: 126
         height: 78
@@ -492,7 +503,267 @@ ApplicationWindow {
             id: poolHover
             anchors.fill: parent
             hoverEnabled: true
+            cursorShape: poolCard.moveAction
+                ? Qt.PointingHandCursor : Qt.ArrowCursor
             onEntered: poolCard.inspectRequested(poolCard.cardData.id)
+            onDoubleClicked: {
+                if (poolCard.moveAction)
+                    poolCard.moveRequested(poolCard.cardData.id)
+            }
+        }
+        DarkToolTip {
+            visible: poolHover.containsMouse && poolCard.moveAction
+            text: "Double-click to " + poolCard.moveAction
+            delay: 650
+        }
+    }
+
+    component DeckCollection: ZonePanel {
+        id: collection
+        required property string heading
+        required property int cardCount
+        required property var groups
+        required property string emptyMessage
+        required property string moveAction
+        property bool showBasicLands: false
+        property real rememberedContentX: 0
+        property real rememberedContentY: 0
+        signal inspectRequested(string cardId)
+        signal moveRequested(string cardId)
+
+        function moveCardPreservingScroll(cardId) {
+            var flickable = collectionScroll.contentItem
+            if (flickable) {
+                collection.rememberedContentX = flickable.contentX
+                collection.rememberedContentY = flickable.contentY
+            }
+            collection.moveRequested(cardId)
+            restoreScrollPosition.restart()
+        }
+
+        function restoreRememberedScrollPosition() {
+            var flickable = collectionScroll.contentItem
+            if (!flickable)
+                return
+
+            var maximumX = Math.max(0, flickable.contentWidth - flickable.width)
+            var maximumY = Math.max(0, flickable.contentHeight - flickable.height)
+            flickable.contentX = Math.max(
+                0, Math.min(collection.rememberedContentX, maximumX)
+            )
+            flickable.contentY = Math.max(
+                0, Math.min(collection.rememberedContentY, maximumY)
+            )
+        }
+
+        // Rebuilding a card stack resets ScrollView's internal Flickable. Wait
+        // until the new delegates have been laid out before restoring the
+        // source pane to the position from which the card was moved.
+        Timer {
+            id: restoreScrollPosition
+            interval: 0
+            repeat: false
+            onTriggered: collection.restoreRememberedScrollPosition()
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: collection.heading + " · " + collection.cardCount
+                    color: "#f3f5f7"
+                    font.pixelSize: 17
+                    font.bold: true
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    text: "Double-click a card to " + collection.moveAction
+                    color: "#8fa0b2"
+                    font.pixelSize: 12
+                }
+            }
+
+            Rectangle {
+                visible: collection.showBasicLands
+                Layout.fillWidth: true
+                Layout.preferredHeight: basicLandControls.height + 16
+                radius: 7
+                color: "#11171d"
+                border.color: "#394755"
+                border.width: 1
+
+                Flow {
+                    id: basicLandControls
+                    x: 8
+                    y: 8
+                    width: parent.width - 16
+                    height: childrenRect.height
+                    spacing: 7
+
+                    Text {
+                        width: 104
+                        height: 30
+                        text: "Basic lands · " + window.ui.basicLandCount
+                        color: "#dce5ed"
+                        font.pixelSize: 13
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Repeater {
+                        model: window.ui.basicLands
+                        delegate: Row {
+                            required property var modelData
+                            spacing: 3
+                            width: 146
+                            height: 30
+
+                            Rectangle {
+                                width: 57
+                                height: 30
+                                radius: 5
+                                color: modelData.background
+                                border.color: modelData.border
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.name
+                                    color: modelData.foreground
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+                            DarkButton {
+                                width: 30
+                                height: 30
+                                text: "−"
+                                enabled: modelData.count > 0
+                                onClicked: draftBridge.adjustBasicLand(
+                                    modelData.name, -1
+                                )
+                            }
+                            Text {
+                                width: 20
+                                height: 30
+                                text: modelData.count
+                                color: "#f3f5f7"
+                                font.pixelSize: 14
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            DarkButton {
+                                width: 30
+                                height: 30
+                                text: "+"
+                                onClicked: draftBridge.adjustBasicLand(
+                                    modelData.name, 1
+                                )
+                            }
+                        }
+                    }
+
+                    DarkButton {
+                        id: autoFillBasicsButton
+                        width: 132
+                        height: 30
+                        text: "Auto-fill to 40"
+                        onClicked: draftBridge.autoFillBasicLands()
+
+                        DarkToolTip {
+                            visible: autoFillBasicsButton.hovered
+                            text: "Recalculate basics from colored costs and drafted lands"
+                            delay: 650
+                        }
+                    }
+                }
+            }
+
+            ScrollView {
+                id: collectionScroll
+                objectName: collection.objectName + "Scroll"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: collectionRow.width
+                contentHeight: collectionRow.height
+                ScrollBar.vertical: DarkScrollBar {}
+                ScrollBar.horizontal: DarkScrollBar {}
+
+                Row {
+                    id: collectionRow
+                    height: childrenRect.height
+                    spacing: 9
+                    Repeater {
+                        model: collection.groups
+                        delegate: Column {
+                            id: collectionStack
+                            required property var modelData
+                            width: 126
+                            spacing: 5
+
+                            Text {
+                                width: parent.width
+                                height: 20
+                                text: collectionStack.modelData.label + " · "
+                                    + collectionStack.modelData.count
+                                color: collectionStack.modelData.accent
+                                font.pixelSize: 13
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+
+                            Item {
+                                width: 126
+                                height: collectionStack.modelData.cards.length > 0
+                                    ? 78 + (collectionStack.modelData.cards.length - 1) * 24
+                                    : 34
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 7
+                                    visible: collectionStack.modelData.cards.length === 0
+                                    text: "—"
+                                    color: "#566575"
+                                    font.pixelSize: 17
+                                }
+
+                                Repeater {
+                                    model: collectionStack.modelData.cards
+                                    delegate: PoolCard {
+                                        required property var modelData
+                                        required property int index
+                                        y: index * 24
+                                        z: index
+                                        cardData: modelData
+                                        moveAction: collection.moveAction
+                                        onInspectRequested: function(cardId) {
+                                            collection.inspectRequested(cardId)
+                                        }
+                                        onMoveRequested: function(cardId) {
+                                            collection.moveCardPreservingScroll(cardId)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                visible: collection.cardCount === 0
+                Layout.alignment: Qt.AlignHCenter
+                text: collection.emptyMessage
+                color: "#8fa0b2"
+                font.pixelSize: 13
+            }
         }
     }
 
@@ -657,6 +928,15 @@ ApplicationWindow {
         }
     }
 
+    FileDialog {
+        id: saveDeckDialog
+        title: "Save Beta Magic deck"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Beta Magic deck (*.json)"]
+        defaultSuffix: "json"
+        onAccepted: draftBridge.saveDeck(selectedFile)
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -708,6 +988,18 @@ ApplicationWindow {
                         spacing: 14
 
                         DarkButton {
+                            visible: window.ui.complete
+                            enabled: window.ui.canSaveDeck
+                            text: "Save deck..."
+                            onClicked: saveDeckDialog.open()
+
+                            DarkToolTip {
+                                visible: parent.hovered && !parent.enabled
+                                text: "Decks need at least 40 cards"
+                                delay: 500
+                            }
+                        }
+                        DarkButton {
                             text: "New draft..."
                             onClicked: draftSettings.open()
                         }
@@ -716,6 +1008,7 @@ ApplicationWindow {
             }
 
             ZonePanel {
+                visible: !window.ui.complete
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: 300
@@ -811,6 +1104,7 @@ ApplicationWindow {
             }
 
             ZonePanel {
+                visible: !window.ui.complete
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(245, window.height * 0.32)
 
@@ -903,6 +1197,45 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+            }
+
+            DeckCollection {
+                objectName: "deckCollection"
+                visible: window.ui.complete
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 210
+                heading: "Deck"
+                cardCount: window.ui.deckCount
+                groups: window.ui.deckGroups
+                emptyMessage: "Your deck is empty. Add cards from the sideboard below."
+                moveAction: "move to sideboard"
+                showBasicLands: true
+                onInspectRequested: function(cardId) {
+                    draftBridge.inspectCard(cardId)
+                }
+                onMoveRequested: function(cardId) {
+                    draftBridge.moveCardToSideboard(cardId)
+                }
+            }
+
+            DeckCollection {
+                objectName: "sideboardCollection"
+                visible: window.ui.complete
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 210
+                heading: "Sideboard"
+                cardCount: window.ui.sideboardCount
+                groups: window.ui.sideboardGroups
+                emptyMessage: "Every drafted card is currently in your deck."
+                moveAction: "add to deck"
+                onInspectRequested: function(cardId) {
+                    draftBridge.inspectCard(cardId)
+                }
+                onMoveRequested: function(cardId) {
+                    draftBridge.addCardToDeck(cardId)
                 }
             }
 

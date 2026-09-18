@@ -1,18 +1,20 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from tests.card_groups import GRAVEYARD_RECURSION_SPELLS
+from beta_magic.card_defs.black import RAISE_DEAD
+from beta_magic.card_defs.green import REGROWTH
+from beta_magic.card_defs.white import RESURRECTION
 from beta_magic import (
-    GRAVEYARD_RECURSION_SPELLS,
-    RAISE_DEAD,
-    REGROWTH,
-    RESURRECTION,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST
-from beta_magic.card_defs import LLANOWAR_ELVES
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.green import LLANOWAR_ELVES
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class GraveyardSpellTests(unittest.TestCase):
@@ -93,7 +95,7 @@ class GraveyardSpellTests(unittest.TestCase):
         self.assertFalse(self.game.can_activate_ability(self.alice.id, elves, 0))
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "did not begin the turn"):
-            self.game.declare_attackers([elves])
+            declare_attackers(self.game, [elves])
 
 
 if __name__ == "__main__":

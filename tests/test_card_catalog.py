@@ -1,15 +1,18 @@
 import unittest
 
-from beta_magic import ALL_CARDS, CARDS_BY_NAME, LIGHTNING_BOLT, card_named
-from beta_magic.card_defs import (
-    ARTIFACT_CARDS,
-    BLACK_CARDS,
-    BLUE_CARDS,
-    GREEN_CARDS,
-    LAND_CARDS,
-    RED_CARDS,
-    WHITE_CARDS,
+from beta_magic import (
+    ALL_CARDS,
+    CARDS_BY_NAME,
+    card_named,
 )
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.artifacts import ARTIFACT_CARDS
+from beta_magic.card_defs.black import BLACK_CARDS
+from beta_magic.card_defs.blue import BLUE_CARDS
+from beta_magic.card_defs.green import GREEN_CARDS
+from beta_magic.card_defs.lands import LAND_CARDS
+from beta_magic.card_defs.red import RED_CARDS
+from beta_magic.card_defs.white import WHITE_CARDS
 from beta_magic.types import CardType, Color
 
 

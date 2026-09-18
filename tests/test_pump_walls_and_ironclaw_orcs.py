@@ -1,17 +1,22 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.red import (
     IRONCLAW_ORCS,
     WALL_OF_FIRE,
-    WALL_OF_WATER,
+)
+from beta_magic.card_defs.blue import WALL_OF_WATER
+from beta_magic import (
     Card,
-    ContinuousEffect,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, MONSS_GOBLIN_RAIDERS
+from beta_magic.effects import ContinuousEffect
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import MONSS_GOBLIN_RAIDERS
 
 
 class PumpWallsAndIronclawOrcsTests(unittest.TestCase):
@@ -62,8 +67,8 @@ class PumpWallsAndIronclawOrcsTests(unittest.TestCase):
         orcs = self.permanent(self.bob, IRONCLAW_ORCS)
         small = self.permanent(self.alice, MONSS_GOBLIN_RAIDERS)
         self.game.begin_combat()
-        self.game.declare_attackers([small])
-        self.game.declare_blockers({orcs: small})
+        declare_attackers(self.game, [small])
+        declare_blockers(self.game, {orcs: small})
 
         game = GameState(
             [
@@ -77,9 +82,9 @@ class PumpWallsAndIronclawOrcsTests(unittest.TestCase):
         bear = self.permanent(game.players[0], GRIZZLY_BEARS)
         other_orcs = self.permanent(game.players[1], IRONCLAW_ORCS)
         game.begin_combat()
-        game.declare_attackers([bear])
+        declare_attackers(game, [bear])
         with self.assertRaisesRegex(ValueError, "power greater than 1"):
-            game.declare_blockers({other_orcs: bear})
+            declare_blockers(game, {other_orcs: bear})
 
     def test_ironclaw_restriction_uses_current_attacker_power(self):
         orcs = self.permanent(self.bob, IRONCLAW_ORCS)
@@ -89,9 +94,9 @@ class PumpWallsAndIronclawOrcsTests(unittest.TestCase):
         ]
 
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         with self.assertRaisesRegex(ValueError, "power greater than 1"):
-            self.game.declare_blockers({orcs: attacker})
+            declare_blockers(self.game, {orcs: attacker})
 
 
 if __name__ == "__main__":

@@ -1,7 +1,13 @@
 import unittest
 from uuid import UUID
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.green import NATURAL_SELECTION
 from beta_magic.card_defs.lands import FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
 from beta_magic.ui import GameViewModel

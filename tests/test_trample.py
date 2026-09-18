@@ -1,22 +1,24 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
 from beta_magic import (
     GameState,
     KeywordAbility,
     PlayerState,
-    TRAMPLE_CREATURES,
     TurnPhase,
-    UTHDEN_TROLL,
-    WAR_MAMMOTH,
     Zone,
 )
-from beta_magic.card_defs import (
+from tests.card_groups import TRAMPLE_CREATURES
+from beta_magic.card_defs.red import UTHDEN_TROLL
+from beta_magic.card_defs.green import WAR_MAMMOTH
+from beta_magic.card_defs.white import (
     CIRCLE_OF_PROTECTION_GREEN,
     GREEN_WARD,
-    GRIZZLY_BEARS,
-    MONSS_GOBLIN_RAIDERS,
     SAMITE_HEALER,
 )
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import MONSS_GOBLIN_RAIDERS
 from beta_magic.damage import DamageIncidentKind
 
 
@@ -43,8 +45,8 @@ class TrampleTests(unittest.TestCase):
 
     def reach_damage(self, attacker, blockers):
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker for blocker in blockers})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker for blocker in blockers})
         self.game.advance_combat()
 
     def test_war_mammoth_definition(self) -> None:

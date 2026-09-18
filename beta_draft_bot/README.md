@@ -15,8 +15,9 @@ from the [Scryfall Beta catalog](https://scryfall.com/sets/leb) on September 5, 
 
 This is a hand-tuned strategy engine. Its ratings and weights are original
 heuristic estimates, **not measured win rates or a guarantee of optimal drafting**.
-The bot does not build a deck or play a game. The desktop client coordinates
-pack passing between one human and local bot seats.
+The bot does not choose a deck or play a game. The desktop client coordinates
+pack passing between one human and local bot seats and provides a manual deck
+builder after the final pick.
 
 ## Run it
 
@@ -51,7 +52,16 @@ The client runs a three-round, eight-seat draft by default. Double-click a card
 in the current pack to take it; all seven bots then make their choices and the
 next pack is passed. Hovering over any offered or drafted card fills the preview
 pane with its printed text. Your pool remains visible at the bottom, sorted by
-color and mana value.
+color and mana value. After the final pick, the pack and pool views are replaced
+by deck and sideboard zones. Double-click a card to move it between them; cards
+remain grouped by color and ordered by mana value. The deck zone provides an
+unlimited supply of each basic land with manual +/- controls. **Auto-fill to
+40** estimates the mix from colored mana symbols in the selected cards and
+credits drafted dual lands as sources for both of their colors. The result is
+only a starting point and can be adjusted manually. Once the deck contains at
+least 40 cards, **Save deck...** writes a versioned JSON deck file containing
+the deck name and aggregated card quantities. Two such files can be passed to
+the gameplay UI with `python -m beta_magic.ui --deck-files DECK_ONE DECK_TWO`.
 
 Historical boosters include basic lands in their original sheet slots. To use
 the modernized generator instead, or reproduce a draft, run:

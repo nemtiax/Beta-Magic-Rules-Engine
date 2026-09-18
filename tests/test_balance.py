@@ -1,23 +1,23 @@
 import unittest
 
-from beta_magic import (
-    BALANCE,
+from beta_magic.card_defs.white import BALANCE
+from beta_magic.card_defs.lands import (
     FOREST,
-    LIVING_LANDS,
     MOUNTAIN,
     PLAINS,
+)
+from beta_magic.card_defs.green import LIVING_LANDS
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
-    DRUDGE_SKELETONS,
-    GRIZZLY_BEARS,
-    OBSIANUS_GOLEM,
-    WHITE_KNIGHT,
-)
+from beta_magic.card_defs.black import DRUDGE_SKELETONS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import OBSIANUS_GOLEM
+from beta_magic.card_defs.white import WHITE_KNIGHT
 from beta_magic.ui import GameViewModel
 
 

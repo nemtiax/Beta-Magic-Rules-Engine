@@ -1,7 +1,7 @@
 import unittest
 
+from beta_magic.card_defs.black import LORD_OF_THE_PIT
 from beta_magic import (
-    LORD_OF_THE_PIT,
     Card,
     GameState,
     KeywordAbility,
@@ -9,7 +9,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, WHITE_KNIGHT
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.white import WHITE_KNIGHT
 from beta_magic.ui import GameViewModel
 
 
@@ -107,7 +108,9 @@ class LordOfThePitTests(unittest.TestCase):
 
         state = view.state
         self.assertTrue(state["upkeepSacrificeRequired"])
-        self.assertTrue(view._card_data(bear)["upkeepSacrificeEligible"])
+        self.assertTrue(
+            view._presentation._card_data(bear)["upkeepSacrificeEligible"]
+        )
         view.selected_card_ids = {bear.id}
         view.chooseUpkeepSacrifice()
 

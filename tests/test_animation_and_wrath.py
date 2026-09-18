@@ -1,11 +1,17 @@
 import unittest
 
-from beta_magic import (
-    ANIMATE_ARTIFACT,
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.blue import ANIMATE_ARTIFACT
+from beta_magic.card_defs.white import (
     ANIMATE_WALL,
     CASTLE,
-    MOX_SAPPHIRE,
     WRATH_OF_GOD,
+)
+from beta_magic.card_defs.artifacts import MOX_SAPPHIRE
+from beta_magic import (
     Card,
     CardType,
     GameState,
@@ -13,13 +19,15 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
-    OBSIANUS_GOLEM,
-    SOL_RING,
-    WALL_OF_BONE,
     WALL_OF_WOOD,
 )
+from beta_magic.card_defs.artifacts import (
+    OBSIANUS_GOLEM,
+    SOL_RING,
+)
+from beta_magic.card_defs.black import WALL_OF_BONE
 
 
 class AnimationAndWrathTests(unittest.TestCase):
@@ -55,7 +63,7 @@ class AnimationAndWrathTests(unittest.TestCase):
         self.alice.mana_pool.white = 1
         self.alice.mana_pool.blue = 1
         self.alice.mana_pool.colorless = 3
-        self.game.cast_enchantment(aura, target)
+        cast_and_resolve(self.game, aura, (target,))
         return aura
 
     def resolve_stack(self):
@@ -68,7 +76,7 @@ class AnimationAndWrathTests(unittest.TestCase):
         aura = self.aura(ANIMATE_WALL, wall)
 
         self.game.begin_combat()
-        self.game.declare_attackers([wall])
+        declare_attackers(self.game, [wall])
 
         self.assertIn(wall, self.game.combat.attackers)
         self.assertEqual((self.game.creature_power(wall), self.game.creature_toughness(wall)), (0, 3))
@@ -77,7 +85,7 @@ class AnimationAndWrathTests(unittest.TestCase):
         self.game.attacks_this_turn = 0
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "Wall and cannot attack"):
-            self.game.declare_attackers([wall])
+            declare_attackers(self.game, [wall])
 
     def test_animate_artifact_grants_creature_type_and_mana_value_stats(self):
         ring = self.permanent(self.alice, SOL_RING)
@@ -102,14 +110,14 @@ class AnimationAndWrathTests(unittest.TestCase):
         first = self.hand(self.alice, ANIMATE_ARTIFACT)
         self.alice.mana_pool.blue = 1
         self.alice.mana_pool.colorless = 3
-        self.assertNotIn(golem, self.game.legal_enchantment_targets(first))
+        self.assertNotIn(golem, self.game.legal_targets_for(first))
         self.alice.hand.remove(first)
 
         self.aura(ANIMATE_ARTIFACT, ring)
         second = self.hand(self.alice, ANIMATE_ARTIFACT)
         self.alice.mana_pool.blue = 1
         self.alice.mana_pool.colorless = 3
-        self.assertNotIn(ring, self.game.legal_enchantment_targets(second))
+        self.assertNotIn(ring, self.game.legal_targets_for(second))
 
     def test_zero_cost_artifact_survives_if_castle_keeps_toughness_positive(self):
         self.permanent(self.alice, CASTLE)
@@ -131,7 +139,7 @@ class AnimationAndWrathTests(unittest.TestCase):
         ring.tapped = False
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "did not begin the turn"):
-            self.game.declare_attackers([ring])
+            declare_attackers(self.game, [ring])
 
     def test_wrath_destroys_all_creatures_without_regeneration(self):
         bear = self.permanent(self.alice, GRIZZLY_BEARS)

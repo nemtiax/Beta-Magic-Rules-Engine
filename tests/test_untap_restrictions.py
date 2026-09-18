@@ -1,15 +1,19 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
-    MEEKSTONE,
     MOUNTAIN,
-    SAVANNAH_LIONS,
-    SMOKE,
-    STASIS,
-    WAR_MAMMOTH,
+)
+from beta_magic.card_defs.artifacts import (
+    MEEKSTONE,
     WINTER_ORB,
+)
+from beta_magic.card_defs.white import SAVANNAH_LIONS
+from beta_magic.card_defs.red import SMOKE
+from beta_magic.card_defs.blue import STASIS
+from beta_magic.card_defs.green import WAR_MAMMOTH
+from beta_magic import (
     Card,
     CardType,
     GameState,

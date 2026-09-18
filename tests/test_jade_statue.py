@@ -1,9 +1,11 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.blue import ANIMATE_ARTIFACT
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.artifacts import JADE_STATUE
 from beta_magic import (
-    ANIMATE_ARTIFACT,
-    HOLY_STRENGTH,
-    JADE_STATUE,
     Card,
     CardType,
     GameState,
@@ -11,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 
@@ -74,8 +76,8 @@ class JadeStatueTests(unittest.TestCase):
             ),
             (3, 6),
         )
-        self.game.declare_attackers([])
-        self.game.declare_blockers({})
+        declare_attackers(self.game, [])
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertNotIn(CardType.CREATURE, self.game.card_types(statue))
@@ -85,7 +87,7 @@ class JadeStatueTests(unittest.TestCase):
         self.game.begin_combat()
         self.animate(statue)
 
-        data = GameViewModel(self.game)._card_data(statue)
+        data = GameViewModel(self.game)._presentation._card_data(statue)
 
         self.assertTrue(data["isCreature"])
         self.assertEqual((data["power"], data["toughness"]), (3, 6))
@@ -97,7 +99,7 @@ class JadeStatueTests(unittest.TestCase):
         self.game.begin_combat()
         self.animate(statue)
         with self.assertRaisesRegex(ValueError, "did not begin the turn"):
-            self.game.declare_attackers([statue])
+            declare_attackers(self.game, [statue])
 
         game = GameState(
             [
@@ -113,13 +115,13 @@ class JadeStatueTests(unittest.TestCase):
             game.players[1], JADE_STATUE, entered_turn=game.turn_number
         )
         game.begin_combat()
-        game.declare_attackers([attacker])
+        declare_attackers(game, [attacker])
         game.players[1].mana_pool.colorless = 2
         game.pass_priority(game.players[0].id)
         game.activate_ability(game.players[1].id, defending_statue, 0)
         game.pass_priority(game.players[0].id)
         game.pass_priority(game.players[1].id)
-        game.declare_blockers({defending_statue: attacker})
+        declare_blockers(game, {defending_statue: attacker})
         self.assertFalse(defending_statue.tapped)
 
     def test_animate_artifact_is_overridden_only_for_current_combat(self):
@@ -137,8 +139,8 @@ class JadeStatueTests(unittest.TestCase):
             (self.game.creature_power(statue), self.game.creature_toughness(statue)),
             (3, 6),
         )
-        self.game.declare_attackers([])
-        self.game.declare_blockers({})
+        declare_attackers(self.game, [])
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertEqual(

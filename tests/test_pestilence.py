@@ -1,9 +1,9 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic.card_defs.black import PESTILENCE
 from beta_magic import (
-    GRIZZLY_BEARS,
-    HILL_GIANT,
-    PESTILENCE,
     Card,
     GameState,
     PlayerState,

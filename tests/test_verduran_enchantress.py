@@ -1,11 +1,15 @@
 import unittest
 
-from beta_magic import (
-    COUNTERSPELL,
+from beta_magic.card_defs.blue import COUNTERSPELL
+from beta_magic.card_defs.white import (
     CRUSADE,
-    GIANT_GROWTH,
     HOLY_STRENGTH,
+)
+from beta_magic.card_defs.green import (
+    GIANT_GROWTH,
     VERDURAN_ENCHANTRESS,
+)
+from beta_magic import (
     Card,
     CardType,
     GameState,
@@ -13,7 +17,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST, GRIZZLY_BEARS
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class VerduranEnchantressTests(unittest.TestCase):

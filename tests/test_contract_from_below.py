@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.black import CONTRACT_FROM_BELOW
 from beta_magic.card_defs.lands import FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
 from beta_magic.decks import make_demo_game

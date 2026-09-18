@@ -1,12 +1,16 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BAYOU,
-    EVIL_PRESENCE,
     FOREST,
-    GAEAS_LIEGE,
     ISLAND,
     MOUNTAIN,
+)
+from beta_magic.card_defs.black import EVIL_PRESENCE
+from beta_magic.card_defs.green import GAEAS_LIEGE
+from beta_magic import (
     Card,
     Color,
     GameState,
@@ -74,7 +78,7 @@ class GaeasLiegeTests(unittest.TestCase):
             self.permanent(self.bob, FOREST)
 
         self.game.begin_combat()
-        self.game.declare_attackers([liege])
+        declare_attackers(self.game, [liege])
         self.assertEqual(
             (self.game.creature_power(liege), self.game.creature_toughness(liege)),
             (3, 3),
@@ -94,7 +98,7 @@ class GaeasLiegeTests(unittest.TestCase):
         liege.damage = 2
 
         self.game.begin_combat()
-        self.game.declare_attackers([liege])
+        declare_attackers(self.game, [liege])
         self.assertIn(liege, self.alice.battlefield)
 
         self.game._finish_combat_damage()

@@ -1,16 +1,24 @@
 import unittest
 
-from beta_magic import (
-    CONTROL_ENCHANTMENTS,
+from tests.support import cast_and_resolve
+
+from tests.card_groups import CONTROL_ENCHANTMENTS
+from beta_magic.card_defs.blue import (
     CONTROL_MAGIC,
     STEAL_ARTIFACT,
+)
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, OBSIANUS_GOLEM, SOL_RING
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import (
+    OBSIANUS_GOLEM,
+    SOL_RING,
+)
 
 
 class ControlEnchantmentTests(unittest.TestCase):
@@ -52,7 +60,7 @@ class ControlEnchantmentTests(unittest.TestCase):
         aura = self.put_in_hand(player, definition)
         player.mana_pool.blue = 2
         player.mana_pool.colorless = 2
-        self.game.cast_enchantment(aura, target)
+        cast_and_resolve(self.game, aura, (target,))
         return aura
 
     def cast_aura_through_batch(
@@ -83,13 +91,13 @@ class ControlEnchantmentTests(unittest.TestCase):
         artifact = self.put_in_play(self.bob, SOL_RING)
         artifact_creature = self.put_in_play(self.bob, OBSIANUS_GOLEM)
 
-        self.assertTrue(CONTROL_MAGIC.target_requirement.accepts(creature))
-        self.assertFalse(CONTROL_MAGIC.target_requirement.accepts(artifact))
-        self.assertTrue(STEAL_ARTIFACT.target_requirement.accepts(artifact))
+        self.assertTrue(CONTROL_MAGIC.target_requirement.accepts_card(creature))
+        self.assertFalse(CONTROL_MAGIC.target_requirement.accepts_card(artifact))
+        self.assertTrue(STEAL_ARTIFACT.target_requirement.accepts_card(artifact))
         self.assertTrue(
-            STEAL_ARTIFACT.target_requirement.accepts(artifact_creature)
+            STEAL_ARTIFACT.target_requirement.accepts_card(artifact_creature)
         )
-        self.assertFalse(STEAL_ARTIFACT.target_requirement.accepts(creature))
+        self.assertFalse(STEAL_ARTIFACT.target_requirement.accepts_card(creature))
 
     def test_control_magic_changes_controller_but_not_owner(self) -> None:
         creature = self.put_in_play(self.bob, GRIZZLY_BEARS)

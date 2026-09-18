@@ -1,6 +1,13 @@
 import unittest
 
-from beta_magic import Card, CardType, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    CardType,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.artifacts import SOL_RING
 from beta_magic.card_defs.black import SACRIFICE
 from beta_magic.card_defs.green import LIVING_LANDS

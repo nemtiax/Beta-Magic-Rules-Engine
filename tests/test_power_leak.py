@@ -1,17 +1,17 @@
 import unittest
 
+from beta_magic.card_defs.white import CRUSADE
+from beta_magic.card_defs.blue import POWER_LEAK
 from beta_magic import (
-    CRUSADE,
-    POWER_LEAK,
     Card,
     CardType,
     GameState,
-    PartialUpkeepDamageEffect,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.effects import PartialUpkeepDamageEffect
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 

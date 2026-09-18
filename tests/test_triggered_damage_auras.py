@@ -1,17 +1,20 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.blue import (
     CREATURE_BOND,
-    ICY_MANIPULATOR,
     PSYCHIC_VENOM,
+)
+from beta_magic.card_defs.artifacts import ICY_MANIPULATOR
+from beta_magic import (
     Card,
-    ContinuousEffect,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, ISLAND
+from beta_magic.effects import ContinuousEffect
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import ISLAND
 
 
 class TriggeredDamageAuraTests(unittest.TestCase):

@@ -1,22 +1,29 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.red import (
     BURROWING,
-    CREATURE_LORDS,
     GOBLIN_KING,
-    LORD_OF_ATLANTIS,
+)
+from tests.card_groups import CREATURE_LORDS
+from beta_magic.card_defs.blue import LORD_OF_ATLANTIS
+from beta_magic import (
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import TAIGA, TUNDRA
-from beta_magic.card_defs import (
-    GRIZZLY_BEARS,
-    MERFOLK_OF_THE_PEARL_TRIDENT,
-    MONSS_GOBLIN_RAIDERS,
+from beta_magic.card_defs.lands import (
+    TAIGA,
+    TUNDRA,
 )
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import MERFOLK_OF_THE_PEARL_TRIDENT
+from beta_magic.card_defs.red import MONSS_GOBLIN_RAIDERS
 
 
 class CreatureLordTests(unittest.TestCase):
@@ -105,10 +112,10 @@ class CreatureLordTests(unittest.TestCase):
         blocker = self.put_in_play(self.bob, GRIZZLY_BEARS)
         self.put_in_play(self.bob, TUNDRA)
         self.game.begin_combat()
-        self.game.declare_attackers([merfolk])
+        declare_attackers(self.game, [merfolk])
 
         with self.assertRaisesRegex(ValueError, "islandwalk"):
-            self.game.declare_blockers({blocker: merfolk})
+            declare_blockers(self.game, {blocker: merfolk})
 
     def test_burrowing_grants_mountainwalk_against_a_dual_land(self) -> None:
         attacker = self.put_in_play(self.alice, GRIZZLY_BEARS)
@@ -119,12 +126,12 @@ class CreatureLordTests(unittest.TestCase):
         aura.zone = Zone.HAND
         self.alice.hand.append(aura)
         self.alice.mana_pool.red = 1
-        self.game.cast_enchantment(aura, attacker)
+        cast_and_resolve(self.game, aura, (attacker,))
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
 
         with self.assertRaisesRegex(ValueError, "mountainwalk"):
-            self.game.declare_blockers({blocker: attacker})
+            declare_blockers(self.game, {blocker: attacker})
 
 
 if __name__ == "__main__":

@@ -1,7 +1,13 @@
 import unittest
 from uuid import uuid4
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.blue import VOLCANIC_ERUPTION
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.lands import BADLANDS, ISLAND, MOUNTAIN, VOLCANIC_ISLAND

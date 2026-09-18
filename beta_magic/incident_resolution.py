@@ -24,9 +24,10 @@ from .destruction import DestructionResolutionStep
 from .events import DamageEvent
 from .mana import ManaCost
 from .rule_events import RuleEventKind, RuleEventOpportunity
-from .types import CardType, Color, CombatStep, Zone
+from .types import CardType, Color, CombatStep, FaceDownReason, Zone
 
 if TYPE_CHECKING:
+    from .casting import SpellOnStack
     from .game import PlayerState
 
 
@@ -108,12 +109,30 @@ class DamageDestructionMixin:
 
     def cast_reverse_damage_in_prevention(
         self, card: Card, source_key: str | None
-    ) -> int:
-        """Use Reverse Damage on prior and currently pending damage."""
+    ) -> SpellOnStack:
+        """Announce Reverse Damage inside the prevention window."""
 
         caster = self._validate_damage_window_spell(card)
         if source_key is None:
             raise ValueError("Reverse Damage requires a damage source choice")
+        self._cast_spell(
+            card,
+            (),
+            caster,
+            damage_source_key=source_key,
+            incident_window_mode="reverse_damage",
+        )
+        return self.stack_spells[card.id]
+
+    def _resolve_reverse_damage_in_prevention(
+        self, spell: SpellOnStack
+    ) -> int:
+        """Apply an uninterrupted Reverse Damage in the active incident."""
+
+        caster = self.player(spell.caster_id)
+        source_key = spell.damage_source_key
+        if source_key is None:
+            return 0
         prior = sum(
             amount
             for _, amount in self._consume_player_damage(
@@ -132,21 +151,34 @@ class DamageDestructionMixin:
                 amount = packet.remaining
                 packet.prevented += amount
                 pending += amount
-        self.pay_mana(caster, self.spell_mana_cost(card))
-        self._move_card(card, Zone.GRAVEYARD)
         if not self._lich_count(caster.id):
             caster.life += prior
         self._gain_life(caster, prior + pending)
-        self.priority_player_index = (
-            self.players.index(caster) + 1
-        ) % len(self.players)
-        self.consecutive_passes = 0
         return prior + pending
 
-    def cast_simulacrum_in_prevention(self, card: Card, target: Card) -> int:
-        """Move prior and currently pending player damage onto a creature."""
+    def cast_simulacrum_in_prevention(
+        self, card: Card, target: Card
+    ) -> SpellOnStack:
+        """Announce Simulacrum inside the prevention window."""
 
         caster = self._validate_damage_window_spell(card)
+        self._cast_spell(
+            card,
+            (target,),
+            caster,
+            incident_window_mode="simulacrum",
+        )
+        return self.stack_spells[card.id]
+
+    def _resolve_simulacrum_in_prevention(self, spell: SpellOnStack) -> int:
+        """Apply an uninterrupted Simulacrum in the active incident."""
+
+        caster = self.player(spell.caster_id)
+        target = next(
+            (item for item in spell.targets if isinstance(item, Card)), None
+        )
+        if target is None:
+            return 0
         incident = self.pending_damage
         assert incident is not None
         consumed = self._consume_player_damage(caster.id)
@@ -198,12 +230,6 @@ class DamageDestructionMixin:
                     life_gain_cap=packet.life_gain_cap,
                 )
             )
-        self.pay_mana(caster, self.spell_mana_cost(card))
-        self._move_card(card, Zone.GRAVEYARD)
-        self.priority_player_index = (
-            self.players.index(caster) + 1
-        ) % len(self.players)
-        self.consecutive_passes = 0
         return transferred
 
     def _validate_redirection_activation(
@@ -407,8 +433,8 @@ class DamageDestructionMixin:
             raise RuntimeError(f"not enough mana to activate {card.name}")
         return player, ability
 
-    def begin_prevention_spell(self, card: Card) -> PendingPrevention:
-        """Declare a prevention-mode instant during the FAQ prevention step."""
+    def begin_prevention_spell(self, card: Card) -> SpellOnStack:
+        """Announce a prevention-mode instant during the FAQ prevention step."""
 
         self._require_no_pending_action(allow_stack=True, allow_damage=True)
         if self._interrupt_sequence_pending():
@@ -435,15 +461,18 @@ class DamageDestructionMixin:
             raise ValueError(f"{card.name} has no damage-prevention mode")
         if not self.can_pay_mana(caster, self.spell_mana_cost(card)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
-        self.pending_prevention = PendingPrevention(
-            card, caster.id, card.definition.prevention_amount
+        self._cast_spell(
+            card,
+            (),
+            caster,
+            incident_window_mode="damage_prevention",
         )
-        return self.pending_prevention
+        return self.stack_spells[card.id]
 
     def begin_guardian_angel(
         self, card: Card, x_value: int
-    ) -> PendingPrevention:
-        """Cast Guardian Angel for X in the current prevention window."""
+    ) -> SpellOnStack:
+        """Announce Guardian Angel for X in the current prevention window."""
 
         self._require_no_pending_action(allow_stack=True, allow_damage=True)
         incident = self.pending_damage
@@ -468,14 +497,69 @@ class DamageDestructionMixin:
             )
         if not self.can_pay_mana(caster, self.spell_mana_cost(card, x_value)):
             raise RuntimeError(f"not enough mana to cast {card.name} with X={x_value}")
-        self.pending_prevention = PendingPrevention(
+        self._cast_spell(
             card,
-            caster.id,
+            (),
+            caster,
             x_value,
-            x_value=x_value,
-            establishes_guardian_angel=True,
+            incident_window_mode="guardian_angel",
         )
-        return self.pending_prevention
+        return self.stack_spells[card.id]
+
+    def _continue_incident_spell_resolutions(self) -> bool:
+        """Resolve special damage/destruction-window spells after interrupts."""
+
+        while True:
+            spell = next(
+                (
+                    self.stack_spells[card.id]
+                    for card in self.stack
+                    if self.stack_spells[card.id].incident_window_mode is not None
+                ),
+                None,
+            )
+            if spell is None:
+                return False
+
+            card = spell.card
+            mode = spell.incident_window_mode
+            legality, _ = self._snapshot_batch_spell_targets((spell,))
+            spell_is_legal = legality[card.id]
+            self.stack_spells.pop(card.id, None)
+            if card.zone is Zone.STACK:
+                self._move_card(card, Zone.GRAVEYARD)
+
+            if mode == "reverse_damage":
+                self._resolve_reverse_damage_in_prevention(spell)
+                continue
+            if mode == "simulacrum":
+                if spell_is_legal:
+                    self._resolve_simulacrum_in_prevention(spell)
+                continue
+            if mode == "regeneration":
+                if spell_is_legal:
+                    self._resolve_regeneration_spell_in_window(spell)
+                continue
+            if mode not in {"damage_prevention", "guardian_angel"}:
+                raise RuntimeError(f"unknown incident-window spell mode {mode!r}")
+
+            self.pending_prevention = PendingPrevention(
+                card,
+                spell.caster_id,
+                (
+                    spell.x_value
+                    if mode == "guardian_angel"
+                    else card.definition.prevention_amount
+                ),
+                paid=True,
+                x_value=spell.x_value,
+                establishes_guardian_angel=(mode == "guardian_angel"),
+            )
+            self.priority_player_index = self.players.index(
+                self.player(spell.caster_id)
+            )
+            self.consecutive_passes = 0
+            return True
 
     def prevent_damage(self, player_id: str, packet_id: UUID) -> int:
         """Assign as much pending prevention as possible to one damage packet."""
@@ -530,6 +614,8 @@ class DamageDestructionMixin:
             and packet.recipient_id != pending.recipient_id
         ):
             raise ValueError("this effect must prevent damage to a single target")
+        if pending.recipient_id is None:
+            pending.recipient_id = packet.recipient_id
         if not pending.paid:
             if pending.ability_index is None:
                 caster = self.player(pending.controller_id)
@@ -550,7 +636,6 @@ class DamageDestructionMixin:
                 if ability.tap_cost:
                     self._tap_permanent(pending.source)
             pending.paid = True
-            pending.recipient_id = packet.recipient_id
         if pending.leaves_one_life_loss:
             prevented = packet.remaining
             packet.prevented += prevented
@@ -648,6 +733,8 @@ class DamageDestructionMixin:
                 (pending.controller_id, pending.recipient_id)
             )
         self.pending_prevention = None
+        if self._continue_incident_spell_resolutions():
+            return
         self.priority_player_index = (
             self.players.index(player) + 1
         ) % len(self.players)
@@ -811,6 +898,65 @@ class DamageDestructionMixin:
         if ability.counter_cost is None and not self.can_pay_mana(player, ability.mana_cost):
             raise RuntimeError(f"not enough mana to regenerate {card.name}")
         return player, ability, affected_card
+
+    def _card_can_regenerate_in_current_window(self, card: Card) -> bool:
+        """Whether a regeneration spell could presently save ``card``."""
+
+        if (
+            card.zone is not Zone.BATTLEFIELD
+            or CardType.CREATURE not in self.card_types(card)
+            or self.land_is_consecrated(card)
+            or card.id in self.disintegrated_this_turn
+        ):
+            return False
+        if (
+            self.pending_damage is not None
+            and self.pending_damage.step is DamageResolutionStep.REGENERATION
+        ):
+            return bool(
+                self.creature_toughness(card) > 0
+                and card.damage >= self.creature_toughness(card)
+                and card.id not in self.pending_damage.regenerated_card_ids
+            )
+        if (
+            self.pending_destruction is not None
+            and self.pending_destruction.step
+            is DestructionResolutionStep.REGENERATION
+        ):
+            target = next(
+                (
+                    candidate
+                    for candidate in self.pending_destruction.targets
+                    if candidate.card_id == card.id
+                ),
+                None,
+            )
+            return bool(
+                target is not None
+                and target.regeneration_allowed
+                and card.id not in self.pending_destruction.regenerated_card_ids
+            )
+        return False
+
+    def _resolve_regeneration_spell_in_window(
+        self, spell: SpellOnStack
+    ) -> None:
+        """Regenerate the legal target of an uninterrupted spell."""
+
+        target = next(
+            (item for item in spell.targets if isinstance(item, Card)), None
+        )
+        if target is None or not self._card_can_regenerate_in_current_window(target):
+            return
+        self._tap_permanent(target)
+        target.damage = 0
+        if self.pending_damage is not None:
+            self.pending_damage.regenerated_card_ids.add(target.id)
+        else:
+            assert self.pending_destruction is not None
+            self.pending_destruction.regenerated_card_ids.add(target.id)
+        if self.combat is not None:
+            self.combat.regenerated_card_ids.add(target.id)
 
     def _pass_damage_priority(self, player_id: str) -> None:
         """Pass in the current prevention, redirection, or regeneration window."""
@@ -1349,6 +1495,12 @@ class DamageDestructionMixin:
                     None,
                 )
                 if (
+                    source is not None
+                    and source.face_down_reason
+                    is FaceDownReason.ILLUSIONARY_MASK
+                ):
+                    self.turn_creature_face_up(source)
+                if (
                     packet.combat
                     and source is not None
                     and source.definition.combat_player_damage_random_discard
@@ -1378,6 +1530,11 @@ class DamageDestructionMixin:
             )
             if recipient is None:
                 continue
+            if (
+                recipient.face_down_reason
+                is FaceDownReason.ILLUSIONARY_MASK
+            ):
+                self.turn_creature_face_up(recipient)
             recipient.damage += amount
             source = next(
                 (
@@ -1388,6 +1545,12 @@ class DamageDestructionMixin:
                 ),
                 None,
             )
+            if (
+                source is not None
+                and source.face_down_reason
+                is FaceDownReason.ILLUSIONARY_MASK
+            ):
+                self.turn_creature_face_up(source)
             if (
                 source is not None
                 and source.definition.grows_when_damaged_creature_dies

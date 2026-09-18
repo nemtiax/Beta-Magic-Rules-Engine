@@ -1,13 +1,13 @@
 import unittest
 
+from beta_magic.card_defs.green import STREAM_OF_LIFE
 from beta_magic import (
-    STREAM_OF_LIFE,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class StreamOfLifeTests(unittest.TestCase):

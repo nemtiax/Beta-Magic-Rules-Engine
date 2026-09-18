@@ -90,6 +90,7 @@ The following mutually exclusive command-line options load deterministic
 | `--aura-test-decks` | Cheap Auras and creatures for testing stacked attachments |
 | `--banding-test-decks` | Attacking bands, defensive Banding, and mixed evasion |
 | `--raging-river-test-decks` | Cheap creatures, River-bank placement, and flying blockers |
+| `--camouflage-test-decks` | Concealed attacker ordering and varied blocking restrictions |
 
 For example:
 
@@ -109,6 +110,17 @@ common-sheet slots from Beta's historical 121-card sheets, including their
 original basic-land distribution. Until the final unsupported cards are added,
 those cards are omitted from gameplay starters; ante cards are likewise omitted
 unless `--ante` is supplied. The rarity-slot counts remain unchanged.
+
+Decks saved by the draft UI can be loaded as a hotseat matchup by supplying two
+versioned JSON deck files:
+
+```console
+python -m beta_magic.ui --deck-files decks/worzel.json decks/thomil.json
+```
+
+The saved deck names become the player names. Files are validated before the
+game starts; each must contain at least 40 cards and every card must be supported
+by the rules engine. **New game** reloads and reshuffles the same two files.
 
 Deck definitions and game factories live in `beta_magic/decks.py`.
 
@@ -138,6 +150,8 @@ Implemented foundations include:
 - casting, targeting, 1993 fast-effect batches, interrupts, and responses;
 - activated abilities, summoning sickness, and temporary effects;
 - continuous effects and dynamically calculated characteristics;
+- historical face-down creature concealment, including hidden attachments,
+  speculative targeting, and Illusionary Mask reveal conditions;
 - combat with blocking restrictions, Flying, First Strike, Trample,
   landwalk, Walls, and regeneration;
 - structured damage incidents with prevention, redirection, regeneration,
@@ -183,8 +197,10 @@ Card definitions are organized by stable printed characteristics:
 `white.py`, `blue.py`, `black.py`, `red.py`, `green.py`, `artifacts.py`, and
 `lands.py`. `beta_magic.card_defs.catalog` owns the canonical `ALL_CARDS`
 collection, `CARDS_BY_NAME` mapping, and checked `card_named()` lookup.
-Mechanic-focused collections in `card_defs/groups.py` are views of that
-catalog, not duplicate definitions.
+The `beta_magic.card_defs` package exports only those catalog entry points;
+code that needs a particular printed definition imports it from its color or
+card-type module. Mechanic-focused collections used as test expectations live
+in `tests/card_groups.py` rather than in the production card API.
 
 ## Running tests
 

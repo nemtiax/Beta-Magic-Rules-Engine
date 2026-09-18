@@ -1,22 +1,37 @@
 import unittest
 
-from beta_magic import (
-    ARMAGEDDON,
+from beta_magic.card_defs.white import ARMAGEDDON
+from beta_magic.card_defs.red import (
     FLASHFIRES,
-    ICE_STORM,
-    LAND_DESTRUCTION_SPELLS,
-    SINKHOLE,
     STONE_RAIN,
+)
+from beta_magic.card_defs.green import (
+    ICE_STORM,
     TSUNAMI,
+)
+from tests.card_groups import LAND_DESTRUCTION_SPELLS
+from beta_magic.card_defs.black import SINKHOLE
+from beta_magic import (
     CardType,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST, ISLAND, MOUNTAIN, PLAINS, SWAMP
-from beta_magic.card_defs import BADLANDS, SAVANNAH, TROPICAL_ISLAND, TUNDRA
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import (
+    FOREST,
+    ISLAND,
+    MOUNTAIN,
+    PLAINS,
+    SWAMP,
+)
+from beta_magic.card_defs.lands import (
+    BADLANDS,
+    SAVANNAH,
+    TROPICAL_ISLAND,
+    TUNDRA,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class LandDestructionTests(unittest.TestCase):

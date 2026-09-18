@@ -1,22 +1,30 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.blue import (
     ANIMATE_ARTIFACT,
-    BLUE_WARD,
-    BOG_WRAITH,
-    CHANNEL,
-    CLOCKWORK_BEAST,
     CLONE,
-    FOREST,
-    GRIZZLY_BEARS,
-    HILL_GIANT,
-    KeywordAbility,
-    LIVING_LANDS,
+    UNSUMMON,
+)
+from beta_magic.card_defs.white import (
+    BLUE_WARD,
     PERSONAL_INCARNATION,
     RESURRECTION,
+)
+from beta_magic.card_defs.black import BOG_WRAITH
+from beta_magic.card_defs.green import (
+    CHANNEL,
+    GRIZZLY_BEARS,
+    LIVING_LANDS,
+)
+from beta_magic.card_defs.artifacts import (
+    CLOCKWORK_BEAST,
     SOL_RING,
     SOUL_NET,
-    UNSUMMON,
+)
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic import (
+    KeywordAbility,
     Card,
     CardType,
     Color,

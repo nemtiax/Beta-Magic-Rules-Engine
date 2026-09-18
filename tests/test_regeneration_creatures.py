@@ -1,23 +1,33 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.black import (
     DRUDGE_SKELETONS,
-    ELVISH_ARCHERS,
-    HOLY_STRENGTH,
-    MOUNTAIN,
     PLAGUE_RATS,
-    LIVING_WALL,
-    REGENERATION_CREATURES,
     ROYAL_ASSASSIN,
-    SWAMP,
-    SEDGE_TROLL,
-    UTHDEN_TROLL,
     WALL_OF_BONE,
-    WALL_OF_BRAMBLES,
     WILL_O_THE_WISP,
     WEAKNESS,
     ZOMBIE_MASTER,
+)
+from beta_magic.card_defs.green import (
+    ELVISH_ARCHERS,
+    WALL_OF_BRAMBLES,
     REGENERATION,
+)
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.lands import (
+    MOUNTAIN,
+    SWAMP,
+)
+from beta_magic.card_defs.artifacts import LIVING_WALL
+from tests.card_groups import REGENERATION_CREATURES
+from beta_magic.card_defs.red import (
+    SEDGE_TROLL,
+    UTHDEN_TROLL,
+)
+from beta_magic import (
     Card,
     DamageResolutionStep,
     DestructionResolutionStep,
@@ -26,7 +36,8 @@ from beta_magic import (
     PlayerState,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, SCATHE_ZOMBIES
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.black import SCATHE_ZOMBIES
 
 
 class RegenerationCreatureTests(unittest.TestCase):
@@ -299,8 +310,8 @@ class RegenerationCreatureTests(unittest.TestCase):
         troll = self.put_in_play(self.bob, UTHDEN_TROLL)
         mountain = self.put_in_play(self.bob, MOUNTAIN)
         self.game.begin_combat()
-        self.game.declare_attackers([archer])
-        self.game.declare_blockers({troll: archer})
+        declare_attackers(self.game, [archer])
+        declare_blockers(self.game, {troll: archer})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.reach_regeneration_window()

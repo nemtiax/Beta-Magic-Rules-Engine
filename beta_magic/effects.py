@@ -260,6 +260,11 @@ class DemonicAttorneyEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class WordOfCommandEffect:
+    """Make the opponent immediately play a legal card chosen from their hand."""
+
+
+@dataclass(frozen=True, slots=True)
 class NaturalSelectionEffect:
     """Inspect and reorder a library's top three cards, or shuffle it."""
 
@@ -292,6 +297,11 @@ class BlazeOfGloryEffect:
 @dataclass(frozen=True, slots=True)
 class FalseOrdersEffect:
     """Let the caster replace one defender's blocking assignment."""
+
+
+@dataclass(frozen=True, slots=True)
+class CamouflageEffect:
+    """Conceal and rearrange the caster's current attacking creatures."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -733,12 +743,14 @@ SpellEffect = (
     | DiscardHandAnteAndDrawEffect
     | SwapLibraryTopWithAnteEffect
     | DemonicAttorneyEffect
+    | WordOfCommandEffect
     | NaturalSelectionEffect
     | LibrarySearchEffect
     | SacrificeCreatureForManaEffect
     | SirensCallEffect
     | BlazeOfGloryEffect
     | FalseOrdersEffect
+    | CamouflageEffect
     | BalanceEffect
     | ExtraTurnEffect
     | CounterTargetSpellEffect
@@ -826,10 +838,6 @@ class ContinuousEffect:
             raise ValueError("toughness rounding requires a scaled toughness bonus")
 
 
-# Compatibility name for extensions built against the earlier stat-only model.
-CreatureBuff = ContinuousEffect
-
-
 __all__ = [
     "EffectScope",
     "EffectRecipient",
@@ -860,12 +868,14 @@ __all__ = [
     "DiscardHandAnteAndDrawEffect",
     "SwapLibraryTopWithAnteEffect",
     "DemonicAttorneyEffect",
+    "WordOfCommandEffect",
     "NaturalSelectionEffect",
     "LibrarySearchEffect",
     "SacrificeCreatureForManaEffect",
     "SirensCallEffect",
     "BlazeOfGloryEffect",
     "FalseOrdersEffect",
+    "CamouflageEffect",
     "BalanceEffect",
     "ExtraTurnEffect",
     "LandEventDamageEffect",
@@ -901,5 +911,4 @@ __all__ = [
     "ChannelEffect",
     "SpellEffect",
     "ContinuousEffect",
-    "CreatureBuff",
 ]

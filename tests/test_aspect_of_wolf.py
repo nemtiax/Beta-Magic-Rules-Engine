@@ -1,18 +1,20 @@
 import unittest
 
-from beta_magic import (
-    ASPECT_OF_WOLF,
+from beta_magic.card_defs.green import ASPECT_OF_WOLF
+from beta_magic.card_defs.lands import (
     BAYOU,
     FOREST,
-    SAVANNAH_LIONS,
-    WEAKNESS,
+)
+from beta_magic.card_defs.white import SAVANNAH_LIONS
+from beta_magic.card_defs.black import WEAKNESS
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class AspectOfWolfTests(unittest.TestCase):

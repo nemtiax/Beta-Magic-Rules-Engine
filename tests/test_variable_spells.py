@@ -1,20 +1,22 @@
 import unittest
 
-from beta_magic import (
-    BRAINGEYSER,
+from beta_magic.card_defs.blue import BRAINGEYSER
+from beta_magic.card_defs.red import (
     DISINTEGRATE,
     EARTHQUAKE,
-    HOWL_FROM_BEYOND,
-    HURRICANE,
-    VARIABLE_SPELLS,
+)
+from beta_magic.card_defs.black import HOWL_FROM_BEYOND
+from beta_magic.card_defs.green import HURRICANE
+from tests.card_groups import VARIABLE_SPELLS
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import PHANTOM_MONSTER
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class VariableSpellTests(unittest.TestCase):

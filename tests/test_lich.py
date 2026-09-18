@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, DamageIncidentKind, GameState, PlayerState, Zone
+from beta_magic import (
+    Card,
+    DamageIncidentKind,
+    GameState,
+    PlayerState,
+    Zone,
+)
 from beta_magic.card_defs.black import LICH
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.artifacts import GIANT_WASP_TOKEN

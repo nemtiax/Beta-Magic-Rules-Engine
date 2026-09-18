@@ -1,10 +1,10 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.white import REVERSE_DAMAGE
+from beta_magic.card_defs.black import SIMULACRUM
 from beta_magic import (
-    GRIZZLY_BEARS,
-    LIGHTNING_BOLT,
-    REVERSE_DAMAGE,
-    SIMULACRUM,
     Card,
     DamageIncidentKind,
     GameState,
@@ -12,7 +12,9 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import BLACK_KNIGHT, HILL_GIANT, WHITE_KNIGHT
+from beta_magic.card_defs.black import BLACK_KNIGHT
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic.card_defs.white import WHITE_KNIGHT
 
 
 class RetroactiveDamageTests(unittest.TestCase):

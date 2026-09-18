@@ -1,27 +1,45 @@
 import unittest
 
-from beta_magic import Card, Color, GameState, KeywordAbility, PlayerState, TurnPhase, Zone
-from beta_magic.card_defs import (
+from beta_magic import (
+    Card,
+    Color,
+    GameState,
+    KeywordAbility,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
+from beta_magic.card_defs.artifacts import (
     BLACK_VISE,
-    BLUE_ELEMENTAL_BLAST,
-    BOG_WRAITH,
-    CONVERSION,
-    CRUSADE,
-    FOREST,
     GAUNTLET_OF_MIGHT,
-    GLOOM,
-    GRAY_OGRE,
-    GRIZZLY_BEARS,
-    HEALING_SALVE,
-    HILL_GIANT,
-    ISLAND,
-    MAGICAL_HACK,
-    MOUNTAIN,
     MOX_RUBY,
+)
+from beta_magic.card_defs.blue import (
+    BLUE_ELEMENTAL_BLAST,
+    MAGICAL_HACK,
     SLEIGHT_OF_MIND,
-    UNDERGROUND_SEA,
     VOLCANIC_ERUPTION,
 )
+from beta_magic.card_defs.black import (
+    BOG_WRAITH,
+    GLOOM,
+)
+from beta_magic.card_defs.white import (
+    CONVERSION,
+    CRUSADE,
+    HEALING_SALVE,
+)
+from beta_magic.card_defs.lands import (
+    FOREST,
+    ISLAND,
+    MOUNTAIN,
+    UNDERGROUND_SEA,
+)
+from beta_magic.card_defs.red import (
+    GRAY_OGRE,
+    HILL_GIANT,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 

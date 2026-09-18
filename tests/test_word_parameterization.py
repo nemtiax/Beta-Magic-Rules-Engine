@@ -10,23 +10,31 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.black import (
     BOG_WRAITH,
+    GLOOM,
+)
+from beta_magic.card_defs.blue import (
     BLUE_ELEMENTAL_BLAST,
+    COPY_ARTIFACT,
+)
+from beta_magic.card_defs.white import (
     CIRCLE_OF_PROTECTION_RED,
     CONVERSION,
-    COPY_ARTIFACT,
     CRUSADE,
-    FOREST,
-    GLOOM,
-    GRIZZLY_BEARS,
     HEALING_SALVE,
-    HILL_GIANT,
-    LLANOWAR_ELVES,
+)
+from beta_magic.card_defs.lands import (
+    FOREST,
     MOUNTAIN,
     PLAINS,
-    SOL_RING,
 )
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
+    LLANOWAR_ELVES,
+)
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic.card_defs.artifacts import SOL_RING
 
 
 class WordParameterizationTests(unittest.TestCase):

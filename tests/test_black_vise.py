@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import BLACK_VISE
+from beta_magic.card_defs.lands import FOREST
 from beta_magic import (
-    BLACK_VISE,
-    FOREST,
     Card,
     CardType,
     GameState,

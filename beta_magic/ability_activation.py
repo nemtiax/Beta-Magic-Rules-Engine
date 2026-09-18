@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .abilities import (
@@ -23,6 +24,7 @@ from .abilities import (
     ActivatedCounterSpellAbility,
     ActivatedLandTypeAbility,
     ActivatedManaAbility,
+    ActivatedMaskedCreatureAbility,
     ActivatedPreventDamageAbility,
     ActivatedRevealHandAbility,
     ActivatedPumpAbility,
@@ -36,7 +38,14 @@ from .abilities import (
 from .cards import Card
 from .casting import AbilityOnStack, PendingActivation
 from .incident_resolution import PendingPrevention, PendingRedirection
-from .types import CardType, CombatStep, GameStatus, TurnPhase, Zone
+from .types import (
+    CardType,
+    CombatStep,
+    FaceDownReason,
+    GameStatus,
+    TurnPhase,
+    Zone,
+)
 
 if TYPE_CHECKING:
     from .game import PlayerState
@@ -59,6 +68,11 @@ class AbilityActivationMixin:
         if isinstance(selected_ability, ActivatedGraveyardReturnAbility):
             raise RuntimeError(
                 "use this ability from the graveyard during its upkeep prompt"
+            )
+        if isinstance(selected_ability, ActivatedMaskedCreatureAbility):
+            self._validate_ability_activation(player_id, card, ability_index)
+            raise RuntimeError(
+                "choose a summoned creature with cast_with_illusionary_mask"
             )
         if isinstance(selected_ability, ActivatedPreventDamageAbility):
             if (
@@ -189,14 +203,12 @@ class AbilityActivationMixin:
                 self._tap_permanent(
                     card, preserve_land_tap_undo=reversible_land_tap
                 )
-            player.mana_pool.add(ability.color, ability.amount)
-            if CardType.LAND in card.definition.card_types:
-                for owner in self.players:
-                    for source in owner.battlefield:
-                        if not self.continuous_permanent_is_active(source):
-                            continue
-                        for effect in source.definition.land_mana_bonus_effects:
-                            player.mana_pool.add(ability.color, effect.amount)
+            for recipient_id, color, produced in (
+                self._land_activation_mana_contributions(player, card, ability)
+                if CardType.LAND in self.card_types(card)
+                else ((player.id, ability.color, ability.amount),)
+            ):
+                self.player(recipient_id).mana_pool.add(color, produced)
             # Producing mana is an interrupt-speed action. It resolves
             # immediately and does not surrender priority or close the
             # current spell's interrupt window, but any earlier passes no
@@ -441,6 +453,7 @@ class AbilityActivationMixin:
                 ActivatedLandTypeAbility,
                 ActivatedDrawAbility,
                 ActivatedCreateTokenAbility,
+                ActivatedMaskedCreatureAbility,
                 ActivatedRevealHandAbility,
                 ActivatedExtraTurnAbility,
                 ActivatedUntapAbility,
@@ -511,6 +524,16 @@ class AbilityActivationMixin:
             and player is not self.active_player
         ):
             raise RuntimeError(f"{card.name} can only be used during your turn")
+        if isinstance(ability, ActivatedMaskedCreatureAbility) and (
+            player is not self.active_player
+            or self.current_phase is not TurnPhase.MAIN
+            or self.combat is not None
+            or bool(self.stack or self.batch_abilities)
+        ):
+            raise RuntimeError(
+                f"{card.name} can only summon during your Main phase "
+                "outside combat with an empty response batch"
+            )
         # Establish card-specific timing legality before reporting which
         # player owns the current announcement opportunity, but check
         # priority before costs and mutable status such as tapped state.
@@ -537,6 +560,7 @@ class AbilityActivationMixin:
                     ActivatedLandTypeAbility,
                     ActivatedDrawAbility,
                     ActivatedCreateTokenAbility,
+                    ActivatedMaskedCreatureAbility,
                     ActivatedRevealHandAbility,
                     ActivatedExtraTurnAbility,
                     ActivatedUntapAbility,
@@ -586,6 +610,8 @@ class AbilityActivationMixin:
         ) or (
             isinstance(ability, ActivatedCreateTokenAbility) and ability.tap_cost
         ) or (
+            isinstance(ability, ActivatedMaskedCreatureAbility) and ability.tap_cost
+        ) or (
             isinstance(ability, ActivatedExtraTurnAbility) and ability.tap_cost
         ) or (
             isinstance(ability, ActivatedAttackRequirementAbility)
@@ -631,6 +657,164 @@ class AbilityActivationMixin:
                 f"{card.name} did not begin the turn under its controller's control"
             )
         return player, ability
+
+    @staticmethod
+    def _is_mask_summon(card: Card) -> bool:
+        """Whether Mask may use the card as a genuine Summon spell."""
+
+        return (
+            card.zone is Zone.HAND
+            and CardType.CREATURE in card.definition.card_types
+            and CardType.ARTIFACT not in card.definition.card_types
+        )
+
+    def _masked_creature_cost(
+        self, creature: Card, creature_x: int, mask_x: int
+    ):
+        if creature_x < 0 or mask_x < 0:
+            raise ValueError("X cannot be negative")
+        if not creature.definition.mana_cost.x_symbols and creature_x:
+            raise ValueError(f"{creature.name} has no X in its casting cost")
+        cost = self.spell_mana_cost(creature, creature_x)
+        return replace(cost, generic=cost.generic + mask_x)
+
+    def legal_illusionary_mask_creatures(
+        self, player_id: str, mask: Card, ability_index: int = 0
+    ) -> list[Card]:
+        """Summon spells the player can currently cast through Mask."""
+
+        player, ability = self._validate_ability_activation(
+            player_id, mask, ability_index
+        )
+        if not isinstance(ability, ActivatedMaskedCreatureAbility):
+            raise ValueError("that is not Illusionary Mask's summon ability")
+        return [
+            creature
+            for creature in player.hand
+            if self._is_mask_summon(creature)
+            and self.can_pay_mana(
+                player, self._masked_creature_cost(creature, 0, 0)
+            )
+            and (
+                creature.definition.target_requirement is None
+                or bool(
+                    self.legal_targets_for(creature)
+                    or self.legal_player_targets_for(creature)
+                )
+            )
+        ]
+
+    def maximum_affordable_mask_x(
+        self,
+        player_id: str,
+        mask: Card,
+        creature: Card,
+        *,
+        creature_x: int = 0,
+        ability_index: int = 0,
+    ) -> int:
+        """Largest additional bluff value payable for a selected summon."""
+
+        player, ability = self._validate_ability_activation(
+            player_id, mask, ability_index
+        )
+        if not isinstance(ability, ActivatedMaskedCreatureAbility):
+            raise ValueError("that is not Illusionary Mask's summon ability")
+        if creature not in player.hand or not self._is_mask_summon(creature):
+            raise ValueError("Illusionary Mask requires a summoned creature in hand")
+        amount = 0
+        while self.can_pay_mana(
+            player, self._masked_creature_cost(creature, creature_x, amount + 1)
+        ):
+            amount += 1
+        if not self.can_pay_mana(
+            player, self._masked_creature_cost(creature, creature_x, 0)
+        ):
+            raise RuntimeError(f"not enough mana to summon {creature.name}")
+        return amount
+
+    def maximum_affordable_mask_creature_x(
+        self,
+        player_id: str,
+        mask: Card,
+        creature: Card,
+        *,
+        mask_x: int = 0,
+        ability_index: int = 0,
+    ) -> int:
+        """Largest real X payable for an X-cost summon used with Mask."""
+
+        player, ability = self._validate_ability_activation(
+            player_id, mask, ability_index
+        )
+        if not isinstance(ability, ActivatedMaskedCreatureAbility):
+            raise ValueError("that is not Illusionary Mask's summon ability")
+        if creature not in player.hand or not self._is_mask_summon(creature):
+            raise ValueError("Illusionary Mask requires a summoned creature in hand")
+        if not creature.definition.mana_cost.x_symbols:
+            return 0
+        amount = 0
+        while self.can_pay_mana(
+            player, self._masked_creature_cost(creature, amount + 1, mask_x)
+        ):
+            amount += 1
+        if not self.can_pay_mana(
+            player, self._masked_creature_cost(creature, 0, mask_x)
+        ):
+            raise RuntimeError(f"not enough mana to summon {creature.name}")
+        return amount
+
+    def cast_with_illusionary_mask(
+        self,
+        player_id: str,
+        mask: Card,
+        creature: Card,
+        *,
+        mask_x: int = 0,
+        creature_x: int = 0,
+        ability_index: int = 0,
+        targets: tuple[Card, ...] = (),
+    ) -> None:
+        """Pay both costs and cast a legal Summon spell face down."""
+
+        player, ability = self._validate_ability_activation(
+            player_id, mask, ability_index
+        )
+        if not isinstance(ability, ActivatedMaskedCreatureAbility):
+            raise ValueError("that is not Illusionary Mask's summon ability")
+        if creature not in player.hand or not self._is_mask_summon(creature):
+            raise ValueError("Illusionary Mask can cast only a summoned creature")
+        requirement = creature.definition.target_requirement
+        if requirement is None:
+            if targets:
+                raise ValueError(f"{creature.name} does not require a target")
+        else:
+            required_count = (
+                creature_x if requirement.count_equals_x else requirement.count
+            )
+            if len(targets) != required_count:
+                raise ValueError(
+                    f"{creature.name} requires {required_count} target(s)"
+                )
+            legal_targets = self.legal_targets_for(creature)
+            if any(target not in legal_targets for target in targets):
+                raise ValueError(f"illegal target for {creature.name}")
+        total_cost = self._masked_creature_cost(creature, creature_x, mask_x)
+        if not self.can_pay_mana(player, total_cost):
+            raise RuntimeError(
+                f"not enough mana to summon {creature.name} with Mask X={mask_x}"
+            )
+        self._clear_land_tap_undo_window()
+        if ability.tap_cost:
+            self._tap_permanent(mask)
+        self._cast_spell(
+            creature,
+            targets,
+            player,
+            creature_x,
+            additional_generic_cost=mask_x,
+            face_down_reason=FaceDownReason.ILLUSIONARY_MASK,
+        )
 
     def maximum_affordable_ability_amount(
         self, player_id: str, card: Card, ability_index: int
@@ -688,6 +872,13 @@ class AbilityActivationMixin:
                 )
             else:
                 self._validate_ability_activation(player_id, card, ability_index)
+                if (
+                    isinstance(ability, ActivatedMaskedCreatureAbility)
+                    and not self.legal_illusionary_mask_creatures(
+                        player_id, card, ability_index
+                    )
+                ):
+                    return False
         except (KeyError, ValueError, RuntimeError):
             return False
         return True

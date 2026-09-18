@@ -1,10 +1,14 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     CONSERVATOR,
     FORCEFIELD,
+)
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
     WAR_MAMMOTH,
+)
+from beta_magic import (
     Card,
     CardType,
     GameState,

@@ -1,10 +1,14 @@
 import unittest
 
-from beta_magic import (
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
     MOUNTAIN,
-    VANILLA_CREATURES,
+)
+from tests.card_groups import VANILLA_CREATURES
+from beta_magic import (
     Card,
     CardType,
     Color,
@@ -15,7 +19,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, HURLOON_MINOTAUR
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HURLOON_MINOTAUR
 
 
 class ManaPaymentTests(unittest.TestCase):
@@ -63,7 +68,7 @@ class VanillaCreatureTests(unittest.TestCase):
         self.alice.mana_pool.green = 1
         self.alice.mana_pool.colorless = 1
 
-        self.game.cast_creature(creature)
+        cast_and_resolve(self.game, creature)
 
         self.assertEqual(self.alice.mana_pool.total, 0)
         self.assertNotIn(creature, self.alice.hand)
@@ -75,12 +80,12 @@ class VanillaCreatureTests(unittest.TestCase):
             card for card in self.alice.hand if card.definition is GRIZZLY_BEARS
         )
         with self.assertRaises(RuntimeError):
-            self.game.cast_creature(creature)
+            cast_and_resolve(self.game, creature)
 
         self.enter_main()
         self.alice.mana_pool.red = 2
         with self.assertRaises(RuntimeError):
-            self.game.cast_creature(creature)
+            cast_and_resolve(self.game, creature)
         self.assertIn(creature, self.alice.hand)
         self.assertEqual(self.alice.mana_pool.red, 2)
 
@@ -93,7 +98,7 @@ class VanillaCreatureTests(unittest.TestCase):
         self.alice.mana_pool.colorless = 1
         self.game.begin_combat()
         with self.assertRaisesRegex(RuntimeError, "during an attack"):
-            self.game.cast_creature(creature)
+            cast_and_resolve(self.game, creature)
 
 
 if __name__ == "__main__":

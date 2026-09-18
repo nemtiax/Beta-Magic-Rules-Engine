@@ -1,9 +1,4 @@
-"""Static card definitions and mutable physical card instances.
-
-Ability and effect descriptions are re-exported here for compatibility.
-New code may import them directly from :mod:`beta_magic.abilities` and
-:mod:`beta_magic.effects`.
-"""
+"""Static card definitions and mutable physical card instances."""
 
 from __future__ import annotations
 
@@ -11,107 +6,32 @@ from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from .abilities import (
-    ActivatedAbility,
-    ActivatedDamageAbility,
-    ActivatedGlobalDamageAbility,
-    ActivatedGraveyardReturnAbility,
-    ActivatedAnimationAbility,
-    ActivatedDestroyAbility,
-    ActivatedDestroyAllAbility,
-    ActivatedDrawAbility,
-    ActivatedCreateTokenAbility,
-    ActivatedRevealHandAbility,
-    ActivatedDiscardAbility,
-    ActivatedAttackRequirementAbility,
-    ActivatedLandTypeAbility,
-    ActivatedExtraTurnAbility,
-    ActivatedEventLifeGainAbility,
-    ActivatedEventDrawAbility,
-    ActivatedManaAbility,
-    ActivatedPreventDamageAbility,
-    ActivatedRedirectDamageAbility,
-    ActivatedPumpAbility,
-    ActivatedRegenerationAbility,
-    ActivatedTapAbility,
-    ActivatedTemporaryAbility,
-    ActivatedUntapAbility,
-    ActivatedInterruptUntapAbility,
-    ActivatedUnblockableAbility,
-    BatchActivatedAbility,
-    TargetedActivatedAbility,
-    TargetRequirement,
+    ActivatedAbility as _ActivatedAbility,
+    ActivatedPumpAbility as _ActivatedPumpAbility,
+    TargetRequirement as _TargetRequirement,
 )
 from .effects import (
-    ContinuousEffect,
-    CounterTargetSpellEffect,
-    ChangeTargetColorEffect,
-    ChangeTextWordEffect,
-    ChannelEffect,
-    CreatureBuff,
-    DamageEffect,
-    DrainLifeEffect,
-    ReverseDamageEffect,
-    RetroactiveDamageTransferEffect,
-    PreventCombatDamageEffect,
-    DestroyAllEffect,
-    DestroyTargetsEffect,
-    DrawCardsEffect,
-    DrawPhaseEffect,
-    OptionalDrawSkipEffect,
-    DiscardCardsEffect,
-    DiscardHandsAndDrawEffect,
-    ShuffleHandAndGraveyardEffect,
-    DiscardHandAnteAndDrawEffect,
-    SwapLibraryTopWithAnteEffect,
-    DemonicAttorneyEffect,
-    NaturalSelectionEffect,
-    LibrarySearchEffect,
-    SacrificeCreatureForManaEffect,
-    SirensCallEffect,
-    BlazeOfGloryEffect,
-    FalseOrdersEffect,
-    BalanceEffect,
-    ExtraTurnEffect,
-    LandEventDamageEffect,
-    AttachedEventDamageEffect,
-    EffectRecipient,
-    EffectScope,
-    ExileTargetsEffect,
-    GainLifeEffect,
-    GlobalDamageEffect,
-    LandhomeRequirement,
-    LandTypeEffect,
-    MoveTargetsEffect,
-    PermanentTappedEffect,
-    AttachedTapManaEffect,
-    LandManaBonusEffect,
-    LandTapManaEffect,
-    ManaPaymentEffect,
-    OptionalUpkeepPaymentEffect,
-    PartialUpkeepDamageEffect,
-    CounterPurchaseUpkeepEffect,
-    CounterRedemptionUpkeepEffect,
-    UpkeepCreatureSacrificeEffect,
-    SetTappedEffect,
-    AddManaEffect,
-    TapLandsAndEmptyManaPoolEffect,
-    CombatDestructionEffect,
-    RegenerateTargetsEffect,
-    SpellEffect,
-    TemporaryPumpEffect,
-    UpkeepCostEffect,
-    UpkeepDamageEffect,
-    UpkeepHandSizeDamageEffect,
-    UpkeepDamageRecipient,
-    UpkeepEffect,
-    UntapRestrictionEffect,
-    UpkeepFailure,
-    UpkeepBenefit,
-    VariableCreatureStats,
-    VariableStatKind,
+    AttachedEventDamageEffect as _AttachedEventDamageEffect,
+    AttachedTapManaEffect as _AttachedTapManaEffect,
+    CombatDestructionEffect as _CombatDestructionEffect,
+    ContinuousEffect as _ContinuousEffect,
+    DrawPhaseEffect as _DrawPhaseEffect,
+    EffectScope as _EffectScope,
+    LandEventDamageEffect as _LandEventDamageEffect,
+    LandManaBonusEffect as _LandManaBonusEffect,
+    LandTapManaEffect as _LandTapManaEffect,
+    LandTypeEffect as _LandTypeEffect,
+    LandhomeRequirement as _LandhomeRequirement,
+    ManaPaymentEffect as _ManaPaymentEffect,
+    OptionalDrawSkipEffect as _OptionalDrawSkipEffect,
+    PermanentTappedEffect as _PermanentTappedEffect,
+    SpellEffect as _SpellEffect,
+    UntapRestrictionEffect as _UntapRestrictionEffect,
+    UpkeepEffect as _UpkeepEffect,
+    VariableCreatureStats as _VariableCreatureStats,
 )
 from .mana import ManaCost
-from .types import CardType, Color, KeywordAbility, Zone
+from .types import CardType, Color, FaceDownReason, KeywordAbility, Zone
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,16 +46,16 @@ class CardDefinition:
     subtypes: tuple[str, ...] = ()
     power: int | None = None
     toughness: int | None = None
-    variable_stats: VariableCreatureStats | None = None
-    landhome: LandhomeRequirement | None = None
-    land_type_effects: tuple[LandTypeEffect, ...] = ()
+    variable_stats: _VariableCreatureStats | None = None
+    landhome: _LandhomeRequirement | None = None
+    land_type_effects: tuple[_LandTypeEffect, ...] = ()
     produces_mana: Color | None = None
-    activated_abilities: tuple[ActivatedAbility, ...] = ()
+    activated_abilities: tuple[_ActivatedAbility, ...] = ()
     supertypes: tuple[str, ...] = ()
     abilities: frozenset[KeywordAbility] = field(default_factory=frozenset)
-    continuous_effects: tuple[ContinuousEffect, ...] = ()
-    target_requirement: TargetRequirement | None = None
-    spell_effects: tuple[SpellEffect, ...] = ()
+    continuous_effects: tuple[_ContinuousEffect, ...] = ()
+    target_requirement: _TargetRequirement | None = None
+    spell_effects: tuple[_SpellEffect, ...] = ()
     requires_ante: bool = False
     copies_artifact: bool = False
     copies_creature: bool = False
@@ -145,18 +65,18 @@ class CardDefinition:
     additional_mana_per_target_beyond_first: int = 0
     is_lich: bool = False
     fastbond_damage: int = 0
-    upkeep_effects: tuple[UpkeepEffect, ...] = ()
-    draw_phase_effects: tuple[DrawPhaseEffect, ...] = ()
-    optional_draw_skip_effects: tuple[OptionalDrawSkipEffect, ...] = ()
-    untap_effects: tuple[UntapRestrictionEffect, ...] = ()
-    land_event_effects: tuple[LandEventDamageEffect, ...] = ()
-    attached_event_damage_effects: tuple[AttachedEventDamageEffect, ...] = ()
-    permanent_tapped_effects: tuple[PermanentTappedEffect, ...] = ()
-    attached_tap_mana_effects: tuple[AttachedTapManaEffect, ...] = ()
+    upkeep_effects: tuple[_UpkeepEffect, ...] = ()
+    draw_phase_effects: tuple[_DrawPhaseEffect, ...] = ()
+    optional_draw_skip_effects: tuple[_OptionalDrawSkipEffect, ...] = ()
+    untap_effects: tuple[_UntapRestrictionEffect, ...] = ()
+    land_event_effects: tuple[_LandEventDamageEffect, ...] = ()
+    attached_event_damage_effects: tuple[_AttachedEventDamageEffect, ...] = ()
+    permanent_tapped_effects: tuple[_PermanentTappedEffect, ...] = ()
+    attached_tap_mana_effects: tuple[_AttachedTapManaEffect, ...] = ()
     destroys_attached_land_when_tapped: bool = False
-    land_mana_bonus_effects: tuple[LandManaBonusEffect, ...] = ()
-    land_tap_mana_effects: tuple[LandTapManaEffect, ...] = ()
-    mana_payment_effects: tuple[ManaPaymentEffect, ...] = ()
+    land_mana_bonus_effects: tuple[_LandManaBonusEffect, ...] = ()
+    land_tap_mana_effects: tuple[_LandTapManaEffect, ...] = ()
+    mana_payment_effects: tuple[_ManaPaymentEffect, ...] = ()
     spell_cost_increase_color: Color | None = None
     spell_cost_increase: int = 0
     increases_circle_activation_cost: int = 0
@@ -170,7 +90,7 @@ class CardDefinition:
     maximum_attackers_blocked: int = 1
     must_attack_if_able: bool = False
     cannot_be_blocked_by_subtypes: frozenset[str] = field(default_factory=frozenset)
-    combat_destruction_effects: tuple[CombatDestructionEffect, ...] = ()
+    combat_destruction_effects: tuple[_CombatDestructionEffect, ...] = ()
     redirects_unblocked_combat_damage: bool = False
     combat_player_damage_random_discard: int = 0
     grows_after_surviving_damage: bool = False
@@ -241,7 +161,7 @@ class CardDefinition:
             raise ValueError("only permanents can have activated abilities")
         if (
             any(
-                isinstance(ability, ActivatedPumpAbility)
+                isinstance(ability, _ActivatedPumpAbility)
                 and ability.affects_attached_creature
                 for ability in self.activated_abilities
             )
@@ -254,7 +174,7 @@ class CardDefinition:
             raise ValueError("only permanents can change land types")
         if (
             any(
-                effect.scope is EffectScope.ATTACHED_CARD
+                effect.scope is _EffectScope.ATTACHED_CARD
                 for effect in self.continuous_effects
             )
             and self.target_requirement is None
@@ -362,32 +282,6 @@ class CardDefinition:
     def is_basic_land(self) -> bool:
         return CardType.LAND in self.card_types and "Basic" in self.supertypes
 
-    @property
-    def creature_buffs(self) -> tuple[ContinuousEffect, ...]:
-        """Compatibility view of global stat effects."""
-
-        return tuple(
-            effect
-            for effect in self.continuous_effects
-            if effect.scope is EffectScope.ALL_CREATURES
-            and not effect.granted_abilities
-        )
-
-    @property
-    def enchanted_creature_buff(self) -> ContinuousEffect | None:
-        """Compatibility view of the first attached stat effect."""
-
-        return next(
-            (
-                effect
-                for effect in self.continuous_effects
-                if effect.scope is EffectScope.ATTACHED_CARD
-                and not effect.granted_abilities
-            ),
-            None,
-        )
-
-
 @dataclass(slots=True, eq=False)
 class Card:
     """One physical copy of a card as it moves through a game."""
@@ -419,6 +313,11 @@ class Card:
     printed_definition: CardDefinition | None = None
     copied_card_id: UUID | None = None
     copied_card_entry_sequence: int | None = None
+    face_down_reason: FaceDownReason | None = None
+    face_down_known_to_player_ids: set[str] = field(default_factory=set)
+    hidden_copied_characteristics_from_player_ids: set[str] = field(
+        default_factory=set
+    )
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
@@ -442,6 +341,10 @@ class Card:
     @property
     def name(self) -> str:
         return self.definition.name
+
+    @property
+    def is_face_down(self) -> bool:
+        return self.face_down_reason is not None
 
     def change_color_word(self, old: Color, new: Color) -> None:
         """Replace every currently matching color word on this object."""
@@ -476,92 +379,4 @@ class Card:
         self.land_word_changes = dict(source.land_word_changes)
 
 
-__all__ = [
-    "Card",
-    "CardDefinition",
-    "ActivatedAbility",
-    "ActivatedDamageAbility",
-    "ActivatedGlobalDamageAbility",
-    "ActivatedGraveyardReturnAbility",
-    "ActivatedAnimationAbility",
-    "ActivatedDestroyAbility",
-    "ActivatedDestroyAllAbility",
-    "ActivatedDrawAbility",
-    "ActivatedCreateTokenAbility",
-    "ActivatedRevealHandAbility",
-    "ActivatedExtraTurnAbility",
-    "ActivatedEventLifeGainAbility",
-    "ActivatedEventDrawAbility",
-    "ActivatedManaAbility",
-    "ActivatedPreventDamageAbility",
-    "ActivatedRedirectDamageAbility",
-    "ActivatedPumpAbility",
-    "ActivatedRegenerationAbility",
-    "ActivatedTapAbility",
-    "ActivatedTemporaryAbility",
-    "ActivatedUntapAbility",
-    "ActivatedInterruptUntapAbility",
-    "ActivatedUnblockableAbility",
-    "BatchActivatedAbility",
-    "TargetedActivatedAbility",
-    "TargetRequirement",
-    "ContinuousEffect",
-    "CounterTargetSpellEffect",
-    "ChangeTargetColorEffect",
-    "ChangeTextWordEffect",
-    "ChannelEffect",
-    "CreatureBuff",
-    "DamageEffect",
-    "DrainLifeEffect",
-    "ReverseDamageEffect",
-    "RetroactiveDamageTransferEffect",
-    "PreventCombatDamageEffect",
-    "DestroyAllEffect",
-    "DestroyTargetsEffect",
-    "DrawCardsEffect",
-    "DrawPhaseEffect",
-    "OptionalDrawSkipEffect",
-    "DiscardCardsEffect",
-    "DiscardHandsAndDrawEffect",
-    "DiscardHandAnteAndDrawEffect",
-    "SwapLibraryTopWithAnteEffect",
-    "DemonicAttorneyEffect",
-    "NaturalSelectionEffect",
-    "LibrarySearchEffect",
-    "SacrificeCreatureForManaEffect",
-    "UntapRestrictionEffect",
-    "ExtraTurnEffect",
-    "BlazeOfGloryEffect",
-    "FalseOrdersEffect",
-    "LandEventDamageEffect",
-    "AttachedEventDamageEffect",
-    "EffectRecipient",
-    "EffectScope",
-    "GainLifeEffect",
-    "GlobalDamageEffect",
-    "LandhomeRequirement",
-    "LandTypeEffect",
-    "ManaPaymentEffect",
-    "MoveTargetsEffect",
-    "ExileTargetsEffect",
-    "OptionalUpkeepPaymentEffect",
-    "PartialUpkeepDamageEffect",
-    "CounterPurchaseUpkeepEffect",
-    "CounterRedemptionUpkeepEffect",
-    "SetTappedEffect",
-    "AddManaEffect",
-    "TapLandsAndEmptyManaPoolEffect",
-    "CombatDestructionEffect",
-    "RegenerateTargetsEffect",
-    "SpellEffect",
-    "TemporaryPumpEffect",
-    "UpkeepCostEffect",
-    "UpkeepDamageEffect",
-    "UpkeepHandSizeDamageEffect",
-    "UpkeepDamageRecipient",
-    "UpkeepEffect",
-    "UpkeepFailure",
-    "UpkeepBenefit",
-    "VariableCreatureStats",
-    "VariableStatKind",
-]
+__all__ = ["Card", "CardDefinition"]

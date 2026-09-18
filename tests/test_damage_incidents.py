@@ -1,22 +1,28 @@
 import unittest
 
-from beta_magic import (
-    COPPER_TABLET,
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.artifacts import COPPER_TABLET
+from beta_magic.card_defs.red import (
     ORCISH_ARTILLERY,
     LIGHTNING_BOLT,
-    PSIONIC_BLAST,
+)
+from beta_magic.card_defs.blue import PSIONIC_BLAST
+from beta_magic.card_defs.green import (
     WAR_MAMMOTH,
+    ELVISH_ARCHERS,
+)
+from beta_magic import (
     Card,
     Color,
     DamageIncidentKind,
     DamageRecipientKind,
     DamageResolutionStep,
-    ELVISH_ARCHERS,
     GameState,
     PlayerState,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class DamageIncidentTests(unittest.TestCase):
@@ -98,8 +104,8 @@ class DamageIncidentTests(unittest.TestCase):
         archer = self.put_in_play(self.alice, ELVISH_ARCHERS)
         bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([archer])
-        self.game.declare_blockers({bear: archer})
+        declare_attackers(self.game, [archer])
+        declare_blockers(self.game, {bear: archer})
         self.game.advance_combat()
 
         self.game.deal_combat_damage()
@@ -166,8 +172,8 @@ class DamageIncidentTests(unittest.TestCase):
         mammoth = self.put_in_play(self.alice, WAR_MAMMOTH)
         bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([mammoth])
-        self.game.declare_blockers({bear: mammoth})
+        declare_attackers(self.game, [mammoth])
+        declare_blockers(self.game, {bear: mammoth})
         self.game.advance_combat()
 
         self.game.deal_combat_damage()

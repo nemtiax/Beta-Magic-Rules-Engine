@@ -134,7 +134,7 @@
  - [x] Warp Artifact
  - [x] Weakness
  - [x] Will-o'-the-Wisp
- - [ ] Word of Command
+ - [x] Word of Command
  - [x] Zombie Master
  - [x] Burrowing
  - [x] Chaoslace
@@ -185,7 +185,7 @@
  - [x] Aspect of Wolf
  - [x] Berserk
  - [x] Birds of Paradise
- - [ ] Camouflage
+ - [x] Camouflage
  - [x] Channel
  - [x] Cockatrice
  - [x] Craw Wurm
@@ -247,7 +247,7 @@
  - [x] Helm of Chatzuk
  - [x] Howling Mine
  - [x] Icy Manipulator
- - [ ] Illusionary Mask
+ - [x] Illusionary Mask
  - [x] Iron Star
  - [x] Ivory Cup
  - [x] Jade Monolith

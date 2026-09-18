@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.white import GUARDIAN_ANGEL
 from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
@@ -37,11 +43,17 @@ class GuardianAngelTests(unittest.TestCase):
             player = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(player.id)
 
+    def finish_interrupts(self):
+        while self.game.interruptible_spell_id is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
     def cast_angel(self, recipient, x):
         angel = self.add(self.alice, GUARDIAN_ANGEL, Zone.HAND)
         self.alice.mana_pool.white = 1
         self.alice.mana_pool.colorless = x
         self.game.begin_guardian_angel(angel, x)
+        self.finish_interrupts()
         packet = next(
             packet for packet in self.game.pending_damage.packets
             if packet.recipient_id == recipient.id
@@ -95,6 +107,12 @@ class GuardianAngelTests(unittest.TestCase):
         view.activateCard(str(angel.id))
         self.assertEqual(view.state["xValue"], 2)
         view.confirmXCast()
+        self.assertFalse(view.state["choosingPrevention"])
+        self.assertEqual(view.state["priorityPassLabel"], "Pass interrupts")
+        view.switchPerspective()
+        view.passPriority()
+        view.switchPerspective()
+        view.passPriority()
         self.assertTrue(view.state["choosingPrevention"])
         view.chooseDamagePacket(view.state["damagePacketChoices"][0]["id"])
         self.finish_damage()

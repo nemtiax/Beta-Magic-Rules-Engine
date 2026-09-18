@@ -50,13 +50,14 @@ EXPECTED_NAMES = {
     "Warp Artifact",
     "Weakness",
     "Will-o'-the-Wisp",
+    "Word of Command",
     "Zombie Master",
 }
 
 
 class BlackDefinitionMigrationTests(unittest.TestCase):
     def test_all_supported_black_cards_are_migrated(self) -> None:
-        self.assertEqual(len(BLACK_CARDS), 45)
+        self.assertEqual(len(BLACK_CARDS), 46)
         self.assertEqual(
             {card.name for card in BLACK_CARDS}, EXPECTED_NAMES
         )

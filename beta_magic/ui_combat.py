@@ -78,7 +78,9 @@ class CombatUiController:
             self._damage_confirmed_player_ids.clear()
         if combat is not None and combat.step is CombatStep.DECLARE_BLOCKERS:
             defender = game.player(combat.defending_player_id)
-            for blocker in defender.battlefield:
+            for blocker in (
+                () if combat.camouflaged_attacker_ids else defender.battlefield
+            ):
                 if blocker.id in combat.blaze_of_glory_blocker_ids:
                     self._blocker_draft.setdefault(
                         blocker.id,
@@ -87,7 +89,9 @@ class CombatUiController:
                             for attacker in game.required_blaze_blocks(blocker)
                         ),
                     )
-            for blocker in defender.battlefield:
+            for blocker in (
+                () if combat.camouflaged_attacker_ids else defender.battlefield
+            ):
                 options = game.lure_block_options(blocker)
                 if not options:
                     continue
@@ -424,7 +428,8 @@ class CombatUiController:
             return (
                 "attacker",
                 f"Band B{band_index}",
-                f"B{band_index}: " + ", ".join(member.name for member in band),
+                f"B{band_index}: "
+                + ", ".join(game.public_card_name(member) for member in band),
             )
         draft_blockers = None
         if (
@@ -492,11 +497,13 @@ class CombatUiController:
             if blockers:
                 prefix = f"B{band_index} · " if band_index is not None else ""
                 return ("attacker", prefix + f"A{attacker_index} · blocked ×{len(blockers)}",
-                        f"A{attacker_index}: {attacker.name} — blocked by "
+                        f"A{attacker_index}: {game.public_card_name(attacker)} "
+                        "— blocked by "
                         + ", ".join(blocker.name for blocker in blockers))
             prefix = f"B{band_index} · " if band_index is not None else ""
             return ("attacker", prefix + f"A{attacker_index} · unblocked",
-                    f"A{attacker_index}: {attacker.name} — unblocked")
+                    f"A{attacker_index}: {game.public_card_name(attacker)} "
+                    "— unblocked")
         blocked = [(index, attacker) for index, attacker
                    in enumerate(combat.attackers, start=1)
                    if any(blocker.id == card.id for blocker in (
@@ -523,11 +530,16 @@ class CombatUiController:
                             marker_parts.append(f"B{band_index}")
                             detail_parts.append(
                                 f"B{band_index}: "
-                                + " + ".join(member.name for member in band)
+                                + " + ".join(
+                                    game.public_card_name(member)
+                                    for member in band
+                                )
                             )
                         continue
                 marker_parts.append(f"A{attacker_index}")
-                detail_parts.append(f"A{attacker_index}: {attacker.name}")
+                detail_parts.append(
+                    f"A{attacker_index}: {game.public_card_name(attacker)}"
+                )
             markers = " + ".join(marker_parts)
             detail = ", ".join(detail_parts)
             return "blocker", f"Blocks {markers}", f"{card.name} blocks {detail}"

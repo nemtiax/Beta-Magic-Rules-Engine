@@ -801,6 +801,90 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: maskPicker
+        anchors.centerIn: parent
+        implicitWidth: 420
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingMaskX
+        title: "Illusionary Mask — " + gameState.maskCreatureName
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: "Pay the creature's normal cost plus any bluff value for X."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Label {
+                    text: "Mask X"
+                    color: "#ffd978"
+                    font.bold: true
+                    Layout.preferredWidth: 120
+                }
+                Button {
+                    text: "−"
+                    enabled: gameState.maskX > 0
+                    onClicked: gameBridge.adjustMaskX(-1)
+                }
+                Label {
+                    text: gameState.maskX
+                    color: "#ffffff"
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: 50
+                }
+                Button {
+                    text: "+"
+                    enabled: gameState.maskX < gameState.maskXMaximum
+                    onClicked: gameBridge.adjustMaskX(1)
+                }
+            }
+            RowLayout {
+                visible: gameState.maskCreatureHasX
+                Label {
+                    text: gameState.maskCreatureName + " X"
+                    color: "#9fd6ff"
+                    font.bold: true
+                    Layout.preferredWidth: 120
+                    elide: Text.ElideRight
+                }
+                Button {
+                    text: "−"
+                    enabled: gameState.maskCreatureX > 0
+                    onClicked: gameBridge.adjustMaskCreatureX(-1)
+                }
+                Label {
+                    text: gameState.maskCreatureX
+                    color: "#ffffff"
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: 50
+                }
+                Button {
+                    text: "+"
+                    enabled: gameState.maskCreatureX
+                             < gameState.maskCreatureXMaximum
+                    onClicked: gameBridge.adjustMaskCreatureX(1)
+                }
+            }
+            RowLayout {
+                Button {
+                    text: "Cancel"
+                    onClicked: gameBridge.cancelMaskCast()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cast face down"
+                    onClicked: gameBridge.confirmMaskCast()
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: channelPicker
         anchors.centerIn: parent
         implicitWidth: 360
@@ -891,6 +975,204 @@ ApplicationWindow {
                 text: "Switch to " + gameState.demonicAttorneyOpponent
                 Layout.alignment: Qt.AlignRight
                 onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: wordCommandPicker
+        anchors.centerIn: parent
+        width: Math.min(900, window.width - 48)
+        height: Math.min(650, window.height - 48)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.wordCommandDialog
+        title: "Word of Command — " + gameState.wordCommandOpponent
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                visible: !gameState.canChooseWordCommand
+                text: "Waiting for " + gameState.wordCommandCommander
+                      + " to make the commanded play."
+                color: "#ffd978"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Button {
+                visible: !gameState.canChooseWordCommand
+                text: "Switch to " + gameState.wordCommandCommander
+                Layout.alignment: Qt.AlignRight
+                onClicked: gameBridge.switchPerspective()
+            }
+
+            Label {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_card"
+                text: "Choose a highlighted card that "
+                      + gameState.wordCommandOpponent
+                      + " can legally play. You will make all of its choices."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            ScrollView {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_card"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                Flow {
+                    width: wordCommandPicker.availableWidth - 24
+                    spacing: 10
+                    Repeater {
+                        model: gameState.wordCommandCards
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 122
+                            height: 82
+                            radius: 9
+                            color: "transparent"
+                            opacity: modelData.commandable ? 1.0 : 0.48
+                            border.width: modelData.commandable ? 3 : 1
+                            border.color: modelData.commandable
+                                          ? "#62d8c8" : "#59636e"
+                            CardItem {
+                                anchors.centerIn: parent
+                                cardData: modelData
+                                interactive: false
+                                selectionOnly: true
+                                onSelected: function(cardId) {
+                                    if (modelData.commandable)
+                                        gameBridge.chooseWordCommandCard(cardId)
+                                }
+                                onInspected: function(cardData) {
+                                    window.inspectedCard = cardData
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_card"
+                         && !gameState.wordCommandHasLegalPlay
+                Layout.fillWidth: true
+                Label {
+                    text: "There is no card in this hand that can legally be played."
+                    color: "#ffd978"
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                }
+                Button {
+                    text: "Finish"
+                    onClicked: gameBridge.finishWordCommandWithoutPlay()
+                }
+            }
+
+            RowLayout {
+                id: wordCommandPaymentRow
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_payment"
+                Layout.fillWidth: true
+                Loader {
+                    active: wordCommandPaymentRow.visible
+                    sourceComponent: Component {
+                        CardItem {
+                            cardData: gameState.wordCommandCard
+                            interactive: false
+                            onInspected: function(cardData) {
+                                window.inspectedCard = cardData
+                            }
+                        }
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Label {
+                        text: "Choose which of " + gameState.wordCommandOpponent
+                              + "'s lands to use for "
+                              + gameState.wordCommandCost + "."
+                        color: "#ffffff"
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Label {
+                        text: "Mana already in pool: "
+                              + gameState.wordCommandManaPool
+                        color: "#9fd6ff"
+                    }
+                    Label {
+                        text: "If an exact payment is available, Word of Command "
+                              + "does not permit an overproducing choice."
+                        color: "#bfc7d1"
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+            ScrollView {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_payment"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                Flow {
+                    width: wordCommandPicker.availableWidth - 24
+                    spacing: 8
+                    Repeater {
+                        model: gameState.wordCommandManaOptions
+                        delegate: Button {
+                            required property var modelData
+                            text: (modelData.selected ? "✓ " : "")
+                                  + modelData.label
+                            checkable: true
+                            checked: modelData.selected
+                            onClicked: gameBridge.toggleWordCommandMana(
+                                           modelData.landId,
+                                           modelData.abilityIndex)
+                        }
+                    }
+                }
+            }
+            ColumnLayout {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_payment"
+                         && gameState.wordCommandSpendingOptions.length > 1
+                Layout.fillWidth: true
+                Label {
+                    text: "Choose which colors to spend:"
+                    color: "#ffffff"
+                    font.bold: true
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Repeater {
+                        model: gameState.wordCommandSpendingOptions
+                        delegate: Button {
+                            required property var modelData
+                            text: (modelData.selected ? "✓ " : "")
+                                  + modelData.label
+                            checkable: true
+                            checked: modelData.selected
+                            onClicked: gameBridge.chooseWordCommandSpending(
+                                           modelData.key)
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                visible: gameState.canChooseWordCommand
+                         && gameState.wordCommandStage === "choose_payment"
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cast commanded spell"
+                    enabled: gameState.wordCommandPaymentValid
+                    onClicked: gameBridge.confirmWordCommandMana()
+                }
             }
         }
     }
@@ -1687,9 +1969,14 @@ ApplicationWindow {
                                 onClicked: gameBridge.confirmFalseOrders()
                             }
                             Button {
-                                visible: gameState.targeting
+                                visible: gameState.canCancelTarget
                                 text: "Cancel target"
                                 onClicked: gameBridge.cancelTarget()
+                            }
+                            Button {
+                                visible: gameState.canChooseMask
+                                text: "Cancel Mask"
+                                onClicked: gameBridge.cancelMaskCast()
                             }
                             Button {
                                 visible: gameState.upkeepPaymentRequired
@@ -1723,10 +2010,17 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: gameState.priorityRequired
-                                enabled: gameState.hasPriority
-                                         && !gameState.autoPassingTurn
-                                text: "Auto-pass turn"
-                                onClicked: gameBridge.autoPassTurn()
+                                         || gameState.autoPassingTurn
+                                enabled: gameState.autoPassingTurn
+                                         || gameState.hasPriority
+                                text: gameState.autoPassingTurn
+                                      ? "Stop auto-pass" : "Auto-pass turn"
+                                onClicked: {
+                                    if (gameState.autoPassingTurn)
+                                        gameBridge.cancelAutoPassTurn()
+                                    else
+                                        gameBridge.autoPassTurn()
+                                }
                             }
                             Label {
                                 visible: gameState.priorityRequired
@@ -2005,6 +2299,7 @@ ApplicationWindow {
                                      || gameState.canChooseRiverSides)
                     selectionOnly: gameState.canDeclareAttackers
                                    || gameState.canChooseRiverSides
+                                   || gameState.maskCreatureChoiceRequired
                                    || gameState.settingBlockers || gameState.canChooseLich
                                    || gameState.canChooseKudzu || gameState.canChooseClone
                                    || gameState.canChooseDoppelganger

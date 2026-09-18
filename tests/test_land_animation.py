@@ -1,20 +1,26 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BAYOU,
-    EVIL_PRESENCE,
     FOREST,
-    HOLY_STRENGTH,
-    KORMUS_BELL,
-    LIVING_LANDS,
     SWAMP,
+)
+from beta_magic.card_defs.black import (
+    EVIL_PRESENCE,
+    WEAKNESS,
+)
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.artifacts import KORMUS_BELL
+from beta_magic.card_defs.green import LIVING_LANDS
+from beta_magic import (
     Card,
     CardType,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
-    WEAKNESS,
 )
 
 
@@ -119,7 +125,7 @@ class LandAnimationTests(unittest.TestCase):
         forest.tapped = False
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "did not begin the turn"):
-            self.game.declare_attackers([forest])
+            declare_attackers(self.game, [forest])
 
     def test_land_already_in_play_can_attack_when_animation_begins(self) -> None:
         forest = self.permanent(self.alice, FOREST)
@@ -127,7 +133,7 @@ class LandAnimationTests(unittest.TestCase):
         self.permanent(self.alice, LIVING_LANDS)
 
         self.game.begin_combat()
-        self.game.declare_attackers([forest])
+        declare_attackers(self.game, [forest])
         self.assertIn(forest, self.game.combat.attackers)
 
     def test_untapping_bell_stabilizes_newly_animated_lands(self) -> None:

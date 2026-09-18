@@ -1,12 +1,14 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BAYOU,
-    EVIL_PRESENCE,
-    GRIZZLY_BEARS,
-    KARMA,
     PLAINS,
     SWAMP,
+)
+from beta_magic.card_defs.black import EVIL_PRESENCE
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.white import KARMA
+from beta_magic import (
     Card,
     CardType,
     GameState,

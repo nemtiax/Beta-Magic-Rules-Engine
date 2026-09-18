@@ -1,12 +1,18 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
+    MESA_PEGASUS,
+)
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
     LURE,
-    MESA_PEGASUS,
-    PHANTOM_MONSTER,
-    TWO_HEADED_GIANT_OF_FORIYS,
+)
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic.card_defs.red import TWO_HEADED_GIANT_OF_FORIYS
+from beta_magic import (
     Card,
     CombatStep,
     GameState,
@@ -54,11 +60,11 @@ class LureTests(unittest.TestCase):
         first = self.permanent(self.bob, GRIZZLY_BEARS)
         second = self.permanent(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([lured, other])
+        declare_attackers(self.game, [lured, other])
 
         with self.assertRaisesRegex(ValueError, "Lured attacker"):
-            self.game.declare_blockers({first: lured, second: other})
-        self.game.declare_blockers({first: lured, second: lured})
+            declare_blockers(self.game, {first: lured, second: other})
+        declare_blockers(self.game, {first: lured, second: lured})
 
         self.assertEqual(self.game.combat.blockers[lured.id], [first, second])
         self.assertEqual(self.game.combat.blockers[other.id], [])
@@ -70,9 +76,9 @@ class LureTests(unittest.TestCase):
         ground_blocker = self.permanent(self.bob, GRIZZLY_BEARS)
         flying_blocker = self.permanent(self.bob, MESA_PEGASUS)
         self.game.begin_combat()
-        self.game.declare_attackers([lured_flyer, ground])
+        declare_attackers(self.game, [lured_flyer, ground])
 
-        self.game.declare_blockers(
+        declare_blockers(self.game,
             {ground_blocker: ground, flying_blocker: lured_flyer}
         )
 
@@ -88,9 +94,9 @@ class LureTests(unittest.TestCase):
         first_blocker = self.permanent(self.bob, GRIZZLY_BEARS)
         second_blocker = self.permanent(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([first_lure, second_lure])
+        declare_attackers(self.game, [first_lure, second_lure])
 
-        self.game.declare_blockers(
+        declare_blockers(self.game,
             {first_blocker: first_lure, second_blocker: second_lure}
         )
 
@@ -103,9 +109,9 @@ class LureTests(unittest.TestCase):
         self.permanent(self.alice, LURE, attached=lured)
         giant = self.permanent(self.bob, TWO_HEADED_GIANT_OF_FORIYS)
         self.game.begin_combat()
-        self.game.declare_attackers([lured, other])
+        declare_attackers(self.game, [lured, other])
 
-        self.game.declare_blockers({giant: (lured, other)})
+        declare_blockers(self.game, {giant: (lured, other)})
 
         self.assertIn(giant, self.game.combat.blockers[lured.id])
         self.assertIn(giant, self.game.combat.blockers[other.id])
@@ -116,11 +122,11 @@ class LureTests(unittest.TestCase):
         self.permanent(self.alice, LURE, attached=lured_pegasus)
         ground_blocker = self.permanent(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, lured_pegasus], bands=[(hero, lured_pegasus)]
         )
 
-        self.game.declare_blockers({})
+        declare_blockers(self.game, {})
 
         self.assertEqual(self.game.combat.blockers[hero.id], [])
         self.assertEqual(self.game.combat.blockers[lured_pegasus.id], [])
@@ -132,7 +138,7 @@ class LureTests(unittest.TestCase):
         first = self.permanent(self.bob, GRIZZLY_BEARS)
         second = self.permanent(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([lured])
+        declare_attackers(self.game, [lured])
         self.game.combat.step = CombatStep.DECLARE_BLOCKERS
         controller = CombatUiController()
 

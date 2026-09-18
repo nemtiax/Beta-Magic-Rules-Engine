@@ -1,13 +1,17 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.green import (
     BERSERK,
-    DRUDGE_SKELETONS,
     GIANT_GROWTH,
     GRIZZLY_BEARS,
-    HOLY_STRENGTH,
+)
+from beta_magic.card_defs.black import (
+    DRUDGE_SKELETONS,
     PLAGUE_RATS,
-    SWAMP,
+)
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.lands import SWAMP
+from beta_magic import (
     Card,
     CardType,
     DestructionResolutionStep,

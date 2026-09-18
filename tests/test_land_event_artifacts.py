@@ -1,10 +1,12 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     ANKH_OF_MISHRA,
-    ARMAGEDDON,
     DINGUS_EGG,
-    STONE_RAIN,
+)
+from beta_magic.card_defs.white import ARMAGEDDON
+from beta_magic.card_defs.red import STONE_RAIN
+from beta_magic import (
     Card,
     DestructionIncident,
     DestructionResolutionStep,
@@ -14,7 +16,11 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, MOUNTAIN, PLAINS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import (
+    MOUNTAIN,
+    PLAINS,
+)
 
 
 class LandEventArtifactTests(unittest.TestCase):

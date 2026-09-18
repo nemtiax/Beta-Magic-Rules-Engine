@@ -1,12 +1,14 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
-    MANA_FLARE,
-    MOX_PEARL,
-    PSYCHIC_VENOM,
-    WILD_GROWTH,
+)
+from beta_magic.card_defs.red import MANA_FLARE
+from beta_magic.card_defs.artifacts import MOX_PEARL
+from beta_magic.card_defs.blue import PSYCHIC_VENOM
+from beta_magic.card_defs.green import WILD_GROWTH
+from beta_magic import (
     Card,
     GameState,
     PlayerState,

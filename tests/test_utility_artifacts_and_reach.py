@@ -1,16 +1,18 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.artifacts import (
     CONSERVATOR,
     CYCLOPEAN_TOMB,
     FORCEFIELD,
     GLASSES_OF_URZA,
-    GIANT_SPIDER,
     DISRUPTING_SCEPTER,
     ICY_MANIPULATOR,
     HOWLING_MINE,
     GAUNTLET_OF_MIGHT,
     HELM_OF_CHATZUK,
+    ILLUSIONARY_MASK,
     JAYEMDAE_TOME,
     JADE_MONOLITH,
     JADE_STATUE,
@@ -21,7 +23,12 @@ from beta_magic import (
     SUNGLASSES_OF_URZA,
     THE_HIVE,
     UTILITY_ARTIFACTS,
+)
+from beta_magic.card_defs.green import (
+    GIANT_SPIDER,
     WEB,
+)
+from beta_magic import (
     Card,
     GameState,
     KeywordAbility,
@@ -29,8 +36,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import PHANTOM_MONSTER
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class UtilityArtifactAndReachTests(unittest.TestCase):
@@ -82,13 +89,14 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
                 KORMUS_BELL,
                 GAUNTLET_OF_MIGHT,
                 HELM_OF_CHATZUK,
+                ILLUSIONARY_MASK,
                 SUNGLASSES_OF_URZA,
                 THE_HIVE,
             ),
         )
         self.assertEqual(
             [card.mana_cost.compact for card in UTILITY_ARTIFACTS],
-            ["4", "3", "1", "3", "4", "4", "4", "4", "4", "4", "2", "1", "4", "4", "4", "1", "3", "5"],
+            ["4", "3", "1", "3", "4", "4", "4", "4", "4", "4", "2", "1", "4", "4", "4", "1", "2", "3", "5"],
         )
         self.assertEqual(
             (GIANT_SPIDER.power, GIANT_SPIDER.toughness), (2, 4)
@@ -145,8 +153,8 @@ class UtilityArtifactAndReachTests(unittest.TestCase):
         self.assertEqual(self.game.creature_toughness(bear), 4)
 
         self.game.begin_combat()
-        self.game.declare_attackers((flyer,))
-        self.game.declare_blockers({spider: flyer})
+        declare_attackers(self.game, (flyer,))
+        declare_blockers(self.game, {spider: flyer})
 
 
 if __name__ == "__main__":

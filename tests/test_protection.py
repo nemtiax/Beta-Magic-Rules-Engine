@@ -1,26 +1,33 @@
 import unittest
 
-from beta_magic import (
-    BLACK_KNIGHT,
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.black import BLACK_KNIGHT
+from beta_magic.card_defs.white import (
     BLACK_WARD,
     BLUE_WARD,
     GREEN_WARD,
-    PROTECTION_CREATURES,
     RED_WARD,
     WHITE_KNIGHT,
     WHITE_WARD,
+)
+from tests.card_groups import PROTECTION_CREATURES
+from beta_magic import (
     CardType,
     Color,
-    ContinuousEffect,
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.cards import CardDefinition, EffectScope
-from beta_magic.card_defs import WEAKNESS
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.effects import ContinuousEffect
+from beta_magic.cards import CardDefinition
+from beta_magic.effects import EffectScope
+from beta_magic.card_defs.black import WEAKNESS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
@@ -86,7 +93,7 @@ class ProtectionTests(unittest.TestCase):
         bear = self.put_in_play(self.alice, GRIZZLY_BEARS)
         ward = self.put_in_hand(self.alice, BLACK_WARD)
         self.alice.mana_pool.white = 1
-        self.game.cast_enchantment(ward, bear)
+        cast_and_resolve(self.game, ward, (bear,))
 
         self.assertIn(ward, self.alice.battlefield)
         self.assertEqual(ward.enchanted_card_id, bear.id)
@@ -130,16 +137,16 @@ class ProtectionTests(unittest.TestCase):
         attacker = self.put_in_play(self.alice, WHITE_KNIGHT)
         blocker = self.put_in_play(self.bob, BLACK_KNIGHT)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
 
         with self.assertRaisesRegex(ValueError, "protection"):
-            self.game.declare_blockers({blocker: attacker})
+            declare_blockers(self.game, {blocker: attacker})
 
     def test_existing_aura_remains_when_protection_is_gained(self) -> None:
         bear = self.put_in_play(self.alice, GRIZZLY_BEARS)
         weakness = self.put_in_hand(self.alice, WEAKNESS)
         self.alice.mana_pool.black = 1
-        self.game.cast_enchantment(weakness, bear)
+        cast_and_resolve(self.game, weakness, (bear,))
 
         self.game.temporary_creature_effects.setdefault(bear.id, []).append(
             ContinuousEffect(

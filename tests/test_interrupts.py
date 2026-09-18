@@ -1,33 +1,46 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.green import (
     BIRDS_OF_PARADISE,
-    BLACK_LOTUS,
-    BLUE_ELEMENTAL_BLAST,
-    CONVERSION,
-    COUNTERSPELL,
-    DARK_RITUAL,
-    DISENCHANT,
     GIANT_GROWTH,
-    IRON_STAR,
     LLANOWAR_ELVES,
+)
+from beta_magic.card_defs.artifacts import (
+    BLACK_LOTUS,
+    IRON_STAR,
     LIVING_WALL,
-    LIGHTNING_BOLT,
-    MAGICAL_HACK,
     MOX_SAPPHIRE,
-    RED_ELEMENTAL_BLAST,
     SOL_RING,
+)
+from beta_magic.card_defs.blue import (
+    BLUE_ELEMENTAL_BLAST,
+    COUNTERSPELL,
+    MAGICAL_HACK,
     SPELL_BLAST,
+    WATER_ELEMENTAL,
+)
+from beta_magic.card_defs.white import (
+    CONVERSION,
+    DEATH_WARD,
+    DISENCHANT,
+    HEALING_SALVE,
+    REVERSE_DAMAGE,
+)
+from beta_magic.card_defs.black import DARK_RITUAL, SIMULACRUM
+from beta_magic.card_defs.red import (
+    LIGHTNING_BOLT,
+    RED_ELEMENTAL_BLAST,
+)
+from beta_magic import (
     Card,
     CardType,
     GameState,
     PlayerState,
     TurnPhase,
-    WATER_ELEMENTAL,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
-from beta_magic.damage import DamageResolutionStep
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
 
 
 class InterruptTests(unittest.TestCase):
@@ -320,6 +333,122 @@ class InterruptTests(unittest.TestCase):
         self.assertIs(
             self.game.pending_damage.step,
             DamageResolutionStep.PREVENTION,
+        )
+
+    def test_prevention_spell_opens_an_interrupt_window(self):
+        self.open_damage_window()
+        salve = self.put_in_hand(self.alice, HEALING_SALVE)
+        self.alice.mana_pool.white = 1
+
+        self.game.begin_prevention_spell(salve)
+
+        self.assertIs(salve.zone, Zone.STACK)
+        self.assertEqual(self.game.interruptible_spell_id, salve.id)
+        self.assertIsNone(self.game.pending_prevention)
+        self.assertIs(
+            self.game.players[self.game.priority_player_index], self.bob
+        )
+
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
+        self.assertIs(salve.zone, Zone.GRAVEYARD)
+        self.assertIsNotNone(self.game.pending_prevention)
+        self.assertIs(self.game.pending_prevention.source, salve)
+
+    def test_counterspell_can_counter_a_prevention_spell(self):
+        self.open_damage_window()
+        salve = self.put_in_hand(self.alice, HEALING_SALVE)
+        counter = self.put_in_hand(self.bob, COUNTERSPELL)
+        self.alice.mana_pool.white = 1
+        self.bob.mana_pool.blue = 2
+
+        self.game.begin_prevention_spell(salve)
+        self.game.begin_cast(counter)
+        self.assertEqual(self.game.legal_targets_for(), [salve])
+        self.game.complete_pending_cast((salve,))
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+
+        self.assertIs(salve.zone, Zone.GRAVEYARD)
+        self.assertIs(counter.zone, Zone.GRAVEYARD)
+        self.assertIsNone(self.game.pending_prevention)
+        self.assertIsNotNone(self.game.pending_damage)
+        self.assertIs(
+            self.game.pending_damage.step,
+            DamageResolutionStep.PREVENTION,
+        )
+
+    def test_reverse_damage_cast_during_prevention_is_interruptible(self):
+        source = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        self.game.pause_for_damage_windows = True
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(
+            self.alice, 2, source.name, source_card=source
+        )
+        self.game._resolve_damage_incident()
+        reverse = self.put_in_hand(self.alice, REVERSE_DAMAGE)
+        self.alice.mana_pool.white = 2
+        self.alice.mana_pool.colorless = 1
+        source_key = self.game.damage_source_choices(self.alice.id)[0][0]
+
+        self.game.begin_cast(reverse, damage_source_key=source_key)
+
+        self.assertIs(reverse.zone, Zone.STACK)
+        self.assertEqual(self.game.interruptible_spell_id, reverse.id)
+        self.assertIs(
+            self.game.players[self.game.priority_player_index], self.bob
+        )
+
+    def test_simulacrum_cast_during_prevention_is_interruptible(self):
+        source = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        target = self.put_in_play(self.alice, GRIZZLY_BEARS)
+        self.game.pause_for_damage_windows = True
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(
+            self.alice, 2, source.name, source_card=source
+        )
+        self.game._resolve_damage_incident()
+        simulacrum = self.put_in_hand(self.alice, SIMULACRUM)
+        self.alice.mana_pool.black = 1
+        self.alice.mana_pool.colorless = 1
+
+        self.game.begin_cast(simulacrum)
+        self.game.complete_pending_cast((target,))
+
+        self.assertIs(simulacrum.zone, Zone.STACK)
+        self.assertEqual(self.game.interruptible_spell_id, simulacrum.id)
+        self.assertIs(
+            self.game.players[self.game.priority_player_index], self.bob
+        )
+
+    def test_counterspell_can_counter_death_ward_in_regeneration_window(self):
+        target = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        self.game.pause_for_damage_windows = True
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(target, 2, "Test damage")
+        self.game._resolve_damage_incident()
+        for _ in range(4):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.game.pass_priority(self.alice.id)
+
+        ward = self.put_in_hand(self.bob, DEATH_WARD)
+        counter = self.put_in_hand(self.alice, COUNTERSPELL)
+        self.bob.mana_pool.white = 1
+        self.alice.mana_pool.blue = 2
+        self.game.begin_cast(ward)
+        self.game.complete_pending_cast((target,))
+        self.game.begin_cast(counter)
+        self.assertEqual(self.game.legal_targets_for(), [ward])
+        self.game.complete_pending_cast((ward,))
+        self.game.pass_priority(self.bob.id)
+        self.game.pass_priority(self.alice.id)
+
+        self.assertIs(ward.zone, Zone.GRAVEYARD)
+        self.assertIs(counter.zone, Zone.GRAVEYARD)
+        self.assertNotIn(
+            target.id, self.game.pending_damage.regenerated_card_ids
         )
 
     def test_battlefield_targeting_interrupt_resumes_damage_window(self):

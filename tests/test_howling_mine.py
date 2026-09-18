@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import HOWLING_MINE
+from beta_magic.card_defs.lands import ISLAND
 from beta_magic import (
-    HOWLING_MINE,
-    ISLAND,
     Card,
     GameState,
     PlayerState,

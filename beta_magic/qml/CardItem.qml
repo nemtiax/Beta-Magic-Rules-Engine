@@ -8,8 +8,21 @@ Rectangle {
     property bool selectionOnly: false
     property bool targetable: false
     property bool tabMode: false
-    readonly property bool hasArt: cardData.artCropUrl
-                                    && cardData.artCropUrl.toString().length > 0
+    // Delegates can briefly outlive their model row while a model is being
+    // replaced. Some optional panels also have no card until they become
+    // active. Avoid feeding `undefined` into strongly typed QML properties
+    // during those normal lifecycle transitions.
+    readonly property var safeData: cardData || ({})
+    function field(name, fallbackValue) {
+        var value = safeData[name]
+        return value === undefined || value === null ? fallbackValue : value
+    }
+    readonly property string artCropUrl: field("artCropUrl", "")
+    readonly property color backgroundColor: field("background", "#b8b4ad")
+    readonly property color foregroundColor: field("foreground", "#202020")
+    readonly property var abilities: field("activatedAbilities", [])
+    readonly property var counterData: field("counters", [])
+    readonly property bool hasArt: artCropUrl.length > 0
     signal selected(string cardId)
     signal activated(string cardId)
     signal abilityActivated(string cardId, int abilityIndex)
@@ -18,17 +31,20 @@ Rectangle {
     width: 108
     height: tabMode ? 30 : 68
     radius: 7
-    color: cardData.background
-    border.color: cardData.selected ? "#ffd54a"
-                  : cardData.balanceEligible || cardData.lichEligible
-                    || cardData.upkeepSacrificeEligible
-                    || cardData.riverChoiceEligible
+    color: card.backgroundColor
+    border.color: card.field("selected", false) ? "#ffd54a"
+                  : card.field("balanceEligible", false)
+                    || card.field("lichEligible", false)
+                    || card.field("upkeepSacrificeEligible", false)
+                    || card.field("riverChoiceEligible", false)
+                    || card.field("maskChoiceEligible", false)
                     ? "#7fc8ff"
-                  : cardData.combatRole === "attacker" ? "#e58a55"
-                  : cardData.combatRole === "blocker" ? "#75b7e8"
+                  : card.field("combatRole", "") === "attacker" ? "#e58a55"
+                  : card.field("combatRole", "") === "blocker" ? "#75b7e8"
                   : "#262626"
-    border.width: cardData.selected ? 4 : cardData.combatRole ? 3 : 2
-    rotation: cardData.tapped ? 7 : 0
+    border.width: card.field("selected", false) ? 4
+                  : card.field("combatRole", "") ? 3 : 2
+    rotation: card.field("tapped", false) ? 7 : 0
     scale: mouse.containsMouse && (interactive || targetable) ? 1.035 : 1.0
 
     Behavior on scale { NumberAnimation { duration: 90 } }
@@ -39,12 +55,12 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: card.tabMode ? 3 : 4
         radius: 4
-        color: cardData.background
+        color: card.backgroundColor
         clip: true
 
         Image {
             anchors.fill: parent
-            source: cardData.artCropUrl || ""
+            source: card.artCropUrl
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: true
@@ -59,7 +75,7 @@ Rectangle {
         anchors.margins: card.tabMode ? 3 : 5
         radius: 4
         color: "transparent"
-        border.color: cardData.foreground
+        border.color: card.foregroundColor
         border.width: 1
         opacity: 0.7
     }
@@ -70,8 +86,8 @@ Rectangle {
         anchors.left: parent.left
         anchors.leftMargin: card.tabMode ? 5 : 7
         width: parent.width - (card.tabMode ? 34 : 39)
-        text: cardData.name
-        color: card.hasArt ? "white" : cardData.foreground
+        text: card.field("name", "")
+        color: card.hasArt ? "white" : card.foregroundColor
         font.bold: true
         font.pixelSize: card.tabMode ? 10 : 12
         style: card.hasArt ? Text.Outline : Text.Normal
@@ -85,8 +101,8 @@ Rectangle {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: card.tabMode ? 5 : 7
-        text: cardData.manaCost
-        color: card.hasArt ? "white" : cardData.foreground
+        text: card.field("manaCost", "")
+        color: card.hasArt ? "white" : card.foregroundColor
         font.bold: true
         font.pixelSize: card.tabMode ? 10 : 12
         style: card.hasArt ? Text.Outline : Text.Normal
@@ -95,36 +111,62 @@ Rectangle {
 
     Text {
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: cardData.combatLabel ? 20 : 7
+        anchors.bottomMargin: card.field("combatLabel", "") ? 20 : 7
         anchors.right: parent.right
         anchors.rightMargin: 8
-        visible: !card.tabMode && cardData.isCreature
-        text: cardData.power + "/" + cardData.toughness
-              + (cardData.damage ? "  · " + cardData.damage + " damage" : "")
-        color: card.hasArt ? "white" : cardData.foreground
+        visible: !card.tabMode && card.field("isCreature", false)
+        text: card.field("power", "") + "/" + card.field("toughness", "")
+              + (card.field("damage", 0)
+                 ? "  · " + card.field("damage", 0) + " damage" : "")
+        color: card.hasArt ? "white" : card.foregroundColor
         font.pixelSize: 11
         font.bold: card.hasArt
         style: card.hasArt ? Text.Outline : Text.Normal
         styleColor: "#d9000000"
     }
 
+    Text {
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: card.field("combatLabel", "") ? 20 : 7
+        width: parent.width - 48
+        visible: !card.tabMode && card.counterData.length > 0
+        text: {
+            var labels = []
+            for (var i = 0; i < card.counterData.length; ++i) {
+                var counter = card.counterData[i]
+                labels.push(counter.amount + " " + counter.name)
+            }
+            return labels.join(", ")
+        }
+        color: card.hasArt ? "white" : card.foregroundColor
+        font.pixelSize: 9
+        font.bold: true
+        style: card.hasArt ? Text.Outline : Text.Normal
+        styleColor: "#d9000000"
+        elide: Text.ElideRight
+    }
+
     Rectangle {
         id: combatBadge
-        visible: !card.tabMode && !!cardData.combatLabel
+        visible: !card.tabMode && !!card.field("combatLabel", "")
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 4
         height: 15
         radius: 4
-        color: cardData.combatRole === "attacker" ? "#7a3f26" : "#285875"
-        border.color: cardData.combatRole === "attacker" ? "#f0a06d" : "#8ac9f3"
+        color: card.field("combatRole", "") === "attacker"
+               ? "#7a3f26" : "#285875"
+        border.color: card.field("combatRole", "") === "attacker"
+                      ? "#f0a06d" : "#8ac9f3"
 
         Text {
             anchors.fill: parent
             anchors.leftMargin: 4
             anchors.rightMargin: 4
-            text: cardData.combatLabel
+            text: card.field("combatLabel", "")
             color: "#ffffff"
             font.bold: true
             font.pixelSize: 9
@@ -136,20 +178,20 @@ Rectangle {
 
     Rectangle {
         id: riverBadge
-        visible: !card.tabMode && !!cardData.riverSide
-        x: cardData.riverSide === "L" ? 4 : parent.width - width - 4
+        visible: !card.tabMode && !!card.field("riverSide", "")
+        x: card.field("riverSide", "") === "L" ? 4 : parent.width - width - 4
         anchors.verticalCenter: parent.verticalCenter
         width: 18
         height: 22
         radius: 5
-        color: cardData.riverSide === "L" ? "#276d94" : "#9a4e31"
+        color: card.field("riverSide", "") === "L" ? "#276d94" : "#9a4e31"
         border.color: "#eaf5ff"
         border.width: 1
         z: 4
 
         Text {
             anchors.centerIn: parent
-            text: cardData.riverSide
+            text: card.field("riverSide", "")
             color: "#ffffff"
             font.bold: true
             font.pixelSize: 11
@@ -161,20 +203,22 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: card.selectionOnly
-                         ? ((cardData.attackerSelectionActive
-                             && !cardData.attackerEligible)
-                            || (cardData.riverChoiceActive
-                                && !cardData.riverChoiceEligible)
+                         ? ((card.field("attackerSelectionActive", false)
+                             && !card.field("attackerEligible", false))
+                            || (card.field("riverChoiceActive", false)
+                                && !card.field("riverChoiceEligible", false))
+                            || (card.field("maskChoiceActive", false)
+                                && !card.field("maskChoiceEligible", false))
                             ? Qt.NoButton : Qt.LeftButton)
                          : card.interactive || card.targetable
                            ? Qt.LeftButton | Qt.RightButton : Qt.NoButton
         onEntered: card.inspected(cardData)
         onClicked: function(mouse) {
             if (mouse.button === Qt.RightButton) {
-                if (!card.selectionOnly && cardData.activatedAbilities.length)
+                if (!card.selectionOnly && card.abilities.length)
                     abilityMenu.popup()
             } else {
-                card.selected(cardData.id)
+                card.selected(card.field("id", ""))
             }
         }
         onDoubleClicked: function(mouse) {
@@ -182,15 +226,15 @@ Rectangle {
                 return
             if (card.selectionOnly)
                 return
-            if (cardData.activatedAbilities.length === 1) {
-                if (cardData.activatedAbilities[0].enabled)
+            if (card.abilities.length === 1) {
+                if (card.abilities[0].enabled)
                     card.abilityActivated(
-                        cardData.id, cardData.activatedAbilities[0].index)
+                        card.field("id", ""), card.abilities[0].index)
             }
-            else if (cardData.activatedAbilities.length > 1)
+            else if (card.abilities.length > 1)
                 abilityMenu.popup()
-            else if (cardData.actionEnabled)
-                card.activated(cardData.id)
+            else if (card.field("actionEnabled", false))
+                card.activated(card.field("id", ""))
         }
     }
 
@@ -198,12 +242,13 @@ Rectangle {
         id: abilityMenu
         y: card.height
         Repeater {
-            model: cardData.activatedAbilities
+            model: card.abilities
             delegate: MenuItem {
                 required property var modelData
                 text: modelData.label
                 enabled: modelData.enabled
-                onTriggered: card.abilityActivated(cardData.id, modelData.index)
+                onTriggered: card.abilityActivated(
+                                 card.field("id", ""), modelData.index)
             }
         }
     }

@@ -1,10 +1,14 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
-    JADE_STATUE,
     MESA_PEGASUS,
-    RAGING_RIVER,
+)
+from beta_magic.card_defs.artifacts import JADE_STATUE
+from beta_magic.card_defs.red import RAGING_RIVER
+from beta_magic import (
     Card,
     CardType,
     CombatStep,
@@ -14,7 +18,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, PHANTOM_MONSTER
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
 from beta_magic.ui import GameViewModel
 
 
@@ -56,7 +61,7 @@ class RagingRiverTests(unittest.TestCase):
             self.game.combat.step, CombatStep.RIVER_DEFENDER_ASSIGNMENT
         )
         self.game.choose_raging_river_sides(self.bob.id, defender_sides)
-        self.game.declare_attackers(attackers)
+        declare_attackers(self.game, attackers)
         self.assertEqual(
             self.game.combat.step, CombatStep.RIVER_ATTACKER_ASSIGNMENT
         )
@@ -93,8 +98,8 @@ class RagingRiverTests(unittest.TestCase):
         self.close_response_window()
 
         with self.assertRaisesRegex(ValueError, "other side"):
-            self.game.declare_blockers({ground: attacker})
-        self.game.declare_blockers({flyer: attacker})
+            declare_blockers(self.game, {ground: attacker})
+        declare_blockers(self.game, {flyer: attacker})
         self.assertEqual(self.game.combat.blockers[attacker.id], [flyer])
 
     def test_a_ground_blocker_can_block_a_band_member_on_its_bank(self) -> None:
@@ -106,7 +111,7 @@ class RagingRiverTests(unittest.TestCase):
         self.game.choose_raging_river_sides(
             self.bob.id, {blocker: RiverSide.LEFT}
         )
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, pegasus], bands=[(hero, pegasus)]
         )
         self.game.choose_raging_river_sides(
@@ -115,7 +120,7 @@ class RagingRiverTests(unittest.TestCase):
         )
         self.close_response_window()
 
-        self.game.declare_blockers({blocker: pegasus})
+        declare_blockers(self.game, {blocker: pegasus})
 
         self.assertEqual(self.game.combat.blockers[hero.id], [blocker])
         self.assertEqual(self.game.combat.blockers[pegasus.id], [blocker])
@@ -134,7 +139,7 @@ class RagingRiverTests(unittest.TestCase):
         self.game.begin_combat()
         self.close_response_window()
         self.assertEqual(self.game.combat.step, CombatStep.DECLARE_ATTACKERS)
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         self.game.choose_raging_river_sides(
             self.alice.id, {attacker: RiverSide.LEFT}
         )

@@ -15,6 +15,7 @@ from ..effects import (
     CounterRedemptionUpkeepEffect,
     CombatDestructionEffect,
     ChannelEffect,
+    CamouflageEffect,
     AttachedTapManaEffect,
     ContinuousEffect,
     DestroyAllEffect,
@@ -55,6 +56,19 @@ CHANNEL = CardDefinition(
     ),
     colors=frozenset({Color.GREEN}),
     spell_effects=(ChannelEffect(),),
+)
+
+CAMOUFLAGE = CardDefinition(
+    name="Camouflage",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{G}"),
+    rules_text=(
+        "You may rearrange your attacking creatures and place them face down, "
+        "revealing which is which only after defense is chosen. Impossible "
+        "blocks are removed after the creatures are revealed."
+    ),
+    colors=frozenset({Color.GREEN}),
+    spell_effects=(CamouflageEffect(),),
 )
 
 FASTBOND = CardDefinition(
@@ -679,6 +693,7 @@ GREEN_CARDS = tuple(
             ASPECT_OF_WOLF,
             BERSERK,
             BIRDS_OF_PARADISE,
+            CAMOUFLAGE,
             CHANNEL,
             COCKATRICE,
             CRAW_WURM,

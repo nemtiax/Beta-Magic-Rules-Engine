@@ -1,14 +1,22 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
+    MESA_PEGASUS,
+)
+from beta_magic.card_defs.red import (
     FALSE_ORDERS,
+    TWO_HEADED_GIANT_OF_FORIYS,
+)
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
     LURE,
-    MESA_PEGASUS,
-    PHANTOM_MONSTER,
     THICKET_BASILISK,
-    TWO_HEADED_GIANT_OF_FORIYS,
+)
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic import (
     Card,
     CombatStep,
     GameState,
@@ -45,8 +53,8 @@ class FalseOrdersTests(unittest.TestCase):
 
     def begin_blocked_combat(self, attackers, assignments) -> None:
         self.game.begin_combat()
-        self.game.declare_attackers(attackers)
-        self.game.declare_blockers(assignments)
+        declare_attackers(self.game, attackers)
+        declare_blockers(self.game, assignments)
         self.assertEqual(self.game.combat.step, CombatStep.BLOCKER_RESPONSE)
 
     def cast_false_orders(self, blocker, caster=None):
@@ -140,10 +148,10 @@ class FalseOrdersTests(unittest.TestCase):
         other = self.card(self.alice, GRIZZLY_BEARS)
         giant = self.card(self.bob, TWO_HEADED_GIANT_OF_FORIYS)
         self.game.begin_combat()
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, pegasus, other], bands=[(hero, pegasus)]
         )
-        self.game.declare_blockers({giant: other})
+        declare_blockers(self.game, {giant: other})
         self.cast_false_orders(giant)
 
         self.game.choose_false_orders_assignment(self.alice.id, (hero, other))

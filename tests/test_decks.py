@@ -1,6 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from beta_magic import ALL_CARDS
+from beta_magic.card_defs.catalog import card_named
+from beta_magic.deck_files import LoadedDeck
 from beta_magic.decks import (
     AEGIS_WARDS_DECK,
     ARCANE_DEPTHS_DECK,
@@ -14,6 +17,9 @@ from beta_magic.decks import (
     VERDANT_TIDES_DECK,
     IVORY_LAYERS_DECK,
     SHADOW_COATS_DECK,
+    CAMOUFLAGE_RAIDERS_DECK,
+    CAMOUFLAGE_GUARDIANS_DECK,
+    make_saved_deck_game,
 )
 
 
@@ -33,16 +39,30 @@ class SeededDeckModuleTests(unittest.TestCase):
             SPECTRUM_ASSAULT_DECK,
             IVORY_LAYERS_DECK,
             SHADOW_COATS_DECK,
+            CAMOUFLAGE_RAIDERS_DECK,
+            CAMOUFLAGE_GUARDIANS_DECK,
         ):
             self.assertEqual(len(deck), 20)
             self.assertTrue(all(id(card) in canonical_ids for card in deck))
 
-    def test_ui_keeps_factory_imports_compatible(self) -> None:
-        from beta_magic import ui
-        from beta_magic.decks import make_demo_game
+    def test_saved_deck_game_uses_file_names_and_all_card_copies(self) -> None:
+        first = LoadedDeck("Ruby Lightning", (card_named("Mountain"),) * 40)
+        second = LoadedDeck("Verdant Might", (card_named("Forest"),) * 40)
 
-        self.assertIs(ui.make_demo_game, make_demo_game)
+        with patch(
+            "beta_magic.decks.load_deck_file",
+            side_effect=(first, second),
+        ) as load:
+            game = make_saved_deck_game("first.json", "second.json")
 
+        self.assertEqual(load.call_args_list[0].args, ("first.json",))
+        self.assertEqual(load.call_args_list[1].args, ("second.json",))
+        self.assertEqual(
+            [player.name for player in game.players],
+            ["Ruby Lightning", "Verdant Might"],
+        )
+        for player in game.players:
+            self.assertEqual(len(player.hand) + len(player.library), 40)
 
 if __name__ == "__main__":
     unittest.main()

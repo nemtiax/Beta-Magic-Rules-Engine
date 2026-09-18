@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.black import GLOOM
 from beta_magic.card_defs.white import (
     CIRCLE_OF_PROTECTION_BLACK,

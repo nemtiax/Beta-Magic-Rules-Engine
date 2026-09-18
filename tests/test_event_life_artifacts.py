@@ -1,6 +1,6 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     CRYSTAL_ROD,
     EVENT_LIFE_ARTIFACTS,
     IRON_STAR,
@@ -9,6 +9,8 @@ from beta_magic import (
     SOUL_NET,
     THRONE_OF_BONE,
     WOODEN_SPHERE,
+)
+from beta_magic import (
     Card,
     Color,
     DestructionIncident,
@@ -19,7 +21,11 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRAY_OGRE, GRIZZLY_BEARS, LIGHTNING_BOLT
+from beta_magic.card_defs.red import (
+    GRAY_OGRE,
+    LIGHTNING_BOLT,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class EventLifeArtifactTests(unittest.TestCase):
@@ -133,13 +139,14 @@ class EventLifeArtifactTests(unittest.TestCase):
         self.alice.mana_pool.red = 1
         self.alice.mana_pool.colorless = 3
 
-        self.game.cast_creature(ogre)
-
-        self.assertIn(ogre, self.alice.battlefield)
+        self.game.begin_cast(ogre)
         self.assertEqual(len(self.game.event_opportunities), 1)
+        self.pass_current_priority()
+        self.pass_current_priority()
         self.pass_current_priority()
         self.game.activate_ability(self.alice.id, star, 0)
         self.resolve_current_batch()
+        self.assertIn(ogre, self.alice.battlefield)
         self.assertEqual(self.alice.life, 21)
 
     def test_multiple_artifacts_can_each_catch_one_spell(self) -> None:

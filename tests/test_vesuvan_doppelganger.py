@@ -1,28 +1,36 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.blue import (
     ANIMATE_ARTIFACT,
-    BLUE_WARD,
     CLONE,
+    PHANTASMAL_FORCES,
+    VESUVAN_DOPPELGANGER,
+)
+from beta_magic.card_defs.white import (
+    BLUE_WARD,
+    PERSONAL_INCARNATION,
+    RESURRECTION,
+)
+from beta_magic.card_defs.artifacts import (
     CLOCKWORK_BEAST,
-    FOREST,
+    SOL_RING,
+)
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.green import (
     GAEAS_LIEGE,
     GRIZZLY_BEARS,
-    HILL_GIANT,
-    PERSONAL_INCARNATION,
-    PHANTASMAL_FORCES,
-    RESURRECTION,
-    SOL_RING,
-    VESUVAN_DOPPELGANGER,
+)
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic import (
     Card,
     CardType,
     Color,
-    ContinuousEffect,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
+from beta_magic.effects import ContinuousEffect
 from beta_magic.ui import GameViewModel
 
 

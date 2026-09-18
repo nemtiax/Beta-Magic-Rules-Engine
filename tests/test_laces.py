@@ -1,15 +1,19 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.red import (
     CHAOSLACE,
-    CRYSTAL_ROD,
-    DEATHLACE,
-    IRON_STAR,
-    LACES,
-    LIFELACE,
     LIGHTNING_BOLT,
-    PURELACE,
-    THOUGHTLACE,
+)
+from beta_magic.card_defs.artifacts import (
+    CRYSTAL_ROD,
+    IRON_STAR,
+)
+from beta_magic.card_defs.black import DEATHLACE
+from tests.card_groups import LACES
+from beta_magic.card_defs.green import LIFELACE
+from beta_magic.card_defs.white import PURELACE
+from beta_magic.card_defs.blue import THOUGHTLACE
+from beta_magic import (
     Card,
     Color,
     GameState,
@@ -17,7 +21,9 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, ISLAND, SOL_RING
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import ISLAND
+from beta_magic.card_defs.artifacts import SOL_RING
 
 
 class LaceTests(unittest.TestCase):

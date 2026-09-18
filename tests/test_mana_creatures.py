@@ -1,9 +1,11 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.green import (
     BIRDS_OF_PARADISE,
     LLANOWAR_ELVES,
-    MANA_CREATURES,
+)
+from tests.card_groups import MANA_CREATURES
+from beta_magic import (
     Color,
     GameState,
     KeywordAbility,
@@ -11,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST
+from beta_magic.card_defs.lands import FOREST
 
 
 class ManaCreatureTests(unittest.TestCase):

@@ -1,13 +1,19 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BAYOU,
     FOREST,
-    ICY_MANIPULATOR,
     ISLAND,
+)
+from beta_magic.card_defs.artifacts import ICY_MANIPULATOR
+from beta_magic.card_defs.green import (
     LIVING_LANDS,
-    MANA_FLARE,
     WILD_GROWTH,
+)
+from beta_magic.card_defs.red import MANA_FLARE
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
@@ -81,7 +87,7 @@ class LandManaEnchantmentTests(unittest.TestCase):
         self.permanent(self.alice, WILD_GROWTH, attached_to=forest)
 
         self.game.begin_combat()
-        self.game.declare_attackers([forest])
+        declare_attackers(self.game, [forest])
 
         self.assertEqual(self.alice.mana_pool.green, 1)
 

@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import JADE_MONOLITH
+from beta_magic.card_defs.red import LIGHTNING_BOLT
 from beta_magic import (
-    JADE_MONOLITH,
-    LIGHTNING_BOLT,
     Card,
     Color,
     DamageIncidentKind,
@@ -13,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class JadeMonolithTests(unittest.TestCase):

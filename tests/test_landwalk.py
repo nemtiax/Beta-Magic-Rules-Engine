@@ -1,19 +1,26 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BAYOU,
-    BOG_WRAITH,
-    LANDWALK_CREATURES,
-    SHANODIN_DRYADS,
     TUNDRA,
+)
+from beta_magic.card_defs.black import BOG_WRAITH
+from tests.card_groups import LANDWALK_CREATURES
+from beta_magic.card_defs.green import SHANODIN_DRYADS
+from beta_magic import (
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST, SWAMP
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import (
+    FOREST,
+    SWAMP,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class LandwalkTests(unittest.TestCase):
@@ -38,7 +45,7 @@ class LandwalkTests(unittest.TestCase):
 
     def begin_attack(self, attacker):
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
 
     def test_definitions(self) -> None:
         self.assertEqual(LANDWALK_CREATURES, (BOG_WRAITH, SHANODIN_DRYADS))
@@ -63,7 +70,7 @@ class LandwalkTests(unittest.TestCase):
         self.put_in_play(self.bob, FOREST)
         self.begin_attack(wraith)
 
-        self.game.declare_blockers({blocker: wraith})
+        declare_blockers(self.game, {blocker: wraith})
 
         self.assertIn(blocker, self.game.combat.blockers[wraith.id])
 
@@ -74,7 +81,7 @@ class LandwalkTests(unittest.TestCase):
         self.begin_attack(wraith)
 
         with self.assertRaisesRegex(ValueError, "swampwalk"):
-            self.game.declare_blockers({blocker: wraith})
+            declare_blockers(self.game, {blocker: wraith})
 
     def test_bayou_enables_both_swampwalk_and_forestwalk(self) -> None:
         for definition, message in (
@@ -95,10 +102,10 @@ class LandwalkTests(unittest.TestCase):
                 blocker = self.put_in_play(game.players[1], GRIZZLY_BEARS)
                 self.put_in_play(game.players[1], BAYOU)
                 game.begin_combat()
-                game.declare_attackers([attacker])
+                declare_attackers(game, [attacker])
 
                 with self.assertRaisesRegex(ValueError, message):
-                    game.declare_blockers({blocker: attacker})
+                    declare_blockers(game, {blocker: attacker})
 
     def test_unrelated_dual_land_does_not_enable_forestwalk(self) -> None:
         dryads = self.put_in_play(self.alice, SHANODIN_DRYADS)
@@ -106,7 +113,7 @@ class LandwalkTests(unittest.TestCase):
         self.put_in_play(self.bob, TUNDRA)
         self.begin_attack(dryads)
 
-        self.game.declare_blockers({blocker: dryads})
+        declare_blockers(self.game, {blocker: dryads})
 
         self.assertIn(blocker, self.game.combat.blockers[dryads.id])
 

@@ -58,6 +58,17 @@ class UiPresentationBuilder:
         target = self._card_by_id(self._choices.word_target_id)
         if target is None:
             return []
+        perspective_id = self.game.players[self.perspective_index].id
+        if self.game.card_characteristics_are_hidden_from(
+            target, perspective_id
+        ):
+            if self._text_word_kind() == "color":
+                return [
+                    color.name.title()
+                    for color in Color
+                    if color is not Color.COLORLESS
+                ]
+            return list(BASIC_LAND_SUBTYPES)
         if self._text_word_kind() == "color":
             return [color.name.title() for color in self.game.current_color_words(target)]
         return list(self.game.current_land_words(target))
@@ -184,6 +195,79 @@ class UiPresentationBuilder:
             self.game.pending_demonic_attorney_choices[0]
             if self.game.pending_demonic_attorney_choices else None
         )
+        word_command_choice = self.game.current_word_command()
+        word_command_card = (
+            self._card_by_id(word_command_choice.card_id)
+            if word_command_choice is not None
+            and word_command_choice.card_id is not None
+            else None
+        )
+        word_command_can_choose = bool(
+            word_command_choice is not None
+            and word_command_choice.commander_id == perspective.id
+        )
+        word_commandable_ids = {
+            card.id for card in self.game.word_commandable_cards()
+        } if word_command_choice is not None else set()
+        word_mana_options: list[dict[str, Any]] = []
+        if word_command_choice is not None:
+            for option in self.game.word_command_mana_options():
+                produced = "".join(
+                    color.value * option.production.amount(color)
+                    for color in Color
+                )
+                word_mana_options.append({
+                    "landId": str(option.land_id),
+                    "abilityIndex": option.ability_index,
+                    "label": f"{option.land_name} — {produced}",
+                    "selected": (
+                        self._choices.word_mana_activations.get(option.land_id)
+                        == option.ability_index
+                    ),
+                })
+        word_payment_valid = False
+        word_spending_options: list[dict[str, Any]] = []
+        if (
+            word_command_can_choose
+            and word_command_choice is not None
+            and word_command_choice.stage == "choose_payment"
+            and word_command_card is not None
+        ):
+            try:
+                cost = self.game.spell_mana_cost(
+                    word_command_card,
+                    word_command_choice.x_value,
+                    len(word_command_choice.targets) or 1,
+                )
+                plans = self.game.land_mana_payment_plans(
+                    word_command_choice.commanded_player_id,
+                    cost,
+                    tuple(self._choices.word_mana_activations.items()),
+                    require_exact_when_available=True,
+                )
+            except (ValueError, RuntimeError):
+                pass
+            else:
+                seen_spending: set[tuple[int, ...]] = set()
+                for plan in plans:
+                    amounts = plan.spending.amounts
+                    if amounts in seen_spending:
+                        continue
+                    seen_spending.add(amounts)
+                    parts = [
+                        f"{amount}{color.value}"
+                        for color, amount in zip(Color, amounts)
+                        if amount
+                    ]
+                    word_spending_options.append({
+                        "key": ",".join(str(amount) for amount in amounts),
+                        "label": "Spend " + " + ".join(parts),
+                        "selected": self._choices.word_mana_spending == amounts,
+                    })
+                word_payment_valid = bool(
+                    len(word_spending_options) == 1
+                    or any(item["selected"] for item in word_spending_options)
+                )
         natural_selection_choice = (
             self.game.pending_natural_selection_choices[0]
             if self.game.pending_natural_selection_choices else None
@@ -191,6 +275,11 @@ class UiPresentationBuilder:
         library_search_choice = (
             self.game.pending_library_search_choices[0]
             if self.game.pending_library_search_choices else None
+        )
+        mask_source = self._card_by_id(self._choices.mask_source_id)
+        can_choose_mask = bool(
+            mask_source is not None
+            and mask_source.controller_id == perspective.id
         )
         false_orders_choice = (
             self.game.pending_false_orders_choices[0]
@@ -252,6 +341,7 @@ class UiPresentationBuilder:
             or drain_power_choice is not None
             or power_sink_payment is not None
             or demonic_attorney_choice is not None
+            or word_command_choice is not None
             or natural_selection_choice is not None
             or library_search_choice is not None
             or false_orders_choice is not None
@@ -341,6 +431,7 @@ class UiPresentationBuilder:
             or drain_power_choice is not None
             or power_sink_payment is not None
             or demonic_attorney_choice is not None
+            or word_command_choice is not None
             or natural_selection_choice is not None
             or library_search_choice is not None
             or false_orders_choice is not None
@@ -351,6 +442,7 @@ class UiPresentationBuilder:
             or upkeep_land_choice is not None
             or doppelganger_choice is not None
             or river_choice_required
+            or self._choices.mask_source_id is not None
             or pending_priority
         )
         perspective_is_active = self.perspective_index == self.game.active_player_index
@@ -515,6 +607,60 @@ class UiPresentationBuilder:
                 demonic_attorney_choice is not None
                 and demonic_attorney_choice.opponent_id == perspective.id
             ),
+            "wordCommandPending": word_command_choice is not None,
+            "wordCommandDialog": bool(
+                word_command_choice is not None
+                and word_command_choice.stage in {"choose_card", "choose_payment"}
+                and self._choices.word_command_card_id is None
+            ),
+            "wordCommandStage": (
+                word_command_choice.stage if word_command_choice is not None else ""
+            ),
+            "wordCommandCommander": (
+                self.game.player(word_command_choice.commander_id).name
+                if word_command_choice is not None else ""
+            ),
+            "wordCommandOpponent": (
+                self.game.player(word_command_choice.commanded_player_id).name
+                if word_command_choice is not None else ""
+            ),
+            "canChooseWordCommand": word_command_can_choose,
+            "wordCommandCards": (
+                [
+                    {
+                        **self._card_data(card),
+                        "commandable": card.id in word_commandable_ids,
+                    }
+                    for card in self.game.player(
+                        word_command_choice.commanded_player_id
+                    ).hand
+                ]
+                if word_command_can_choose
+                and word_command_choice is not None
+                and word_command_choice.stage == "choose_card"
+                else []
+            ),
+            "wordCommandHasLegalPlay": bool(word_commandable_ids),
+            "wordCommandCard": (
+                self._card_data(word_command_card)
+                if word_command_card is not None else {}
+            ),
+            "wordCommandCost": (
+                self.game.spell_mana_cost(
+                    word_command_card,
+                    word_command_choice.x_value,
+                    len(word_command_choice.targets) or 1,
+                ).compact
+                if word_command_card is not None
+                and word_command_choice is not None else ""
+            ),
+            "wordCommandManaPool": (
+                mana_text(self.game.player(word_command_choice.commanded_player_id))
+                if word_command_choice is not None else ""
+            ),
+            "wordCommandManaOptions": word_mana_options,
+            "wordCommandSpendingOptions": word_spending_options,
+            "wordCommandPaymentValid": word_payment_valid,
             "naturalSelectionChoice": natural_selection_choice is not None,
             "naturalSelectionChooser": (
                 self.game.player(natural_selection_choice.chooser_id).name
@@ -878,6 +1024,9 @@ class UiPresentationBuilder:
                 or graveyard_order_choice is not None
                 or can_channel
                 or doppelganger_choice is not None
+                or self._choices.mask_source_id is not None
+                or self._auto_pass_turns.get(perspective.id)
+                   == self.game.turn_number
             ),
             "timeVaultPlayer": (
                 turn_choice.player_name if turn_choice is not None else ""
@@ -896,11 +1045,51 @@ class UiPresentationBuilder:
                 else []
             ),
             "targeting": (
-                self.game.pending_cast is not None
+                self._can_choose_pending_cast()
                 or self.game.pending_activation is not None
                 or can_choose_fireball
+                or self._choices.mask_target_required
+            ),
+            "canCancelTarget": bool(
+                (
+                    self.game.pending_cast is not None
+                    and self._can_choose_pending_cast()
+                    and self.game.pending_cast.word_command_id is None
+                )
+                or self.game.pending_activation is not None
+                or self._choices.mask_target_required
             ),
             "choosingX": self._choices.x_card_id is not None,
+            "maskCreatureChoiceRequired": bool(
+                can_choose_mask
+                and
+                self._choices.mask_source_id is not None
+                and self._choices.mask_creature_id is None
+            ),
+            "canChooseMask": can_choose_mask,
+            "choosingMaskX": bool(
+                can_choose_mask
+                and self._choices.mask_creature_id is not None
+                and not self._choices.mask_target_required
+            ),
+            "maskCreatureName": (
+                self._card_by_id(self._choices.mask_creature_id).name
+                if can_choose_mask
+                and self._choices.mask_creature_id is not None
+                and self._card_by_id(self._choices.mask_creature_id) is not None
+                else ""
+            ),
+            "maskX": self._choices.mask_x_value,
+            "maskXMaximum": self._choices.mask_x_maximum,
+            "maskCreatureX": self._choices.mask_creature_x_value,
+            "maskCreatureXMaximum": self._choices.mask_creature_x_maximum,
+            "maskCreatureHasX": bool(
+                self._choices.mask_creature_id is not None
+                and self._card_by_id(self._choices.mask_creature_id) is not None
+                and self._card_by_id(
+                    self._choices.mask_creature_id
+                ).definition.mana_cost.x_symbols
+            ),
             "choosingLandType": self._choices.land_type_card_id is not None,
             "choosingTextWords": self._choices.word_target_id is not None,
             "textWordCardName": (
@@ -932,7 +1121,10 @@ class UiPresentationBuilder:
                     "label": f"{name} — {amount} damage",
                 }
                 for key, name, amount in self.game.damage_source_choices(
-                    perspective.id
+                    word_command_choice.commanded_player_id
+                    if word_command_choice is not None
+                    and self._is_configuring_word_card()
+                    else perspective.id
                 )
             ],
             "modeChoices": (
@@ -967,10 +1159,13 @@ class UiPresentationBuilder:
             "stack": [
                 *[
                     (
-                        f"{card.name} "
+                        f"{self._displayed_card_name(card)} "
                         f"(X={self.game.stack_spells[card.id].x_value})"
                         if card.definition.mana_cost.x_symbols
-                        else card.name
+                        and not self.game.card_characteristics_are_hidden_from(
+                            card, perspective.id
+                        )
+                        else self._displayed_card_name(card)
                     )
                     for card in self.game.stack
                 ],
@@ -983,11 +1178,20 @@ class UiPresentationBuilder:
                 {
                     "id": str(card.id),
                     "label": (
-                        f"{card.name} (X={self.game.stack_spells[card.id].x_value})"
+                        f"{self._displayed_card_name(card)} (X={self.game.stack_spells[card.id].x_value})"
                         if card.definition.mana_cost.x_symbols
-                        else card.name
+                        and not self.game.card_characteristics_are_hidden_from(
+                            card, perspective.id
+                        )
+                        else self._displayed_card_name(card)
                     ),
-                    "legalTarget": card in self.game.legal_targets_for(),
+                    "legalTarget": bool(
+                        (
+                            self.game.pending_cast is None
+                            or self._can_choose_pending_cast()
+                        )
+                        and card in self.game.legal_targets_for()
+                    ),
                 }
                 for card in self.game.stack
             ],
@@ -1200,10 +1404,10 @@ class UiPresentationBuilder:
             "drainPowerChoice": drain_power_choice is not None,
             "drainPowerCanChoose": (
                 drain_power_choice is not None
-                and drain_power_choice.caster_id == perspective.id
+                and drain_power_choice.decision_maker_id == perspective.id
             ),
             "drainPowerChooser": (
-                self.game.player(drain_power_choice.caster_id).name
+                self.game.player(drain_power_choice.decision_maker_id).name
                 if drain_power_choice is not None else ""
             ),
             "drainPowerLand": (
@@ -1245,7 +1449,16 @@ class UiPresentationBuilder:
             "perspective": self._player_data(perspective, reveal_hand=True),
             "opponent": self._player_data(opponent, reveal_hand=False),
             "attackers": [
-                {"id": str(card.id), "label": card.name}
+                {
+                    "id": str(card.id),
+                    "label": (
+                        "Face-down creature"
+                        if self.game.card_characteristics_are_hidden_from(
+                            card, perspective.id
+                        )
+                        else card.name
+                    ),
+                }
                 for card in (combat.attackers if combat else [])
             ],
         }
@@ -1258,22 +1471,39 @@ class UiPresentationBuilder:
             if card.enchanted_card_id is None
         ]
         river_order = {"L": 0, "": 1, "R": 2}
+        camouflage_order = (
+            {
+                card.id: index
+                for index, card in enumerate(self.game.combat.attackers)
+                if card.id in self.game.combat.camouflaged_attacker_ids
+            }
+            if self.game.combat is not None
+            else {}
+        )
         battlefield_nonlands = sorted(
             (
                 card
                 for card in battlefield_roots
-                if CardType.LAND not in card.definition.card_types
+                if (
+                    CardType.LAND not in card.definition.card_types
+                    or card.id in camouflage_order
+                )
             ),
             key=lambda card: (
                 river_order.get(self._river_side_label(card), 1),
                 CardType.CREATURE not in self.game.card_types(card),
+                0 if card.id in camouflage_order else 1,
+                camouflage_order.get(card.id, 0),
             ),
         )
         battlefield_lands = sorted(
             (
                 card
                 for card in battlefield_roots
-                if CardType.LAND in card.definition.card_types
+                if (
+                    CardType.LAND in card.definition.card_types
+                    and card.id not in camouflage_order
+                )
             ),
             key=lambda card: (
                 river_order.get(self._river_side_label(card), 1),
@@ -1308,7 +1538,13 @@ class UiPresentationBuilder:
             "life": player.life,
             "mana": mana_text(player),
             "legalTarget": (
-                player in self.game.legal_player_targets_for()
+                bool(
+                    (
+                        self.game.pending_cast is None
+                        or self._can_choose_pending_cast()
+                    )
+                    and player in self.game.legal_player_targets_for()
+                )
                 or self._can_choose_fireball()
                 or bool(
                     self._can_choose_fork()
@@ -1367,6 +1603,14 @@ class UiPresentationBuilder:
         return f"{land_name} — mire {position} of {len(siblings)}{suffix}"
 
     def _card_data(self, card: Card) -> dict[str, Any]:
+        perspective_id = self.game.players[self.perspective_index].id
+        characteristics_hidden = self.game.card_characteristics_are_hidden_from(
+            card, perspective_id
+        )
+        face_down_hidden = card.is_face_down and characteristics_hidden
+        copied_characteristics_hidden = (
+            not card.is_face_down and characteristics_hidden
+        )
         background, foreground = self._card_colors(card)
         image_urls = image_urls_for(card.name)
         current_card_types = self.game.card_types(card)
@@ -1425,15 +1669,47 @@ class UiPresentationBuilder:
         attacker_selection_active = self._combat_ui.is_drafting_attackers(
             self.game, self.game.players[self.perspective_index].id
         )
-        perspective_id = self.game.players[self.perspective_index].id
         river_choice_active = self._combat_ui.is_choosing_river_sides(
             self.game, perspective_id
         )
         river_side = self._river_side_label(card)
+        mask = self._card_by_id(self._choices.mask_source_id)
+        mask_choice_active = bool(
+            mask is not None
+            and mask.controller_id == perspective_id
+            and
+            self._choices.mask_source_id is not None
+            and self._choices.mask_creature_id is None
+        )
+        mask_choice_eligible = False
+        if mask_choice_active and card.zone is Zone.HAND:
+            if mask is not None:
+                try:
+                    mask_choice_eligible = card in (
+                        self.game.legal_illusionary_mask_creatures(
+                            perspective_id,
+                            mask,
+                            self._choices.mask_ability_index,
+                        )
+                    )
+                except (ValueError, RuntimeError):
+                    mask_choice_eligible = False
+        mask_target_eligible = False
+        if self._choices.mask_target_required:
+            masked_creature = self._card_by_id(
+                self._choices.mask_creature_id
+            )
+            if masked_creature is not None:
+                mask_target_eligible = card in self.game.legal_targets_for(
+                    masked_creature
+                )
         result = {
             "id": str(card.id),
             "name": displayed_name,
             "isToken": card.is_token,
+            "isFaceDown": card.is_face_down,
+            "faceDownHidden": face_down_hidden,
+            "copiedCharacteristicsHidden": copied_characteristics_hidden,
             "background": background,
             "foreground": foreground,
             "artCropUrl": image_urls.get("art_crop", ""),
@@ -1452,13 +1728,22 @@ class UiPresentationBuilder:
                 self.game, perspective_id, card
             ),
             "riverSide": river_side,
+            "maskChoiceActive": mask_choice_active,
+            "maskChoiceEligible": mask_choice_eligible,
             "selected": (
                 card.id in self.selected_card_ids
                 or f"card:{card.id}" in self._choices.fireball_target_keys
                 or f"card:{card.id}" in self._choices.fork_target_keys
             ),
             "legalTarget": (
-                card in self.game.legal_targets_for()
+                bool(
+                    (
+                        self.game.pending_cast is None
+                        or self._can_choose_pending_cast()
+                    )
+                    and card in self.game.legal_targets_for()
+                )
+                or mask_target_eligible
                 or card in self._fireball_legal_cards()
                 or card in self._fork_legal_cards()
                 or bool(
@@ -1562,7 +1847,11 @@ class UiPresentationBuilder:
                 else ""
             ),
             "attachments": [
-                self._card_data(attachment)
+                (
+                    self._concealed_attachment_data(attachment)
+                    if face_down_hidden
+                    else self._card_data(attachment)
+                )
                 for owner in self.game.players
                 for attachment in owner.battlefield
                 if attachment.enchanted_card_id == card.id
@@ -1602,6 +1891,84 @@ class UiPresentationBuilder:
             if card.zone is Zone.BATTLEFIELD
             else [],
         }
+        if face_down_hidden:
+            result.update(
+                {
+                    "name": "Face-down creature",
+                    "background": "#343943",
+                    "foreground": "#f1f3f5",
+                    "artCropUrl": "",
+                    "fullCardUrl": "",
+                    "manaCost": "",
+                    "typeLine": "Creature",
+                    "abilities": "",
+                    "rulesText": (
+                        "Its identity and characteristics are concealed."
+                    ),
+                    "power": "?",
+                    "toughness": "?",
+                    "activatedAbilities": [],
+                    "combatDetail": "",
+                    "attachedTo": "",
+                }
+            )
+            status = ["Face down; only its known game state is shown."]
+            if card.tapped:
+                status.append("Tapped")
+            if card.counters:
+                counters = ", ".join(
+                    f"{amount} {name}"
+                    for name, amount in card.counters.items()
+                    if amount
+                )
+                if counters:
+                    status.append(f"Counters: {counters}")
+            if result["attachments"]:
+                status.append(
+                    f"Attached enchantments: {len(result['attachments'])}"
+                )
+            result["previewStatus"] = "\n".join(status)
+            return result
+        if copied_characteristics_hidden:
+            printed = card.printed_definition or card.definition
+            printed_images = image_urls_for(printed.name)
+            result.update(
+                {
+                    "name": printed.name,
+                    "background": "#79b9dc",
+                    "foreground": "#102b3a",
+                    "artCropUrl": printed_images.get("art_crop", ""),
+                    "fullCardUrl": printed_images.get("full_card", ""),
+                    "manaCost": printed.mana_cost.compact,
+                    "typeLine": " ".join(
+                        (
+                            *printed.supertypes,
+                            *(
+                                card_type.value
+                                for card_type in sorted(
+                                    printed.card_types,
+                                    key=lambda item: item.value,
+                                )
+                            ),
+                        )
+                    )
+                    + (
+                        " — " + " ".join(printed.subtypes)
+                        if printed.subtypes else ""
+                    ),
+                    "abilities": "",
+                    "rulesText": printed.rules_text,
+                    "power": "?",
+                    "toughness": "?",
+                    "activatedAbilities": [],
+                    "combatDetail": "",
+                }
+            )
+            result["previewStatus"] = (
+                "Copied a face-down creature; its copied power, toughness, "
+                "and abilities are concealed."
+            )
+            return result
         preview_status = []
         if card.zone is Zone.BATTLEFIELD:
             if result["isCreature"]:
@@ -1638,8 +2005,40 @@ class UiPresentationBuilder:
         result["previewStatus"] = "\n".join(preview_status)
         return result
 
+    def _concealed_attachment_data(self, attachment: Card) -> dict[str, Any]:
+        """Show that an Aura exists without disclosing its face."""
+
+        result = self._card_data(attachment)
+        result.update(
+            {
+                "name": "Face-down enchantment",
+                "background": "#343943",
+                "foreground": "#f1f3f5",
+                "artCropUrl": "",
+                "fullCardUrl": "",
+                "manaCost": "",
+                "typeLine": "Enchantment",
+                "abilities": "",
+                "rulesText": (
+                    "An enchantment is attached here, but its identity is "
+                    "concealed with the creature."
+                ),
+                "power": -1,
+                "toughness": -1,
+                "activatedAbilities": [],
+                "attachedTo": "Face-down creature",
+                "attachments": [],
+                "previewStatus": "Attached to a face-down creature.",
+            }
+        )
+        return result
+
     def _displayed_card_name(self, card: Card) -> str:
         """Return a land's current rules name for battlefield presentation."""
+
+        perspective_id = self.game.players[self.perspective_index].id
+        if self.game.card_characteristics_are_hidden_from(card, perspective_id):
+            return "Face-down creature"
 
         if (
             card.zone is Zone.BATTLEFIELD
@@ -1668,11 +2067,6 @@ class UiPresentationBuilder:
             return card.definition.rules_text
         summary = "; ".join(changes)
         return f"{card.definition.rules_text}\n\nCurrent text changes: {summary}."
-
-    def _combat_card_status(self, card: Card) -> tuple[str, str, str]:
-        """Compatibility delegate for presentation-focused extensions."""
-
-        return self._combat_ui.card_status(self.game, card)
 
     def _card_colors(self, card: Card) -> tuple[str, str]:
         current_colors = self.game.card_colors(card)

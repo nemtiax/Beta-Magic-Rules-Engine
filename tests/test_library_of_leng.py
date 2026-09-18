@@ -1,11 +1,11 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import LIBRARY_OF_LENG
+from beta_magic.card_defs.black import MIND_TWIST
+from beta_magic.card_defs.lands import PLAINS
+from beta_magic.card_defs.red import WHEEL_OF_FORTUNE
 from beta_magic import (
-    GRIZZLY_BEARS,
-    LIBRARY_OF_LENG,
-    MIND_TWIST,
-    PLAINS,
-    WHEEL_OF_FORTUNE,
     Card,
     GameState,
     PlayerState,

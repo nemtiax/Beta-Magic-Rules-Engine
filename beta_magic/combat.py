@@ -12,6 +12,7 @@ from .destruction import DestructionIncident, DestructionTarget
 from .types import (
     CardType,
     CombatStep,
+    FaceDownReason,
     GameStatus,
     KeywordAbility,
     RiverSide,
@@ -40,6 +41,8 @@ class CombatState:
     river_sides: dict[UUID, RiverSide] = field(default_factory=dict)
     river_choice_card_ids: tuple[UUID, ...] = ()
     river_resume_step: CombatStep | None = None
+    camouflaged_attacker_ids: set[UUID] = field(default_factory=set)
+    camouflage_invalid_block_count: int = 0
 
 
 @dataclass(slots=True)
@@ -61,6 +64,34 @@ class CombatMixin:
     """Combat façade methods operating on state owned by ``GameState``."""
 
     __slots__ = ()
+
+    def apply_camouflage(self, caster_id: str) -> tuple[Card, ...]:
+        """Conceal and secretly rearrange the caster's current attackers."""
+
+        if (
+            self.combat is None
+            or self.combat.step is not CombatStep.ATTACKER_RESPONSE
+            or self.combat.attacking_player_id != caster_id
+        ):
+            return ()
+        attacking = [
+            card
+            for card in self.combat.attackers
+            if card.zone is Zone.BATTLEFIELD
+            and card.controller_id == caster_id
+        ]
+        self.random.shuffle(attacking)
+        attacking_ids = {card.id for card in attacking}
+        self.combat.attackers = attacking + [
+            card
+            for card in self.combat.attackers
+            if card.id not in attacking_ids
+        ]
+        for card in attacking:
+            self.turn_creature_face_down(card, FaceDownReason.CAMOUFLAGE)
+        self.combat.camouflaged_attacker_ids.update(attacking_ids)
+        self.combat.camouflage_invalid_block_count = 0
+        return tuple(attacking)
 
     def raging_river_active(self) -> bool:
         """Whether the attacker currently controls at least one active River."""
@@ -414,24 +445,6 @@ class CombatMixin:
         bands: Iterable[Iterable[Card]] = (),
     ) -> CombatStep:
         self._require_no_pending_action()
-        # Retain the direct engine API as a convenience for simulations and
-        # older callers. The UI exposes this method only after priority has
-        # closed the response window and entered DECLARE_ATTACKERS.
-        if self.combat is not None and self.combat.step is CombatStep.ATTACK_RESPONSE:
-            self._empty_mana_pools()
-            if self._check_life_loss_checkpoint():
-                self.combat = None
-                self.combat_creature_effects.clear()
-                raise RuntimeError("the game ended at the beginning of the attack")
-            if self._begin_river_defender_assignment(
-                CombatStep.DECLARE_ATTACKERS
-            ):
-                raise RuntimeError(
-                    "the defender must divide creatures for Raging River first"
-                )
-            self.combat.step = CombatStep.DECLARE_ATTACKERS
-            self.priority_player_index = None
-            self.consecutive_passes = 0
         if self.combat is None or self.combat.step is not CombatStep.DECLARE_ATTACKERS:
             raise RuntimeError("the game is not waiting for attackers")
         chosen = list(attackers)
@@ -560,14 +573,10 @@ class CombatMixin:
         """
 
         self._require_no_pending_action()
-        # See the matching compatibility path in declare_attackers().
-        if self.combat is not None and self.combat.step is CombatStep.ATTACKER_RESPONSE:
-            self.combat.step = CombatStep.DECLARE_BLOCKERS
-            self.priority_player_index = None
-            self.consecutive_passes = 0
         if self.combat is None or self.combat.step is not CombatStep.DECLARE_BLOCKERS:
             raise RuntimeError("the game is not waiting for blockers")
         defender = self.player(self.combat.defending_player_id)
+        camouflaged_ids = set(self.combat.camouflaged_attacker_ids)
         attackers = {card.id: card for card in self.combat.attackers}
         band_by_member = {
             member.id: band
@@ -580,15 +589,19 @@ class CombatMixin:
             distinct_groups: dict[tuple[UUID, ...], Card] = {}
             for attacker in requested:
                 group = band_by_member.get(attacker.id, (attacker,))
-                representative = next(
-                    (
-                        member
-                        for member in group
-                        if self._individual_blocking_error(
-                            blocker, member, defender
-                        ) is None
-                    ),
-                    attacker,
+                representative = (
+                    attacker
+                    if any(member.id in camouflaged_ids for member in group)
+                    else next(
+                        (
+                            member
+                            for member in group
+                            if self._individual_blocking_error(
+                                blocker, member, defender
+                            ) is None
+                        ),
+                        attacker,
+                    )
                 )
                 distinct_groups.setdefault(
                     tuple(card.id for card in group), representative
@@ -611,7 +624,11 @@ class CombatMixin:
                 raise ValueError(
                     f"{blocker.name} cannot block {len(assigned)} attackers"
                 )
-        for blocker_id in self.combat.blaze_of_glory_blocker_ids:
+        for blocker_id in (
+            ()
+            if camouflaged_ids
+            else self.combat.blaze_of_glory_blocker_ids
+        ):
             blocker = next(
                 (card for card in defender.battlefield if card.id == blocker_id),
                 None,
@@ -640,7 +657,7 @@ class CombatMixin:
                 raise ValueError(
                     f"{blocker.name} must block every attacker it can legally block"
                 )
-        for blocker in defender.battlefield:
+        for blocker in (() if camouflaged_ids else defender.battlefield):
             if blocker.tapped or CardType.CREATURE not in self.card_types(blocker):
                 continue
             options = self.lure_block_options(blocker)
@@ -669,7 +686,8 @@ class CombatMixin:
                 raise ValueError(river_error)
             power_limit = blocker.definition.maximum_blocked_power
             if (
-                power_limit is not None
+                attacker.id not in camouflaged_ids
+                and power_limit is not None
                 and self.creature_power(attacker) > power_limit
             ):
                 raise ValueError(
@@ -677,9 +695,24 @@ class CombatMixin:
                     f"greater than {power_limit}"
                 )
 
+        for attacker in self.combat.attackers:
+            if attacker.id in camouflaged_ids and attacker.is_face_down:
+                self.turn_creature_face_up(attacker)
+
         normalized: list[tuple[Card, Card]] = []
+        self.combat.camouflage_invalid_block_count = 0
         for blocker, attacker in declared_blocks:
             group = band_by_member.get(attacker.id, (attacker,))
+            if any(member.id in camouflaged_ids for member in group):
+                if not any(
+                    self._individual_blocking_error(blocker, member, defender)
+                    is None
+                    for member in group
+                ):
+                    self.combat.camouflage_invalid_block_count += 1
+                    continue
+                normalized.extend((blocker, member) for member in group)
+                continue
             normalized.extend((blocker, member) for member in group)
             if self.creature_is_unblockable(attacker):
                 raise ValueError(f"{attacker.name} cannot be blocked")
@@ -764,10 +797,14 @@ class CombatMixin:
                 # The non-Wall rider applies only to creatures blocking the
                 # Basilisk/Cockatrice, not to an attacker they block.
                 self.combat.end_of_combat_destruction_ids.add(attacker.id)
+        successful_blocker_ids = {blocker.id for blocker, _ in normalized}
         for blocker in assigned_attackers:
+            if blocker.id not in successful_blocker_ids:
+                continue
             counter_name = blocker.definition.loses_counter_when_declared_for_combat
             if counter_name is not None and blocker.counters.get(counter_name, 0):
                 blocker.counters[counter_name] -= 1
+        self.combat.camouflaged_attacker_ids.clear()
         self.combat.step = CombatStep.BLOCKER_RESPONSE
         self.priority_player_index = self.active_player_index
         self.consecutive_passes = 0

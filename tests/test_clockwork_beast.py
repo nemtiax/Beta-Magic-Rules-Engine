@@ -1,8 +1,10 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.artifacts import CLOCKWORK_BEAST
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic import (
-    CLOCKWORK_BEAST,
-    GRIZZLY_BEARS,
     Card,
     GameState,
     PlayerState,
@@ -43,7 +45,7 @@ class ClockworkBeastTests(unittest.TestCase):
     def test_loses_counter_immediately_when_declared_attacker(self):
         beast = self.permanent(self.alice, CLOCKWORK_BEAST)
         self.game.begin_combat()
-        self.game.declare_attackers((beast,))
+        declare_attackers(self.game, (beast,))
 
         self.assertEqual(beast.counters["+1/+0"], 6)
         self.assertEqual(self.game.creature_power(beast), 6)
@@ -52,8 +54,8 @@ class ClockworkBeastTests(unittest.TestCase):
         attacker = self.permanent(self.alice, GRIZZLY_BEARS)
         beast = self.permanent(self.bob, CLOCKWORK_BEAST)
         self.game.begin_combat()
-        self.game.declare_attackers((attacker,))
-        self.game.declare_blockers({beast: attacker})
+        declare_attackers(self.game, (attacker,))
+        declare_blockers(self.game, {beast: attacker})
 
         self.assertEqual(beast.counters["+1/+0"], 6)
 

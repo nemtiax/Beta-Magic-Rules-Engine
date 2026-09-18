@@ -1,6 +1,15 @@
 import unittest
 
-from beta_magic import Card, CardType, GameState, PlayerState, TurnPhase, Zone
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic import (
+    Card,
+    CardType,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.artifacts import TIME_VAULT
 from beta_magic.card_defs.black import PARALYZE
 from beta_magic.card_defs.blue import ANIMATE_ARTIFACT
@@ -65,7 +74,7 @@ class InstillEnergyTests(unittest.TestCase):
 
         self.assertFalse(self.game.can_activate_ability(self.alice.id, elves, 0))
         self.game.begin_combat()
-        self.game.declare_attackers((elves,))
+        declare_attackers(self.game, (elves,))
         self.assertIn(elves, self.game.combat.attackers)
 
     def test_extra_untap_is_a_fast_effect_and_only_once_each_turn(self):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Iterable
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .abilities import (
     ActivatedDamageAbility,
@@ -33,6 +33,7 @@ from .effects import (
     FalseOrdersEffect,
     ReverseDamageEffect,
     RetroactiveDamageTransferEffect,
+    RegenerateTargetsEffect,
     TemporaryPumpEffect,
     PreventCombatDamageEffect,
     SwapLibraryTopWithAnteEffect,
@@ -45,11 +46,14 @@ from .types import (
     CardType,
     Color,
     CombatStep,
+    FaceDownReason,
     GameStatus,
     TurnPhase,
     Zone,
 )
 from .damage import DamageResolutionStep
+from .destruction import DestructionResolutionStep
+from .mana import ManaAllocation
 
 if TYPE_CHECKING:
     from .game import PlayerState
@@ -61,6 +65,7 @@ class PendingCast:
 
     spell: Card
     caster_id: str
+    decision_maker_id: str
     x_value: int = 0
     chosen_land_subtype: str | None = None
     chosen_mode: str | None = None
@@ -70,6 +75,7 @@ class PendingCast:
     copied_declared_target_requirement: TargetRequirement | None = None
     chosen_word_from: Color | str | None = None
     chosen_word_to: Color | str | None = None
+    word_command_id: UUID | None = None
 
 
 @dataclass(slots=True)
@@ -101,6 +107,7 @@ class SpellOnStack:
 
     card: Card
     caster_id: str
+    decision_maker_id: str
     targets: tuple[Card | PlayerState, ...] = ()
     x_value: int = 0
     chosen_mode: str | None = None
@@ -111,6 +118,7 @@ class SpellOnStack:
     declared_target_requirement: TargetRequirement | None = None
     chosen_word_from: Color | str | None = None
     chosen_word_to: Color | str | None = None
+    incident_window_mode: str | None = None
     declaration_sequence: int = 0
 
 
@@ -119,17 +127,9 @@ class TargetingCastingMixin:
 
     __slots__ = ()
 
-    def cast_creature(self, card: Card) -> None:
-        """Pay for and resolve a creature spell from the active player's hand."""
-
-        self._require_no_pending_action()
-        self._validate_permanent_cast(card, CardType.CREATURE)
-        self._resolve_permanent_spell(card, ())
-
     def _validate_permanent_cast(
         self,
         card: Card,
-        expected_type: CardType | None = None,
         x_value: int = 0,
     ) -> None:
         if self.status is not GameStatus.IN_PROGRESS:
@@ -143,15 +143,10 @@ class TargetingCastingMixin:
         player = self.active_player
         if card not in player.hand:
             raise ValueError("the spell must be in the active player's hand")
-        if expected_type is not None and expected_type not in card.definition.card_types:
-            raise ValueError(f"{card.name} is not a {expected_type.value.lower()}")
         if not card.definition.is_permanent or CardType.LAND in card.definition.card_types:
             raise ValueError(f"{card.name} is not a permanent spell")
         if not self.can_pay_mana(player, self.spell_mana_cost(card, x_value)):
             raise RuntimeError(f"not enough mana to cast {card.name}")
-
-    def _validate_enchantment_cast(self, card: Card) -> None:
-        self._validate_permanent_cast(card, CardType.ENCHANTMENT)
 
     def _caster_for(self, card: Card) -> PlayerState:
         for player in self.players:
@@ -229,6 +224,10 @@ class TargetingCastingMixin:
             is_instant
             and self.combat is not None
             and self.combat.step is CombatStep.DAMAGE
+            and not (
+                self._is_regeneration_spell(card)
+                and self._regeneration_window_is_open()
+            )
         ):
             raise RuntimeError("instants cannot be cast during combat damage")
         if any(
@@ -350,6 +349,22 @@ class TargetingCastingMixin:
             maximum = min(maximum, len(self.legal_targets_for(card)))
         return maximum
 
+    @staticmethod
+    def _is_regeneration_spell(card: Card) -> bool:
+        return any(
+            isinstance(effect, RegenerateTargetsEffect)
+            for effect in card.definition.spell_effects
+        )
+
+    def _regeneration_window_is_open(self) -> bool:
+        return bool(
+            self.pending_damage is not None
+            and self.pending_damage.step is DamageResolutionStep.REGENERATION
+            or self.pending_destruction is not None
+            and self.pending_destruction.step
+            is DestructionResolutionStep.REGENERATION
+        )
+
     def begin_cast(
         self,
         card: Card,
@@ -372,25 +387,36 @@ class TargetingCastingMixin:
             )
             for effect in card.definition.spell_effects
         )
+        regeneration_spell = self._is_regeneration_spell(card)
         is_interrupt = CardType.INTERRUPT in card.definition.card_types
         self._require_no_pending_action(
             allow_stack=True,
             # The era FAQ expressly permits interrupts throughout damage
             # resolution.  The same interrupt sequence is also available in
             # a destroy effect's dedicated regeneration window.
-            allow_damage=damage_window_effect or is_interrupt,
+            allow_damage=damage_window_effect or regeneration_spell or is_interrupt,
         )
         if (
             self.pending_damage is not None
             and not is_interrupt
-            and (
-                not damage_window_effect
-                or self.pending_damage.step is not DamageResolutionStep.PREVENTION
+            and not (
+                damage_window_effect
+                and self.pending_damage.step is DamageResolutionStep.PREVENTION
+                or regeneration_spell
+                and self.pending_damage.step is DamageResolutionStep.REGENERATION
             )
         ):
-            raise RuntimeError(
-                "this spell can only be cast during the damage-prevention window"
+            raise RuntimeError("that spell cannot be cast in this damage window")
+        if (
+            self.pending_destruction is not None
+            and not is_interrupt
+            and not (
+                regeneration_spell
+                and self.pending_destruction.step
+                is DestructionResolutionStep.REGENERATION
             )
+        ):
+            raise RuntimeError("that spell cannot be cast in this destruction window")
         caster = self._validate_cast(card, x_value)
         self._validate_land_type_choice(card, land_subtype)
         self._validate_casting_mode(card, mode)
@@ -414,7 +440,13 @@ class TargetingCastingMixin:
             ) and not self.legal_player_targets_for(card):
                 raise RuntimeError(f"there are no legal targets for {card.name}")
             self.pending_cast = PendingCast(
-                card, caster.id, x_value, land_subtype, mode, damage_source_key
+                spell=card,
+                caster_id=caster.id,
+                decision_maker_id=caster.id,
+                x_value=x_value,
+                chosen_land_subtype=land_subtype,
+                chosen_mode=mode,
+                damage_source_key=damage_source_key,
             )
             return self.pending_cast
         if self.pending_damage is not None and reverse_damage:
@@ -453,7 +485,12 @@ class TargetingCastingMixin:
             raise ValueError(f"{card.name} does not choose a land type")
 
     def legal_targets_for(
-        self, card: Card | None = None, *, mode: str | None = None
+        self,
+        card: Card | None = None,
+        *,
+        mode: str | None = None,
+        acting_player_id: str | None = None,
+        decision_player_id: str | None = None,
     ) -> list[Card]:
         """Return the cards that currently satisfy a spell's target requirement."""
 
@@ -476,13 +513,19 @@ class TargetingCastingMixin:
             )
         if requirement.zone is None:
             return []
-        caster_id = (
+        caster_id = acting_player_id or (
             self.pending_cast.caster_id
             if self.pending_cast is not None
             and self.pending_cast.spell is spell
             else pending_ability.controller_id
             if pending_ability is not None
             else spell.controller_id or spell.owner_id
+        )
+        information_player_id = decision_player_id or (
+            self.pending_cast.decision_maker_id
+            if self.pending_cast is not None
+            and self.pending_cast.spell is spell
+            else caster_id
         )
         target_zones = requirement.additional_zones | (
             frozenset({requirement.zone})
@@ -550,6 +593,8 @@ class TargetingCastingMixin:
                 requirement,
                 candidate,
                 caster_id,
+                information_limited=True,
+                information_player_id=information_player_id,
                 source_colors=(
                     self.card_colors(spell)
                     if spell is not None
@@ -559,6 +604,16 @@ class TargetingCastingMixin:
                 ),
             )
         ]
+        if (
+            spell is not None
+            and self._is_regeneration_spell(spell)
+            and self._regeneration_window_is_open()
+        ):
+            legal = [
+                candidate
+                for candidate in legal
+                if self._card_can_regenerate_in_current_window(candidate)
+            ]
         if (
             spell is not None
             and CardType.ENCHANTMENT in spell.definition.card_types
@@ -635,10 +690,15 @@ class TargetingCastingMixin:
                 candidate
                 for candidate in legal
                 if candidate.id in self.stack_spells
-                and self.spell_casting_cost_value(
-                    candidate, self.stack_spells[candidate.id].x_value
+                and (
+                    self.card_characteristics_are_hidden_from(
+                        candidate, caster_id
+                    )
+                    or self.spell_casting_cost_value(
+                        candidate, self.stack_spells[candidate.id].x_value
+                    )
+                    == declared_x
                 )
-                == declared_x
             ]
         return legal
 
@@ -683,8 +743,22 @@ class TargetingCastingMixin:
         caster_id: str | None = None,
         *,
         check_tapped: bool = True,
+        information_limited: bool = False,
+        information_player_id: str | None = None,
         source_colors: frozenset[Color] = frozenset(),
     ) -> bool:
+        viewer_id = information_player_id or caster_id
+        if (
+            information_limited
+            and viewer_id is not None
+            and self.card_characteristics_are_hidden_from(card, viewer_id)
+        ):
+            return self._publicly_possible_face_down_target(
+                requirement,
+                card,
+                caster_id,
+                check_tapped=check_tapped,
+            )
         if not requirement.accepts_card(
             card,
             check_tapped=check_tapped,
@@ -742,6 +816,57 @@ class TargetingCastingMixin:
             )
         return True
 
+    def _publicly_possible_face_down_target(
+        self,
+        requirement: TargetRequirement,
+        card: Card,
+        caster_id: str,
+        *,
+        check_tapped: bool,
+    ) -> bool:
+        """Check only facts a player knows about a concealed creature.
+
+        The FAQ permits creature-affecting spells to be aimed at a face-down
+        creature even when its hidden color, subtype, abilities, power, or
+        additional types would make the target illegal. Such a spell is
+        checked against the real card only when it resolves.
+        """
+
+        zones = requirement.additional_zones | (
+            frozenset({requirement.zone})
+            if requirement.zone is not None else frozenset()
+        )
+        if card.zone not in zones:
+            return False
+        # It is public that the concealed permanent is a creature. Everything
+        # else in its characteristics is deliberately unknown.
+        if CardType.CREATURE in requirement.excluded_card_types:
+            return False
+        if check_tapped and requirement.tapped_only and not card.tapped:
+            return False
+        if check_tapped and requirement.untapped_only and card.tapped:
+            return False
+        if requirement.owner_only and card.owner_id != caster_id:
+            return False
+        if requirement.controller_only and card.controller_id != caster_id:
+            return False
+        if requirement.defending_player_only and (
+            self.combat is None
+            or card.controller_id != self.combat.defending_player_id
+        ):
+            return False
+        if (
+            requirement.active_player_only
+            and card.controller_id != self.active_player.id
+        ):
+            return False
+        if requirement.blocking_only:
+            return bool(
+                self.combat is not None
+                and any(card in blockers for blockers in self.combat.blockers.values())
+            )
+        return True
+
     def _is_protected_from(
         self, creature: Card, colors: frozenset[Color]
     ) -> bool:
@@ -760,7 +885,10 @@ class TargetingCastingMixin:
         return bool(protected_colors & colors)
 
     def legal_player_targets_for(
-        self, card: Card | None = None
+        self,
+        card: Card | None = None,
+        *,
+        acting_player_id: str | None = None,
     ) -> list[PlayerState]:
         spell = card or (self.pending_cast.spell if self.pending_cast else None)
         pending_ability = self.pending_activation if card is None else None
@@ -773,8 +901,12 @@ class TargetingCastingMixin:
             return []
         players = list(self.players)
         if requirement.opponent_only:
-            controller_id = (
-                spell.owner_id
+            controller_id = acting_player_id or (
+                self.pending_cast.caster_id
+                if spell is not None
+                and self.pending_cast is not None
+                and self.pending_cast.spell is spell
+                else spell.controller_id or spell.owner_id
                 if spell is not None
                 else pending_ability.controller_id
             )
@@ -978,15 +1110,24 @@ class TargetingCastingMixin:
             target = chosen[0] if chosen else None
             if not isinstance(target, Card):
                 raise ValueError(f"{pending.spell.name} must target a card")
+            target_words_are_hidden = self.card_characteristics_are_hidden_from(
+                target, pending.decision_maker_id
+            )
             if word_effect.word_kind == "color":
                 if not isinstance(word_from, Color) or not isinstance(word_to, Color):
                     raise ValueError("choose two color words")
-                if word_from not in self.current_color_words(target):
+                if (
+                    not target_words_are_hidden
+                    and word_from not in self.current_color_words(target)
+                ):
                     raise ValueError("the chosen color word is not on the target")
             else:
                 if not isinstance(word_from, str) or not isinstance(word_to, str):
                     raise ValueError("choose two basic-land words")
-                if word_from not in self.current_land_words(target):
+                if (
+                    not target_words_are_hidden
+                    and word_from not in self.current_land_words(target)
+                ):
                     raise ValueError("the chosen land word is not on the target")
             if word_from == word_to:
                 raise ValueError("the replacement word must be different")
@@ -1009,10 +1150,19 @@ class TargetingCastingMixin:
             target_cost = self.spell_casting_cost_value(
                 target, target_spell.x_value
             )
-            if pending.x_value != target_cost:
+            if (
+                not self.card_characteristics_are_hidden_from(
+                    target, pending.caster_id
+                )
+                and pending.x_value != target_cost
+            ):
                 raise ValueError(
                     f"X must equal {target.name}'s casting cost ({target_cost})"
                 )
+        if pending.word_command_id is not None:
+            self.pending_cast = None
+            self._store_word_command_targets(pending, chosen)
+            return
         caster = self.player(pending.caster_id)
         validated_caster = self._validate_cast(
             pending.spell, pending.x_value
@@ -1038,6 +1188,12 @@ class TargetingCastingMixin:
             assert target is not None
             self.cast_simulacrum_in_prevention(pending.spell, target)
             return
+        incident_window_mode = (
+            "regeneration"
+            if self._is_regeneration_spell(pending.spell)
+            and self._regeneration_window_is_open()
+            else None
+        )
         self._cast_spell(
             pending.spell,
             chosen,
@@ -1053,6 +1209,8 @@ class TargetingCastingMixin:
             ),
             chosen_word_from=pending.chosen_word_from,
             chosen_word_to=pending.chosen_word_to,
+            incident_window_mode=incident_window_mode,
+            decision_maker_id=pending.decision_maker_id,
         )
 
     def fork_copy_target_options(
@@ -1095,6 +1253,7 @@ class TargetingCastingMixin:
                 requirement,
                 candidate,
                 caster_id,
+                information_limited=True,
                 source_colors=frozenset({copy_color}),
             )
         ]
@@ -1105,6 +1264,7 @@ class TargetingCastingMixin:
                     requirement,
                     candidate,
                     caster_id,
+                    information_limited=True,
                     source_colors=frozenset({copy_color}),
                 )
             )
@@ -1184,55 +1344,9 @@ class TargetingCastingMixin:
     def cancel_pending_cast(self) -> None:
         if self.pending_cast is None:
             raise RuntimeError("there is no pending spell to cancel")
+        if self.pending_cast.word_command_id is not None:
+            raise RuntimeError("a spell chosen for Word of Command must be played")
         self.pending_cast = None
-
-    def _resolve_permanent_spell(
-        self,
-        card: Card,
-        targets: tuple[Card, ...],
-        *,
-        chosen_land_subtype: str | None = None,
-    ) -> None:
-        player = self.active_player
-        self.pay_mana(player, self.spell_mana_cost(card))
-        card.controller_id = player.id
-        copies_artifact = card.definition.copies_artifact
-        copies_creature = card.definition.copies_creature
-        if copies_artifact or copies_creature:
-            if len(targets) != 1:
-                raise ValueError(f"{card.name} requires exactly one copy choice")
-            if copies_artifact:
-                self._copy_artifact_definition(card, targets[0])
-            else:
-                self._copy_creature_definition(card, targets[0])
-        self._move_card(card, Zone.BATTLEFIELD)
-        card.entered_battlefield_turn = self.turn_number
-        cast_definition = card.printed_definition or card.definition
-        if (
-            CardType.CREATURE in cast_definition.card_types
-            and CardType.ARTIFACT not in cast_definition.card_types
-        ):
-            card.summoned_turn = self.turn_number
-        card.enchanted_card_id = (
-            targets[0].id
-            if targets and not copies_artifact and not copies_creature
-            else None
-        )
-        if card.definition.taps_attached_on_entry and targets:
-            self._tap_permanent(targets[0])
-        card.chosen_land_subtype = chosen_land_subtype
-        self._reconcile_control_effects()
-        self.events.append(
-            SpellCastEvent(
-                card_id=card.id,
-                card_name=card.name,
-                caster_id=player.id,
-                target_ids=tuple(target.id for target in targets),
-                target_names=tuple(target.name for target in targets),
-            )
-        )
-        self._record_spell_cast_opportunity(card)
-        self.check_state_based_actions()
 
     def _cast_spell(
         self,
@@ -1249,8 +1363,16 @@ class TargetingCastingMixin:
         copied_declared_target_requirement: TargetRequirement | None = None,
         chosen_word_from: Color | str | None = None,
         chosen_word_to: Color | str | None = None,
+        incident_window_mode: str | None = None,
+        decision_maker_id: str | None = None,
+        additional_generic_cost: int = 0,
+        face_down_reason: FaceDownReason | None = None,
+        mana_allocation: ManaAllocation | None = None,
     ) -> None:
         """Pay for a spell and add it to the current response batch."""
+
+        if additional_generic_cost < 0:
+            raise ValueError("an additional casting cost cannot be negative")
 
         declared_requirement = (
             self._translated_target_requirement(
@@ -1259,11 +1381,20 @@ class TargetingCastingMixin:
             if card.definition.target_requirement is not None
             else None
         )
-        self.pay_mana(
-            caster, self.spell_mana_cost(card, x_value, len(targets) or 1)
+        casting_cost = self.spell_mana_cost(card, x_value, len(targets) or 1)
+        casting_cost = replace(
+            casting_cost,
+            generic=casting_cost.generic + additional_generic_cost,
         )
+        if mana_allocation is None:
+            self.pay_mana(caster, casting_cost)
+        else:
+            self.pay_mana_allocation(caster, mana_allocation)
         card.controller_id = caster.id
         self._move_card(card, Zone.STACK)
+        if face_down_reason is not None:
+            card.face_down_reason = face_down_reason
+            card.face_down_known_to_player_ids = {caster.id}
         card.chosen_land_subtype = chosen_land_subtype
         if (
             CardType.INTERRUPT not in card.definition.card_types
@@ -1274,6 +1405,7 @@ class TargetingCastingMixin:
         self.stack_spells[card.id] = SpellOnStack(
             card=card,
             caster_id=caster.id,
+            decision_maker_id=decision_maker_id or caster.id,
             targets=targets,
             x_value=x_value,
             chosen_mode=chosen_mode,
@@ -1286,12 +1418,13 @@ class TargetingCastingMixin:
             declared_target_requirement=declared_requirement,
             chosen_word_from=chosen_word_from,
             chosen_word_to=chosen_word_to,
+            incident_window_mode=incident_window_mode,
             declaration_sequence=self.interrupt_declaration_sequence,
         )
         self.events.append(
             SpellCastEvent(
                 card_id=card.id,
-                card_name=card.name,
+                card_name=self.public_card_name(card),
                 caster_id=caster.id,
                 target_ids=tuple(
                     target.id for target in targets if isinstance(target, Card)
@@ -1301,7 +1434,11 @@ class TargetingCastingMixin:
                     for target in targets
                     if not isinstance(target, Card)
                 ),
-                target_names=tuple(target.name for target in targets),
+                target_names=tuple(
+                    self.public_card_name(target)
+                    if isinstance(target, Card) else target.name
+                    for target in targets
+                ),
             )
         )
         self._record_spell_cast_opportunity(card)

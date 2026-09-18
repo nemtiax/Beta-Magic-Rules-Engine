@@ -1,9 +1,13 @@
 import unittest
 
-from beta_magic import (
-    LANDHOME_CREATURES,
+from tests.support import declare_attackers, declare_blockers
+
+from tests.card_groups import LANDHOME_CREATURES
+from beta_magic.card_defs.blue import (
     PIRATE_SHIP,
     SEA_SERPENT,
+)
+from beta_magic import (
     Card,
     CardType,
     CombatStep,
@@ -12,7 +16,10 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import ISLAND, TROPICAL_ISLAND
+from beta_magic.card_defs.lands import (
+    ISLAND,
+    TROPICAL_ISLAND,
+)
 
 
 class LandhomeTests(unittest.TestCase):
@@ -83,7 +90,7 @@ class LandhomeTests(unittest.TestCase):
         self.game.begin_combat()
 
         with self.assertRaisesRegex(ValueError, "defender controls an Island"):
-            self.game.declare_attackers([serpent])
+            declare_attackers(self.game, [serpent])
 
         self.assertIs(self.game.combat.step, CombatStep.DECLARE_ATTACKERS)
 
@@ -93,7 +100,7 @@ class LandhomeTests(unittest.TestCase):
         self.put_in_play(self.bob, TROPICAL_ISLAND)
 
         self.game.begin_combat()
-        step = self.game.declare_attackers([serpent])
+        step = declare_attackers(self.game, [serpent])
 
         self.assertIs(step, CombatStep.ATTACKER_RESPONSE)
         self.assertIn(serpent, self.game.combat.attackers)

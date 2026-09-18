@@ -1,17 +1,23 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
 from beta_magic import (
     CardType,
     GameState,
     PlayerState,
     TurnPhase,
-    VANILLA_WALLS,
-    WALL_OF_ICE,
-    WALL_OF_STONE,
-    WALL_OF_WOOD,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from tests.card_groups import VANILLA_WALLS
+from beta_magic.card_defs.green import (
+    WALL_OF_ICE,
+    WALL_OF_WOOD,
+)
+from beta_magic.card_defs.red import WALL_OF_STONE
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
@@ -57,15 +63,15 @@ class VanillaWallTests(unittest.TestCase):
         wall = self.put_in_play(self.alice, WALL_OF_WOOD)
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "Wall and cannot attack"):
-            self.game.declare_attackers([wall])
+            declare_attackers(self.game, [wall])
         self.assertFalse(wall.tapped)
 
     def test_wall_can_block_normally(self) -> None:
         bear = self.put_in_play(self.alice, GRIZZLY_BEARS)
         wall = self.put_in_play(self.bob, WALL_OF_WOOD)
         self.game.begin_combat()
-        self.game.declare_attackers([bear])
-        self.game.declare_blockers({wall: bear})
+        declare_attackers(self.game, [bear])
+        declare_blockers(self.game, {wall: bear})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertIn(wall, self.bob.battlefield)
@@ -79,7 +85,7 @@ class VanillaWallTests(unittest.TestCase):
         wall.zone = Zone.HAND
         self.alice.hand.append(wall)
         self.alice.mana_pool.green = 1
-        self.game.cast_creature(wall)
+        cast_and_resolve(self.game, wall)
         self.assertIn(wall, self.alice.battlefield)
         self.assertEqual(self.alice.mana_pool.total, 0)
 

@@ -1,20 +1,25 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.black import (
     BAD_MOON,
+    ROYAL_ASSASSIN,
+)
+from beta_magic.card_defs.red import (
     DWARVEN_DEMOLITION_TEAM,
     GOBLIN_BALLOON_BRIGADE,
-    NORTHERN_PALADIN,
-    ROYAL_ASSASSIN,
-    SWAMP,
+)
+from beta_magic.card_defs.white import NORTHERN_PALADIN
+from beta_magic.card_defs.lands import SWAMP
+from beta_magic import (
     Card,
     GameState,
     KeywordAbility,
     PlayerState,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, SCATHE_ZOMBIES
-from beta_magic.card_defs import WALL_OF_WOOD
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.black import SCATHE_ZOMBIES
+from beta_magic.card_defs.green import WALL_OF_WOOD
 
 
 class UtilityAbilityCreatureTests(unittest.TestCase):

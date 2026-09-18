@@ -1,14 +1,20 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     FOREST,
-    GRIZZLY_BEARS,
     ISLAND,
-    MANA_SHORT,
     MOUNTAIN,
     PLAINS,
-    PSYCHIC_VENOM,
+)
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
     WILD_GROWTH,
+)
+from beta_magic.card_defs.blue import (
+    MANA_SHORT,
+    PSYCHIC_VENOM,
+)
+from beta_magic import (
     Card,
     GameState,
     ManaBurnEvent,

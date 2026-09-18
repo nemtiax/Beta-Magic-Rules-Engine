@@ -1,16 +1,18 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.green import ELVISH_ARCHERS
+from tests.card_groups import FIRST_STRIKE_CREATURES
 from beta_magic import (
-    ELVISH_ARCHERS,
-    FIRST_STRIKE_CREATURES,
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
-    GRIZZLY_BEARS,
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import (
     HILL_GIANT,
     MONSS_GOBLIN_RAIDERS,
 )
@@ -41,8 +43,8 @@ class FirstStrikeTests(unittest.TestCase):
         attacker = self.put_in_play(self.alice, attacker_definition)
         blocker = self.put_in_play(self.bob, blocker_definition)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
         self.game.advance_combat()
         self.game.deal_combat_damage(assignments)
         return attacker, blocker
@@ -77,8 +79,8 @@ class FirstStrikeTests(unittest.TestCase):
         archer = self.put_in_play(self.bob, ELVISH_ARCHERS)
         goblin = self.put_in_play(self.bob, MONSS_GOBLIN_RAIDERS)
         self.game.begin_combat()
-        self.game.declare_attackers([giant])
-        self.game.declare_blockers({archer: giant, goblin: giant})
+        declare_attackers(self.game, [giant])
+        declare_blockers(self.game, {archer: giant, goblin: giant})
         self.game.advance_combat()
         self.game.deal_combat_damage({giant: {archer: 2, goblin: 1}})
         self.assertIn(giant, self.alice.graveyard)

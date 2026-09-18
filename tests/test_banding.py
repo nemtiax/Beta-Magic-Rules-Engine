@@ -1,11 +1,17 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
-    GRIZZLY_BEARS,
-    HELM_OF_CHATZUK,
     MESA_PEGASUS,
+)
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
     TIMBER_WOLVES,
+)
+from beta_magic.card_defs.artifacts import HELM_OF_CHATZUK
+from beta_magic import (
     Card,
     CombatStep,
     GameState,
@@ -55,7 +61,7 @@ class BandingTests(unittest.TestCase):
         bear = self.creature(self.alice, GRIZZLY_BEARS)
         self.game.begin_combat()
 
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, wolves, bear], bands=[(hero, wolves, bear)]
         )
         self.assertEqual(self.game.combat.attacking_bands, [(hero, wolves, bear)])
@@ -76,7 +82,7 @@ class BandingTests(unittest.TestCase):
         game.players[0].battlefield.extend((bear, other_bear))
         game.begin_combat()
         with self.assertRaisesRegex(ValueError, "all but at most one"):
-            game.declare_attackers(
+            declare_attackers(game,
                 [bear, other_bear], bands=[(bear, other_bear)]
             )
 
@@ -85,13 +91,13 @@ class BandingTests(unittest.TestCase):
         pegasus = self.creature(self.alice, MESA_PEGASUS)
         blocker = self.creature(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, pegasus], bands=[(hero, pegasus)]
         )
 
         # The ground creature can block the Hero, which stops the whole band,
         # including the flying Pegasus.
-        self.game.declare_blockers({blocker: pegasus})
+        declare_blockers(self.game, {blocker: pegasus})
 
         self.assertEqual(self.game.combat.blockers[hero.id], [blocker])
         self.assertEqual(self.game.combat.blockers[pegasus.id], [blocker])
@@ -101,10 +107,10 @@ class BandingTests(unittest.TestCase):
         pegasus = self.creature(self.alice, MESA_PEGASUS)
         blocker = self.creature(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, pegasus], bands=[(hero, pegasus)]
         )
-        self.game.declare_blockers({blocker: hero})
+        declare_blockers(self.game, {blocker: hero})
         self.game.advance_combat()
         self.assertEqual(self.game.combat.step, CombatStep.DAMAGE)
 
@@ -121,8 +127,8 @@ class BandingTests(unittest.TestCase):
         hero = self.creature(self.bob, BENALISH_HERO)
         bear = self.creature(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({hero: attacker, bear: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {hero: attacker, bear: attacker})
         self.game.advance_combat()
         view = GameViewModel(self.game)
 
@@ -141,7 +147,7 @@ class BandingTests(unittest.TestCase):
         self.game.begin_combat()
 
         self.activate_helm(self.alice, helm, first_bear)
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [first_bear, second_bear], bands=[(first_bear, second_bear)]
         )
 
@@ -157,11 +163,11 @@ class BandingTests(unittest.TestCase):
         second_bear = self.creature(self.alice, GRIZZLY_BEARS)
         blocker = self.creature(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([first_bear, second_bear])
+        declare_attackers(self.game, [first_bear, second_bear])
 
         self.activate_helm(self.alice, helm, first_bear)
         self.assertEqual(self.game.combat.attacking_bands, [])
-        self.game.declare_blockers({blocker: first_bear})
+        declare_blockers(self.game, {blocker: first_bear})
 
         self.assertEqual(self.game.combat.blockers[first_bear.id], [blocker])
         self.assertEqual(self.game.combat.blockers[second_bear.id], [])
@@ -183,8 +189,8 @@ class BandingTests(unittest.TestCase):
         first_blocker = self.creature(self.bob, GRIZZLY_BEARS)
         second_blocker = self.creature(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers(
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game,
             {first_blocker: attacker, second_blocker: attacker}
         )
 

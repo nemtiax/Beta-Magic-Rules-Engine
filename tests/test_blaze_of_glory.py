@@ -1,11 +1,15 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
     BLAZE_OF_GLORY,
-    GRIZZLY_BEARS,
     MESA_PEGASUS,
-    PHANTOM_MONSTER,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic import (
     Card,
     CombatStep,
     GameState,
@@ -61,8 +65,8 @@ class BlazeOfGloryTests(unittest.TestCase):
 
         attacker = self.card(self.alice, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
         self.alice.mana_pool.white = 1
         with self.assertRaisesRegex(RuntimeError, "before blockers"):
             self.game.begin_cast(blaze)
@@ -75,7 +79,7 @@ class BlazeOfGloryTests(unittest.TestCase):
         tapped_blocker.tapped = True
         blaze = self.card(self.alice, BLAZE_OF_GLORY, Zone.HAND)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
 
         self.assertEqual(self.game.legal_targets_for(blaze), [legal_blocker])
         self.assertNotIn(own_creature, self.game.legal_targets_for(blaze))
@@ -86,12 +90,12 @@ class BlazeOfGloryTests(unittest.TestCase):
         flyer = self.card(self.alice, PHANTOM_MONSTER)
         blocker = self.card(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([first, second, flyer])
+        declare_attackers(self.game, [first, second, flyer])
         self.cast_blaze(blocker)
 
         with self.assertRaisesRegex(ValueError, "every attacker"):
-            self.game.declare_blockers({blocker: first})
-        self.game.declare_blockers({blocker: (first, second)})
+            declare_blockers(self.game, {blocker: first})
+        declare_blockers(self.game, {blocker: (first, second)})
 
         self.assertIn(blocker, self.game.combat.blockers[first.id])
         self.assertIn(blocker, self.game.combat.blockers[second.id])
@@ -101,11 +105,11 @@ class BlazeOfGloryTests(unittest.TestCase):
         attacker = self.card(self.alice, GRIZZLY_BEARS)
         blocker = self.card(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         self.cast_blaze(blocker)
         blocker.tapped = True
 
-        self.game.declare_blockers({})
+        declare_blockers(self.game, {})
         self.assertEqual(self.game.combat.blockers[attacker.id], [])
 
     def test_attacking_band_counts_as_one_group(self):
@@ -114,12 +118,12 @@ class BlazeOfGloryTests(unittest.TestCase):
         other = self.card(self.alice, GRIZZLY_BEARS)
         blocker = self.card(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers(
+        declare_attackers(self.game,
             [hero, pegasus, other], bands=[(hero, pegasus)]
         )
         self.cast_blaze(blocker)
 
-        self.game.declare_blockers({blocker: (hero, other)})
+        declare_blockers(self.game, {blocker: (hero, other)})
 
         self.assertIn(blocker, self.game.combat.blockers[hero.id])
         self.assertIn(blocker, self.game.combat.blockers[pegasus.id])
@@ -130,7 +134,7 @@ class BlazeOfGloryTests(unittest.TestCase):
         second = self.card(self.alice, GRIZZLY_BEARS)
         blocker = self.card(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([first, second])
+        declare_attackers(self.game, [first, second])
         self.cast_blaze(blocker)
         self.game.combat.step = CombatStep.DECLARE_BLOCKERS
         controller = CombatUiController()

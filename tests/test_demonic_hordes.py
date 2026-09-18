@@ -1,18 +1,20 @@
 import unittest
 
-from beta_magic import (
-    DEMONIC_HORDES,
+from beta_magic.card_defs.black import DEMONIC_HORDES
+from beta_magic.card_defs.lands import (
     FOREST,
-    GRIZZLY_BEARS,
     ISLAND,
     PLAINS,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
-    UpkeepFailure,
     Zone,
 )
+from beta_magic.effects import UpkeepFailure
 from beta_magic.ui import GameViewModel
 
 

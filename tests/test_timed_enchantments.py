@@ -1,21 +1,23 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.black import (
     BAD_MOON,
     CURSED_LAND,
-    FEEDBACK,
-    TIMED_ENCHANTMENTS,
-    WANDERLUST,
     WARP_ARTIFACT,
-    LIGHTNING_BOLT,
+)
+from beta_magic.card_defs.blue import FEEDBACK
+from tests.card_groups import TIMED_ENCHANTMENTS
+from beta_magic.card_defs.green import WANDERLUST
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic import (
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
-    SOL_RING,
 )
-from beta_magic.card_defs import PLAINS
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import SOL_RING
+from beta_magic.card_defs.lands import PLAINS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class TimedEnchantmentTests(unittest.TestCase):

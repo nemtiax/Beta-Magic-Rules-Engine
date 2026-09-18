@@ -1,18 +1,20 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.green import FORCE_OF_NATURE
+from beta_magic.card_defs.blue import PHANTASMAL_FORCES
+from tests.card_groups import UPKEEP_CREATURES
 from beta_magic import (
-    LIGHTNING_BOLT,
-    FORCE_OF_NATURE,
-    PHANTASMAL_FORCES,
-    UPKEEP_CREATURES,
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
-    UpkeepFailure,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.effects import UpkeepFailure
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class UpkeepCostTests(unittest.TestCase):
@@ -141,7 +143,7 @@ class UpkeepCostTests(unittest.TestCase):
         self.game.advance_phase()
         self.game.advance_phase()
         self.game.begin_combat()
-        self.game.declare_attackers([force])
+        declare_attackers(self.game, [force])
         self.assertIn(force, self.game.combat.attackers)
 
     def test_paying_force_upkeep_prevents_damage(self) -> None:

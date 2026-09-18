@@ -1,15 +1,25 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import (
     ANIMATE_WALL,
+    WHITE_KNIGHT,
+)
+from beta_magic.card_defs.black import (
     DRUDGE_SKELETONS,
+    NETTLING_IMP,
+)
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
     INSTILL_ENERGY,
-    NETTLING_IMP,
+    WALL_OF_WOOD,
+)
+from beta_magic.card_defs.blue import (
     SEA_SERPENT,
     SIRENS_CALL,
-    WALL_OF_WOOD,
-    WHITE_KNIGHT,
+)
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
@@ -94,8 +104,8 @@ class AttackCompulsionTests(unittest.TestCase):
         self.nettle(bear)
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "must attack"):
-            self.game.declare_attackers(())
-        self.game.declare_attackers((bear,))
+            declare_attackers(self.game, ())
+        declare_attackers(self.game, (bear,))
         self.finish_current_turn()
         self.assertIn(bear, self.bob.battlefield)
 
@@ -189,8 +199,8 @@ class AttackCompulsionTests(unittest.TestCase):
         self.resolve_priority()
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "must attack"):
-            self.game.declare_attackers(())
-        self.game.declare_attackers((wall,))
+            declare_attackers(self.game, ())
+        declare_attackers(self.game, (wall,))
         self.assertIn(wall, self.bob.battlefield)
 
 

@@ -1,18 +1,22 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.white import (
     BENALISH_HERO,
-    GRIZZLY_BEARS,
     SERRA_ANGEL,
     MESA_PEGASUS,
-    PLAINS,
+)
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
+    WALL_OF_WOOD,
+)
+from beta_magic.card_defs.lands import PLAINS
+from beta_magic import (
     Card,
     CombatState,
     CombatStep,
     GameState,
     PlayerState,
     TurnPhase,
-    WALL_OF_WOOD,
     Zone,
 )
 from beta_magic.ui import GameViewModel
@@ -46,7 +50,7 @@ class UiCombatLinkTests(unittest.TestCase):
         )
 
     def test_unblocked_attacker_is_identified(self):
-        data = self.view._card_data(self.angel)
+        data = self.view._presentation._card_data(self.angel)
         self.assertEqual(data["combatRole"], "attacker")
         self.assertEqual(data["combatLabel"], "A1 · unblocked")
         self.assertEqual(data["combatDetail"], "A1: Serra Angel — unblocked")
@@ -54,8 +58,8 @@ class UiCombatLinkTests(unittest.TestCase):
     def test_attacker_and_all_blockers_name_their_relationship(self):
         self.game.combat.blockers[self.angel.id] = [self.bear_one, self.bear_two]
 
-        attacker_data = self.view._card_data(self.angel)
-        blocker_data = self.view._card_data(self.bear_one)
+        attacker_data = self.view._presentation._card_data(self.angel)
+        blocker_data = self.view._presentation._card_data(self.bear_one)
 
         self.assertEqual(attacker_data["combatRole"], "attacker")
         self.assertEqual(attacker_data["combatLabel"], "A1 · blocked ×2")
@@ -74,7 +78,7 @@ class UiCombatLinkTests(unittest.TestCase):
             second_attacker.id: [self.bear_one],
         }
 
-        blocker_data = self.view._card_data(self.bear_one)
+        blocker_data = self.view._presentation._card_data(self.bear_one)
 
         self.assertEqual(blocker_data["combatLabel"], "Blocks A1 + A2")
         self.assertIn("A1: Serra Angel", blocker_data["combatDetail"])
@@ -89,7 +93,7 @@ class UiCombatLinkTests(unittest.TestCase):
             second_attacker.id: [self.bear_one],
         }
 
-        blocker_data = self.view._card_data(self.bear_one)
+        blocker_data = self.view._presentation._card_data(self.bear_one)
 
         self.assertEqual(blocker_data["combatLabel"], "Blocks B1")
         self.assertIn("B1: Serra Angel + Grizzly Bears", blocker_data["combatDetail"])
@@ -112,7 +116,8 @@ class UiCombatLinkTests(unittest.TestCase):
             self.view._combat_ui.draft_for(self.bear_one.id), (self.angel.id,)
         )
         self.assertEqual(
-            self.view._card_data(self.bear_one)["combatLabel"], "Blocks A1"
+            self.view._presentation._card_data(self.bear_one)["combatLabel"],
+            "Blocks A1",
         )
         self.assertEqual(
             self.view.state["declareBlockersLabel"], "Declare 1 blocker"
@@ -121,7 +126,9 @@ class UiCombatLinkTests(unittest.TestCase):
         self.view.toggleCard(str(self.bear_one.id))
         self.view.setBlocks()
         self.assertEqual(self.view._combat_ui.draft_for(self.bear_one.id), ())
-        self.assertEqual(self.view._card_data(self.bear_one)["combatLabel"], "")
+        self.assertEqual(
+            self.view._presentation._card_data(self.bear_one)["combatLabel"], ""
+        )
         self.assertEqual(
             self.view.state["declareBlockersLabel"], "Declare 0 blockers"
         )
@@ -140,10 +147,12 @@ class UiCombatLinkTests(unittest.TestCase):
         self.view.setBlocks()
 
         self.assertEqual(
-            self.view._card_data(self.bear_one)["combatLabel"], "Blocks A1"
+            self.view._presentation._card_data(self.bear_one)["combatLabel"],
+            "Blocks A1",
         )
         self.assertEqual(
-            self.view._card_data(self.bear_two)["combatLabel"], "Blocks A2"
+            self.view._presentation._card_data(self.bear_two)["combatLabel"],
+            "Blocks A2",
         )
         self.assertEqual(
             self.view.state["declareBlockersLabel"], "Declare 2 blockers"
@@ -279,7 +288,9 @@ class UiCombatLinkTests(unittest.TestCase):
         self.assertTrue(self.view.state["canSetAttackingBand"])
         self.view.setAttackingBand()
 
-        self.assertEqual(self.view._card_data(hero)["combatLabel"], "Band B1")
+        self.assertEqual(
+            self.view._presentation._card_data(hero)["combatLabel"], "Band B1"
+        )
         self.assertEqual(
             self.view.state["declareAttackersLabel"], "Declare 2 attackers"
         )
@@ -345,14 +356,20 @@ class UiCombatLinkTests(unittest.TestCase):
         self.game.combat.blockers.clear()
 
         for ineligible in (land, wall, sick_creature, tapped_creature):
-            self.assertFalse(self.view._card_data(ineligible)["attackerEligible"])
+            self.assertFalse(
+                self.view._presentation._card_data(ineligible)[
+                    "attackerEligible"
+                ]
+            )
             self.view.toggleCard(str(ineligible.id))
             self.assertNotIn(ineligible.id, self.view.selected_card_ids)
 
         self.assertEqual(
             self.view.state["message"], "That card is not eligible to attack."
         )
-        self.assertTrue(self.view._card_data(self.angel)["attackerEligible"])
+        self.assertTrue(
+            self.view._presentation._card_data(self.angel)["attackerEligible"]
+        )
         self.view.toggleCard(str(self.angel.id))
         self.assertEqual(self.view.selected_card_ids, {self.angel.id})
         self.assertEqual(

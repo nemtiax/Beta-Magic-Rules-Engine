@@ -1,9 +1,9 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import CELESTIAL_PRISM
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.red import LIGHTNING_BOLT
 from beta_magic import (
-    CELESTIAL_PRISM,
-    FOREST,
-    LIGHTNING_BOLT,
     Card,
     CardType,
     Color,

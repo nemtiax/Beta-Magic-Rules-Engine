@@ -9,6 +9,7 @@ from typing import Protocol, Sequence, TypeVar
 from .card_defs.catalog import ALL_CARDS, card_named
 from .card_defs.lands import BASIC_LANDS
 from .cards import CardDefinition
+from .deck_files import load_deck_file
 from .game import GameState, PlayerState
 from .sealed import BetaStarterGenerator
 
@@ -165,6 +166,30 @@ RIVERBANK_GUARDIANS_DECK = _cards(
     "Birds of Paradise", "Llanowar Elves",
 )
 
+# The Raiders can establish two one-mana attackers on turn one, then cast
+# Camouflage on turn two. Later draws add Flying, forestwalk, protection,
+# Lure, Blaze of Glory, and an animated-land case. The Guardians open with
+# fast mana and several blockers whose legal assignments differ by attacker:
+# ordinary ground creatures, Ironclaw Orcs' power limit, a creature that can
+# gain Flying, Giant Spider's reach, and Walls.
+CAMOUFLAGE_RAIDERS_DECK = _cards(
+    "Living Lands", "Forest", "Plains", "Grizzly Bears",
+    "Shanodin Dryads", "Mesa Pegasus", "White Knight", "Savannah Lions",
+    "Lure", "Blaze of Glory", "Holy Strength", "Camouflage",
+    "Grizzly Bears",
+    "Forest", "Plains", "Mox Emerald", "Scryb Sprites", "Timber Wolves",
+    "Camouflage", "Camouflage",
+)
+
+CAMOUFLAGE_GUARDIANS_DECK = _cards(
+    "Forest", "Mountain", "Wall of Wood", "Giant Spider", "Scryb Sprites",
+    "Goblin Balloon Brigade", "Ironclaw Orcs", "Grizzly Bears",
+    "Wall of Fire", "Wall of Brambles", "Timber Wolves", "Mox Ruby",
+    "Taiga",
+    "Forest", "Mountain", "Mox Ruby", "Grizzly Bears", "Ironclaw Orcs",
+    "Goblin Balloon Brigade", "Giant Spider",
+)
+
 
 def _make_game(
     first_id: str,
@@ -198,6 +223,24 @@ def make_demo_game(*, ante: bool = False) -> GameState:
         "player-1", "Player 1", deck,
         "player-2", "Player 2", deck,
         shuffle=True, ante=ante,
+    )
+
+
+def make_saved_deck_game(
+    first_path: str,
+    second_path: str,
+    *,
+    ante: bool = False,
+) -> GameState:
+    """Create a shuffled game from two validated deck JSON files."""
+
+    first = load_deck_file(first_path)
+    second = load_deck_file(second_path)
+    return _make_game(
+        "player-1", first.name, first.cards,
+        "player-2", second.name, second.cards,
+        shuffle=True,
+        ante=ante,
     )
 
 
@@ -315,6 +358,19 @@ def make_raging_river_test_game(*, ante: bool = False) -> GameState:
     )
 
 
+def make_camouflage_test_game(*, ante: bool = False) -> GameState:
+    """Create a fast matchup for concealed blocker-assignment testing."""
+
+    return _make_game(
+        "camouflage-raiders", "Camouflage Raiders (G/W)",
+        CAMOUFLAGE_RAIDERS_DECK,
+        "camouflage-guardians", "Camouflage Guardians (G/R)",
+        CAMOUFLAGE_GUARDIANS_DECK,
+        shuffle=False,
+        ante=ante,
+    )
+
+
 __all__ = [
     "VERDANT_TIDES_DECK",
     "STONEFIRE_DECK",
@@ -332,7 +388,10 @@ __all__ = [
     "BANDING_DEFENSE_DECK",
     "RIVERBANK_RAIDERS_DECK",
     "RIVERBANK_GUARDIANS_DECK",
+    "CAMOUFLAGE_RAIDERS_DECK",
+    "CAMOUFLAGE_GUARDIANS_DECK",
     "make_demo_game",
+    "make_saved_deck_game",
     "make_test_game",
     "make_enchantment_test_game",
     "make_timed_event_test_game",
@@ -341,4 +400,5 @@ __all__ = [
     "make_aura_test_game",
     "make_banding_test_game",
     "make_raging_river_test_game",
+    "make_camouflage_test_game",
 ]

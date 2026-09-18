@@ -1,10 +1,12 @@
 import unittest
 from uuid import uuid4
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BAYOU,
-    CYCLOPEAN_TOMB,
     PLAINS,
+)
+from beta_magic.card_defs.artifacts import CYCLOPEAN_TOMB
+from beta_magic import (
     Card,
     GameState,
     PlayerState,

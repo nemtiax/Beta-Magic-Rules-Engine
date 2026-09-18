@@ -2,14 +2,16 @@ import unittest
 
 from beta_magic import (
     Card,
-    FOREST,
     GameState,
-    ISLAND,
-    KUDZU,
     PlayerState,
     TurnPhase,
     Zone,
 )
+from beta_magic.card_defs.lands import (
+    FOREST,
+    ISLAND,
+)
+from beta_magic.card_defs.green import KUDZU
 
 
 class KudzuTests(unittest.TestCase):

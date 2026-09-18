@@ -1,11 +1,15 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.blue import (
     BLUE_ELEMENTAL_BLAST,
+    WATER_ELEMENTAL,
+)
+from beta_magic.card_defs.red import (
     LIGHTNING_BOLT,
     RED_ELEMENTAL_BLAST,
     UTHDEN_TROLL,
-    WATER_ELEMENTAL,
+)
+from beta_magic import (
     Card,
     CardType,
     Color,
@@ -14,7 +18,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class ElementalBlastTests(unittest.TestCase):

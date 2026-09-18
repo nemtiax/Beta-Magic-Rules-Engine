@@ -1,9 +1,9 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import CONSERVATOR
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic import (
-    CONSERVATOR,
-    FOREST,
-    GRIZZLY_BEARS,
     Card,
     CardType,
     GameState,

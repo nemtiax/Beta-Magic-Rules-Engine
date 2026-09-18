@@ -1,16 +1,23 @@
 import unittest
 
-from beta_magic import (
-    DARK_RITUAL,
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.black import DARK_RITUAL
+from beta_magic.card_defs.blue import (
     INVISIBILITY,
     TWIDDLE,
+)
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, WALL_OF_WOOD
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
+    WALL_OF_WOOD,
+)
 
 
 class InvisibilityTwiddleDarkRitualTests(unittest.TestCase):
@@ -47,10 +54,10 @@ class InvisibilityTwiddleDarkRitualTests(unittest.TestCase):
         wall = self.card(self.bob, WALL_OF_WOOD, Zone.BATTLEFIELD)
 
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         with self.assertRaisesRegex(ValueError, "only a Wall"):
-            self.game.declare_blockers({bear: attacker})
-        self.game.declare_blockers({wall: attacker})
+            declare_blockers(self.game, {bear: attacker})
+        declare_blockers(self.game, {wall: attacker})
 
     def test_twiddle_records_mode_and_sets_rather_than_toggles(self):
         target = self.card(self.alice, GRIZZLY_BEARS, Zone.BATTLEFIELD)

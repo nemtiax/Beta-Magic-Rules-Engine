@@ -11,6 +11,7 @@ from .ability_activation import AbilityActivationMixin
 from .abilities import (
     ActivatedEventDrawAbility,
     ActivatedEventLifeGainAbility,
+    ActivatedManaAbility,
 )
 from .cards import Card, CardDefinition
 from .casting import (
@@ -74,17 +75,25 @@ from .priority_resolution import (
     PendingTombCleanupChoice,
     PendingDrainPowerChoice,
     PendingDemonicAttorneyChoice,
+    PendingWordOfCommandChoice,
     PendingNaturalSelectionChoice,
     PendingLibrarySearchChoice,
     PendingPowerSinkPayment,
     PriorityBatchResolutionMixin,
 )
-from .mana import ManaCost, ManaPool
+from .mana import (
+    LandManaActivation,
+    LandManaPaymentPlan,
+    ManaAllocation,
+    ManaCost,
+    ManaPool,
+)
 from .rule_events import RuleEventKind, RuleEventOpportunity
 from .types import (
     CardType,
     Color,
     CombatStep,
+    FaceDownReason,
     GameStatus,
     TurnPhase,
     Zone,
@@ -179,6 +188,9 @@ class PlayerState:
             card.controller_id = card.owner_id
             card.summoned_turn = None
             card.enchanted_card_id = None
+            card.face_down_reason = None
+            card.face_down_known_to_player_ids.clear()
+            card.hidden_copied_characteristics_from_player_ids.clear()
         if not token_leaves_battlefield and not spell_copy_leaves_stack:
             target.append(card)
 
@@ -406,6 +418,9 @@ class GameState(
     pending_demonic_attorney_choices: list[PendingDemonicAttorneyChoice] = field(
         default_factory=list
     )
+    pending_word_command_choices: list[PendingWordOfCommandChoice] = field(
+        default_factory=list
+    )
     pending_natural_selection_choices: list[PendingNaturalSelectionChoice] = field(
         default_factory=list
     )
@@ -466,6 +481,302 @@ class GameState(
         if cost.mana_value:
             self._clear_land_tap_undo_window()
         player.mana_pool.pay(cost, self._mana_payment_substitutions(player))
+
+    def pay_mana_allocation(
+        self, player: PlayerState, allocation: ManaAllocation
+    ) -> None:
+        """Spend a previously validated color-specific mana allocation."""
+
+        if allocation.total:
+            self._clear_land_tap_undo_window()
+        player.mana_pool.pay_allocation(allocation)
+
+    def _permanent_tap_mana_contributions(
+        self, permanent: Card
+    ) -> tuple[tuple[str, Color, int], ...]:
+        """Describe mana created merely because ``permanent`` becomes tapped."""
+
+        controller_id = permanent.controller_id or permanent.owner_id
+        contributions: list[tuple[str, Color, int]] = []
+        for player in self.players:
+            for source in player.battlefield:
+                if source.enchanted_card_id != permanent.id:
+                    continue
+                contributions.extend(
+                    (
+                        controller_id,
+                        self.color_word(source, effect.color),
+                        effect.amount,
+                    )
+                    for effect in source.definition.attached_tap_mana_effects
+                )
+        if CardType.LAND not in permanent.definition.card_types:
+            return tuple(contributions)
+        for player in self.players:
+            for source in player.battlefield:
+                if not self.continuous_permanent_is_active(source):
+                    continue
+                for effect in source.definition.land_tap_mana_effects:
+                    land_subtype = self.land_word(source, effect.land_subtype)
+                    if land_subtype not in self.land_subtypes(permanent):
+                        continue
+                    contributions.append(
+                        (
+                            permanent.owner_id if effect.owner_receives else controller_id,
+                            self.color_word(source, effect.color),
+                            effect.amount,
+                        )
+                    )
+        return tuple(contributions)
+
+    def _land_activation_mana_contributions(
+        self,
+        player: PlayerState,
+        land: Card,
+        ability: ActivatedManaAbility,
+    ) -> tuple[tuple[str, Color, int], ...]:
+        """Describe mana created by deliberately using one land mana mode."""
+
+        contributions = [(player.id, ability.color, ability.amount)]
+        if CardType.LAND in land.definition.card_types:
+            contributions.extend(
+                (player.id, ability.color, effect.amount)
+                for owner in self.players
+                for source in owner.battlefield
+                if self.continuous_permanent_is_active(source)
+                for effect in source.definition.land_mana_bonus_effects
+            )
+        return tuple(contributions)
+
+    def land_mana_activations(
+        self, player_id: str
+    ) -> tuple[LandManaActivation, ...]:
+        """Return zero-cost land mana modes currently available to a player.
+
+        This intentionally ignores action priority.  It is a planning query
+        for effects which instruct a player to cast using another player's
+        lands, not an alternate activation route.
+        """
+
+        player = self.player(player_id)
+        choices: list[LandManaActivation] = []
+        for land in player.battlefield:
+            if (
+                land.zone is not Zone.BATTLEFIELD
+                or land.controller_id != player.id
+                or CardType.LAND not in self.card_types(land)
+            ):
+                continue
+            for ability_index, ability in enumerate(self.activated_abilities(land)):
+                if not isinstance(ability, ActivatedManaAbility):
+                    continue
+                if self.ability_mana_cost(land, ability.mana_cost).mana_value:
+                    # No Beta land needs mana to use its mana ability.  A
+                    # future chained-cost planner can broaden this safely.
+                    continue
+                if ability.tap_cost and land.tapped:
+                    continue
+                if (
+                    ability.tap_cost
+                    and land.definition.tap_abilities_require_paid_upkeep
+                    and land.id in self.unpaid_tap_upkeep_ids
+                ):
+                    continue
+                if (
+                    ability.tap_cost
+                    and CardType.CREATURE in land.definition.card_types
+                    and self.has_summoning_sickness(land)
+                ):
+                    continue
+                contributions = list(
+                    self._land_activation_mana_contributions(
+                        player, land, ability
+                    )
+                )
+                if ability.tap_cost:
+                    contributions.extend(
+                        self._permanent_tap_mana_contributions(land)
+                    )
+                amounts = [0] * len(Color)
+                for recipient_id, color, amount in contributions:
+                    if recipient_id == player.id:
+                        amounts[list(Color).index(color)] += amount
+                production = ManaAllocation.from_amounts(amounts)
+                if production.total:
+                    choices.append(
+                        LandManaActivation(
+                            land.id,
+                            land.name,
+                            ability_index,
+                            production,
+                        )
+                    )
+        return tuple(choices)
+
+    def _land_mana_production_vectors(
+        self,
+        player_id: str,
+        cost: ManaCost,
+        *,
+        exact_candidates_only: bool = False,
+    ) -> set[tuple[int, ...]]:
+        """Reachable payer-mana vectors, deduplicated independently of lands."""
+
+        options_by_land: dict[UUID, list[LandManaActivation]] = {}
+        for option in self.land_mana_activations(player_id):
+            options_by_land.setdefault(option.land_id, []).append(option)
+        maximum = cost.mana_value
+        states = {(0,) * len(Color)}
+        for options in options_by_land.values():
+            next_states = set(states)
+            for state in states:
+                for option in options:
+                    produced = tuple(
+                        amount + added
+                        for amount, added in zip(
+                            state, option.production.amounts
+                        )
+                    )
+                    if exact_candidates_only:
+                        if sum(produced) <= maximum:
+                            next_states.add(produced)
+                    else:
+                        next_states.add(
+                            tuple(min(maximum, amount) for amount in produced)
+                        )
+            states = next_states
+        return states
+
+    def can_pay_mana_with_lands(self, player_id: str, cost: ManaCost) -> bool:
+        """Whether a player's pool plus currently usable lands can pay a cost."""
+
+        player = self.player(player_id)
+        substitutions = self._mana_payment_substitutions(player)
+        for production in self._land_mana_production_vectors(player_id, cost):
+            pool = ManaPool.from_amounts(
+                amount + added
+                for amount, added in zip(player.mana_pool.amounts, production)
+            )
+            if pool.can_pay(cost, substitutions):
+                return True
+        return False
+
+    def exact_land_mana_payment_available(
+        self, player_id: str, cost: ManaCost
+    ) -> bool:
+        """Whether some land plan can spend all mana those lands produce."""
+
+        player = self.player(player_id)
+        substitutions = self._mana_payment_substitutions(player)
+        for production in self._land_mana_production_vectors(
+            player_id, cost, exact_candidates_only=True
+        ):
+            pool = ManaPool.from_amounts(
+                amount + added
+                for amount, added in zip(player.mana_pool.amounts, production)
+            )
+            if any(
+                all(spent >= added for spent, added in zip(plan.amounts, production))
+                for plan in pool.payment_plans(cost, substitutions)
+            ):
+                return True
+        return False
+
+    def plan_land_mana_payment(
+        self,
+        player_id: str,
+        cost: ManaCost,
+        activations: Iterable[tuple[UUID, int]],
+        *,
+        require_exact_when_available: bool = False,
+        spending: ManaAllocation | None = None,
+    ) -> LandManaPaymentPlan:
+        """Validate selected land modes and choose a color-specific payment."""
+
+        plans = self.land_mana_payment_plans(
+            player_id,
+            cost,
+            activations,
+            require_exact_when_available=require_exact_when_available,
+        )
+        if spending is not None:
+            try:
+                return next(plan for plan in plans if plan.spending == spending)
+            except StopIteration as error:
+                raise ValueError(
+                    "that mana spending allocation is not available"
+                ) from error
+        return plans[0]
+
+    def land_mana_payment_plans(
+        self,
+        player_id: str,
+        cost: ManaCost,
+        activations: Iterable[tuple[UUID, int]],
+        *,
+        require_exact_when_available: bool = False,
+    ) -> tuple[LandManaPaymentPlan, ...]:
+        """Return each color allocation for one selected set of land modes."""
+
+        player = self.player(player_id)
+        available = {
+            (option.land_id, option.ability_index): option
+            for option in self.land_mana_activations(player_id)
+        }
+        selected: list[LandManaActivation] = []
+        used_lands: set[UUID] = set()
+        for key in activations:
+            option = available.get(key)
+            if option is None:
+                raise ValueError("that land mana ability is not available")
+            if option.land_id in used_lands:
+                raise ValueError("a land can supply only one mana mode")
+            selected.append(option)
+            used_lands.add(option.land_id)
+
+        produced_amounts = tuple(
+            sum(option.production.amounts[index] for option in selected)
+            for index in range(len(Color))
+        )
+        production = ManaAllocation.from_amounts(produced_amounts)
+        pool = ManaPool.from_amounts(
+            amount + added
+            for amount, added in zip(player.mana_pool.amounts, produced_amounts)
+        )
+        payments = pool.payment_plans(
+            cost, self._mana_payment_substitutions(player)
+        )
+        if not payments:
+            raise RuntimeError("the selected mana pool and lands cannot pay the cost")
+
+        def excess(payment: ManaAllocation) -> int:
+            return sum(
+                max(0, produced - spent)
+                for produced, spent in zip(produced_amounts, payment.amounts)
+            )
+
+        minimum_excess = min(excess(payment) for payment in payments)
+        if (
+            require_exact_when_available
+            and minimum_excess
+            and self.exact_land_mana_payment_available(player_id, cost)
+        ):
+            raise ValueError(
+                "an exact land-mana payment is available; do not overproduce mana"
+            )
+        return tuple(
+            LandManaPaymentPlan(
+                tuple(selected),
+                production,
+                payment,
+                excess(payment),
+            )
+            for payment in sorted(
+                payments,
+                key=lambda payment: (excess(payment), payment.amounts),
+            )
+            if excess(payment) == minimum_excess
+        )
 
     def _mana_pool_snapshot(self) -> tuple[tuple[str, tuple[int, ...]], ...]:
         return tuple((player.id, player.mana_pool.amounts) for player in self.players)
@@ -921,7 +1232,7 @@ class GameState(
         if self.pending_drain_power_choices:
             choice = self.pending_drain_power_choices[0]
             raise RuntimeError(
-                f"{self.player(choice.caster_id).name} must choose mana for "
+                f"{self.player(choice.decision_maker_id).name} must choose mana for "
                 f"{choice.land_name} first"
             )
         if self.pending_power_sink_payment is not None:
@@ -935,6 +1246,12 @@ class GameState(
             raise RuntimeError(
                 f"{self.player(choice.opponent_id).name} must answer "
                 "Demonic Attorney first"
+            )
+        if self.pending_word_command_choices:
+            choice = self.pending_word_command_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.commander_id).name} must finish "
+                "Word of Command first"
             )
         if self.pending_natural_selection_choices:
             choice = self.pending_natural_selection_choices[0]
@@ -1267,6 +1584,14 @@ class GameState(
             and destination is Zone.GRAVEYARD
             else ()
         )
+        if (
+            source_zone is Zone.BATTLEFIELD
+            and destination is not Zone.BATTLEFIELD
+            and card.is_face_down
+        ):
+            # Public zones reveal the card, and therefore reveal the traits of
+            # any Clone/Doppelganger that copied it while it was concealed.
+            self.turn_creature_face_up(card)
         source.remove(card)
 
         if source_zone is Zone.BATTLEFIELD and destination is not Zone.BATTLEFIELD:
@@ -1316,6 +1641,9 @@ class GameState(
             card.land_type_marks.clear()
             card.copied_card_id = None
             card.copied_card_entry_sequence = None
+            card.face_down_reason = None
+            card.face_down_known_to_player_ids.clear()
+            card.hidden_copied_characteristics_from_player_ids.clear()
         if not token_leaves_battlefield and not spell_copy_leaves_stack:
             target.append(card)
         if destination is Zone.BATTLEFIELD and card.definition.enters_tapped:
@@ -1502,6 +1830,11 @@ class GameState(
         )
         card.copied_card_id = target.id
         card.copied_card_entry_sequence = target.battlefield_entry_sequence
+        card.hidden_copied_characteristics_from_player_ids = {
+            player.id
+            for player in self.players
+            if self.card_characteristics_are_hidden_from(target, player.id)
+        }
         card.copy_word_changes_from(target)
 
     def _doppelganger_copy_candidates(self, source: Card) -> tuple[Card, ...]:
@@ -1518,7 +1851,14 @@ class GameState(
                 == source.copied_card_entry_sequence
             )
             and CardType.CREATURE in candidate.definition.card_types
-            and not self._is_protected_from(candidate, frozenset({Color.BLUE}))
+            and (
+                self.card_characteristics_are_hidden_from(
+                    candidate, source.controller_id or source.owner_id
+                )
+                or not self._is_protected_from(
+                    candidate, frozenset({Color.BLUE})
+                )
+            )
         )
 
     def _queue_doppelganger_choices(self) -> None:
@@ -1635,6 +1975,7 @@ class GameState(
                 requirement,
                 candidate,
                 clone.controller_id or clone.owner_id,
+                information_limited=True,
                 source_colors=self.card_colors(clone),
             )
         )
@@ -1644,6 +1985,7 @@ class GameState(
         clone: Card,
         controller_id: str,
         *,
+        chooser_id: str | None = None,
         attachment_id: UUID | None = None,
     ) -> bool:
         """Pause a non-cast Clone entry for its mandatory creature choice."""
@@ -1654,7 +1996,7 @@ class GameState(
             return False
         self.pending_creature_copy_choices.append(
             PendingCreatureCopyChoice(
-                controller_id,
+                chooser_id or controller_id,
                 clone.id,
                 tuple(card.id for card in candidates),
                 attachment_id,
@@ -1730,7 +2072,94 @@ class GameState(
             permanent.controller_at_turn_start_id = old_controller_id
         old_battlefield.remove(permanent)
         permanent.controller_id = controller_id
+        if permanent.is_face_down:
+            permanent.face_down_known_to_player_ids.add(controller_id)
+            for player in self.players:
+                for copied in player.battlefield:
+                    if copied.copied_card_id == permanent.id:
+                        copied.hidden_copied_characteristics_from_player_ids.discard(
+                            controller_id
+                        )
         self.player(controller_id).battlefield.append(permanent)
+
+    def turn_creature_face_down(
+        self, creature: Card, reason: FaceDownReason | str
+    ) -> None:
+        """Conceal a creature without changing any of its characteristics."""
+
+        if creature.zone is not Zone.BATTLEFIELD:
+            raise ValueError("only a creature in play can be turned face down")
+        if CardType.CREATURE not in self.card_types(creature):
+            raise ValueError("only a creature can be turned face down")
+        creature.face_down_reason = FaceDownReason(reason)
+        creature.face_down_known_to_player_ids = {
+            creature.controller_id or creature.owner_id
+        }
+
+    def turn_creature_face_up(self, creature: Card) -> bool:
+        """Reveal a face-down creature, returning whether it changed state."""
+
+        if not creature.is_face_down:
+            return False
+        creature.face_down_reason = None
+        creature.face_down_known_to_player_ids.clear()
+        for player in self.players:
+            for permanent in player.battlefield:
+                if permanent.copied_card_id == creature.id:
+                    permanent.hidden_copied_characteristics_from_player_ids.clear()
+        return True
+
+    def card_characteristics_are_hidden_from(
+        self, card: Card, player_id: str
+    ) -> bool:
+        """Whether a player lacks this card's identity/current traits."""
+
+        attachment_host = (
+            next(
+                (
+                    permanent
+                    for player in self.players
+                    for permanent in player.battlefield
+                    if permanent.id == card.enchanted_card_id
+                ),
+                None,
+            )
+            if card.enchanted_card_id is not None else None
+        )
+        return bool(
+            card.zone in {Zone.BATTLEFIELD, Zone.STACK}
+            and (
+                (
+                    card.is_face_down
+                    and player_id not in card.face_down_known_to_player_ids
+                )
+                or player_id
+                in card.hidden_copied_characteristics_from_player_ids
+                or attachment_host is not None
+                and attachment_host.is_face_down
+                and player_id
+                not in attachment_host.face_down_known_to_player_ids
+            )
+        )
+
+    def public_card_name(self, card: Card) -> str:
+        """Return a label safe to show simultaneously to both players."""
+
+        if card.is_face_down:
+            return "face-down creature"
+        if card.enchanted_card_id is not None:
+            host = next(
+                (
+                    permanent
+                    for player in self.players
+                    for permanent in player.battlefield
+                    if permanent.id == card.enchanted_card_id
+                ),
+                None,
+            )
+            if host is not None and host.is_face_down:
+                return "face-down enchantment"
+        return card.name
 
     def move_card(self, card: Card, destination: Zone) -> None:
         """Move a card through the engine and then stabilize the battlefield."""
@@ -1743,12 +2172,19 @@ class GameState(
         """Play a land, applying the shared normal/Fastbond allowance."""
 
         self._require_no_pending_action()
+        self._play_land_for(self.active_player, card)
+
+    def _play_land_for(self, player: PlayerState, card: Card) -> None:
+        """Play a land for ``player`` after any effect-specific choice gate."""
+
         if self.status is not GameStatus.IN_PROGRESS:
             raise RuntimeError("lands can only be played during a game")
         if self.current_phase is not TurnPhase.MAIN:
             raise RuntimeError("lands can only be played during the Main phase")
         if self.combat is not None:
             raise RuntimeError("lands cannot be played during an attack")
+        if player is not self.active_player:
+            raise RuntimeError("only the active player can play a land")
         if (
             self.priority_player_index is not None
             and self.priority_player_index != self.active_player_index
@@ -1758,17 +2194,17 @@ class GameState(
             )
         fastbonds = tuple(
             permanent
-            for permanent in self.active_player.battlefield
+            for permanent in player.battlefield
             if permanent.definition.fastbond_damage
         )
         if self.lands_played_this_turn and not fastbonds:
             raise RuntimeError("the active player has already played a land this turn")
-        if card not in self.active_player.hand:
+        if card not in player.hand:
             raise ValueError("the land must be in the active player's hand")
         if CardType.LAND not in card.definition.card_types:
             raise ValueError(f"{card.name} is not a land")
 
-        card.controller_id = self.active_player.id
+        card.controller_id = player.id
         self._move_card(card, Zone.BATTLEFIELD)
         card.entered_battlefield_turn = self.turn_number
         is_additional_land = self.lands_played_this_turn > 0
@@ -1781,7 +2217,7 @@ class GameState(
                     fastbond.definition.fastbond_damage,
                     fastbond.name,
                     source_card=fastbond,
-                    source_controller_id=self.active_player.id,
+                    source_controller_id=player.id,
                 )
             self._resolve_damage_incident()
         self.check_state_based_actions()
@@ -1796,19 +2232,11 @@ class GameState(
                 self.consecutive_passes = 0
             elif self.priority_player_index is None:
                 self.pending_action_response = PendingActionResponse(
-                    self.active_player.id,
+                    player.id,
                     f"{card.name} was played",
                 )
                 self.priority_player_index = opponent_index
                 self.consecutive_passes = len(self.players) - 1
-
-    def tap_land_for_mana(self, player_id: str, card: Card) -> None:
-        """Compatibility shortcut for lands with exactly one mana ability."""
-
-        abilities = self.activated_abilities(card)
-        if len(abilities) != 1:
-            raise ValueError(f"{card.name} requires a mana ability choice")
-        self.activate_ability(player_id, card, 0)
 
     def _record_spell_cast_opportunity(self, spell: Card) -> None:
         """Expose one catchable event for a successfully cast spell."""
@@ -1835,7 +2263,7 @@ class GameState(
         self.event_opportunities.append(
             RuleEventOpportunity(
                 RuleEventKind.SPELL_CAST,
-                f"{spell.name} was cast",
+                f"{self.public_card_name(spell)} was cast",
                 spell_id=spell.id,
                 spell_colors=self.card_colors(spell),
                 spell_card_types=spell.definition.card_types,
@@ -1946,17 +2374,18 @@ class GameState(
         if not preserve_land_tap_undo:
             self._clear_land_tap_undo_window()
         opportunities_before = len(self.event_opportunities)
+        if permanent.face_down_reason is FaceDownReason.ILLUSIONARY_MASK:
+            self.turn_creature_face_up(permanent)
         permanent.tapped = True
         permanent_controller_id = permanent.controller_id or permanent.owner_id
-        permanent_controller = self.player(permanent_controller_id)
+        for recipient_id, color, amount in self._permanent_tap_mana_contributions(
+            permanent
+        ):
+            self.player(recipient_id).mana_pool.add(color, amount)
         for player in self.players:
             for source in player.battlefield:
                 if source.enchanted_card_id != permanent.id:
                     continue
-                for effect in source.definition.attached_tap_mana_effects:
-                    permanent_controller.mana_pool.add(
-                        self.color_word(source, effect.color), effect.amount
-                    )
                 for effect in source.definition.attached_event_damage_effects:
                     if not effect.when_tapped:
                         continue
@@ -1993,18 +2422,6 @@ class GameState(
                 for source in player.battlefield:
                     if not self.continuous_permanent_is_active(source):
                         continue
-                    for effect in source.definition.land_tap_mana_effects:
-                        land_subtype = self.land_word(source, effect.land_subtype)
-                        if land_subtype not in self.land_subtypes(permanent):
-                            continue
-                        recipient = self.player(
-                            permanent.owner_id
-                            if effect.owner_receives
-                            else permanent_controller_id
-                        )
-                        recipient.mana_pool.add(
-                            self.color_word(source, effect.color), effect.amount
-                        )
                     source_controller_id = source.controller_id or source.owner_id
                     for effect in source.definition.permanent_tapped_effects:
                         if (
@@ -2299,39 +2716,6 @@ class GameState(
             )
         self._queue_new_graveyard_order_choices(graveyard_lengths)
 
-    def legal_enchantment_targets(self, card: Card) -> list[Card]:
-        """Compatibility wrapper for callers using the older Aura API."""
-
-        self._validate_enchantment_cast(card)
-        return self.legal_targets_for(card)
-
-    def cast_enchantment(
-        self,
-        card: Card,
-        target: Card | None = None,
-        *,
-        land_subtype: str | None = None,
-    ) -> None:
-        """Compatibility wrapper for directly casting an enchantment."""
-
-        self._require_no_pending_action()
-        self._validate_enchantment_cast(card)
-        self._validate_land_type_choice(card, land_subtype)
-        requirement = card.definition.target_requirement
-        if requirement is not None:
-            if target is None or target not in self.legal_targets_for(card):
-                raise ValueError(
-                    "an Enchant Creature spell must target a creature in play"
-                )
-            targets = (target,)
-        else:
-            if target is not None:
-                raise ValueError(f"{card.name} does not require a target")
-            targets = ()
-        self._resolve_permanent_spell(
-            card, targets, chosen_land_subtype=land_subtype
-        )
-
     def check_state_based_actions(
         self,
         *,
@@ -2500,6 +2884,9 @@ class GameState(
                 raise ValueError(f"{card.name} has inconsistent zone data")
         if set(self.stack_spells) != {card.id for card in self.stack}:
             raise ValueError("response batch cards and casting choices disagree")
+        for spell in self.stack_spells.values():
+            self.player(spell.caster_id)
+            self.player(spell.decision_maker_id)
         if (
             self.interruptible_spell_id is not None
             and self.interruptible_spell_id not in self.stack_spells
@@ -2523,8 +2910,34 @@ class GameState(
             raise ValueError("priority player index is out of range")
         if self.pending_cast is not None:
             caster = self.player(self.pending_cast.caster_id)
+            self.player(self.pending_cast.decision_maker_id)
             spell = self.pending_cast.spell
             if spell not in caster.hand or spell.zone is not Zone.HAND:
                 raise ValueError("the pending spell is not in its caster's hand")
             if spell.definition.target_requirement is None:
                 raise ValueError("the pending spell does not require targets")
+        for choice in self.pending_word_command_choices:
+            self.player(choice.commander_id)
+            commanded = self.player(choice.commanded_player_id)
+            if choice.stage not in {
+                "choose_card",
+                "choose_targets",
+                "choose_payment",
+            }:
+                raise ValueError("Word of Command has an unknown choice stage")
+            if (
+                choice.card_id is not None
+                and not any(card.id == choice.card_id for card in commanded.hand)
+            ):
+                raise ValueError(
+                    "Word of Command's chosen card is no longer in the hand"
+                )
+        if (
+            self.pending_cast is not None
+            and self.pending_cast.word_command_id is not None
+            and not any(
+                choice.id == self.pending_cast.word_command_id
+                for choice in self.pending_word_command_choices
+            )
+        ):
+            raise ValueError("a commanded pending cast has no Word of Command")

@@ -1,13 +1,15 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BADLANDS,
-    CONVERSION,
-    EVIL_PRESENCE,
     FOREST,
     ISLAND,
     MOUNTAIN,
-    PHANTASMAL_TERRAIN,
+)
+from beta_magic.card_defs.white import CONVERSION
+from beta_magic.card_defs.black import EVIL_PRESENCE
+from beta_magic.card_defs.blue import PHANTASMAL_TERRAIN
+from beta_magic import (
     Card,
     Color,
     GameState,
@@ -15,7 +17,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 
@@ -46,9 +48,12 @@ class LandConversionTests(unittest.TestCase):
         self.alice.hand.append(card)
         self.alice.mana_pool.blue = 2
         self.alice.mana_pool.black = 1
-        self.game.cast_enchantment(
-            card, target, land_subtype=land_subtype
-        )
+        pending = self.game.begin_cast(card, land_subtype=land_subtype)
+        self.assertIsNotNone(pending)
+        self.game.complete_pending_cast((target,))
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         return card
 
     def test_evil_presence_replaces_all_types_and_mana_abilities(self):
@@ -96,8 +101,8 @@ class LandConversionTests(unittest.TestCase):
         aura = self.aura(PHANTASMAL_TERRAIN, land, land_subtype="Island")
         view = GameViewModel(self.game)
 
-        land_data = view._card_data(land)
-        aura_data = view._card_data(aura)
+        land_data = view._presentation._card_data(land)
+        aura_data = view._presentation._card_data(aura)
 
         self.assertEqual(land_data["name"], "Island")
         self.assertIn("Current name: Island", land_data["previewStatus"])
@@ -108,7 +113,7 @@ class LandConversionTests(unittest.TestCase):
         )
 
         self.game._move_card(aura, Zone.GRAVEYARD)
-        self.assertEqual(view._card_data(land)["name"], "Forest")
+        self.assertEqual(view._presentation._card_data(land)["name"], "Forest")
 
     def test_conversion_changes_mountains_including_dual_lands(self):
         mountain = self.permanent(self.alice, MOUNTAIN)

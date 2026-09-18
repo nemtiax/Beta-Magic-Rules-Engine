@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.black import DARKPACT
 from beta_magic.card_defs.lands import FOREST, ISLAND, PLAINS, SWAMP
 from beta_magic.ui import GameViewModel

@@ -81,6 +81,19 @@ class Zone(str, Enum):
     ANTE = "ante"
 
 
+class FaceDownReason(str, Enum):
+    """The historical effect currently concealing a battlefield creature.
+
+    Face-down cards in the Beta rules retain their real characteristics. The
+    reason is nevertheless rules-relevant: Illusionary Mask reveals its
+    creature when it taps or deals or receives damage, while Camouflage has a
+    separate reveal point during the combat procedure.
+    """
+
+    CAMOUFLAGE = "camouflage"
+    ILLUSIONARY_MASK = "illusionary_mask"
+
+
 class GameStatus(str, Enum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"

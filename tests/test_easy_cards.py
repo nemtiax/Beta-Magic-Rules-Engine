@@ -1,22 +1,28 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.blue import (
     ANCESTRAL_RECALL,
-    BLUE_UTILITY_SPELLS,
-    CASTLE,
     JUMP,
-    SERRA_ANGEL,
     UNSUMMON,
+    PRODIGAL_SORCERER,
+)
+from tests.card_groups import BLUE_UTILITY_SPELLS
+from beta_magic.card_defs.white import (
+    CASTLE,
+    SERRA_ANGEL,
+)
+from beta_magic import (
     Card,
     GameState,
     KeywordAbility,
     PlayerState,
-    PRODIGAL_SORCERER,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import HOLY_STRENGTH
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class EasyCardTests(unittest.TestCase):
@@ -82,7 +88,7 @@ class EasyCardTests(unittest.TestCase):
         self.assertEqual(self.game.creature_toughness(angel), 4)
         angel.tapped = False
         self.game.begin_combat()
-        self.game.declare_attackers((angel,))
+        declare_attackers(self.game, (angel,))
 
         self.assertFalse(angel.tapped)
         self.assertEqual(self.game.creature_toughness(angel), 4)
@@ -102,7 +108,7 @@ class EasyCardTests(unittest.TestCase):
         angel.entered_battlefield_turn = self.game.turn_number
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "did not begin"):
-            self.game.declare_attackers((angel,))
+            declare_attackers(self.game, (angel,))
 
     def test_ancestral_recall_draws_three_for_either_player(self) -> None:
         self.cast(ANCESTRAL_RECALL, self.bob)

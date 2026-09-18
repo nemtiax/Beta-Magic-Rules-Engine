@@ -1,10 +1,12 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     GIANT_WASP_TOKEN,
-    SHATTER,
     THE_HIVE,
-    UNSUMMON,
+)
+from beta_magic.card_defs.red import SHATTER
+from beta_magic.card_defs.blue import UNSUMMON
+from beta_magic import (
     Card,
     CardType,
     GameState,
@@ -13,7 +15,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 

@@ -1,16 +1,24 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.white import (
     CRUSADE,
     DISENCHANT,
     HOLY_STRENGTH,
+)
+from tests.card_groups import (
     LAND_DESTRUCTION_SPELLS,
     PERMANENT_DESTRUCTION_SPELLS,
+)
+from beta_magic.card_defs.red import (
     SHATTER,
-    TERROR,
-    TRANQUILITY,
     TUNNEL,
+)
+from beta_magic.card_defs.black import (
+    TERROR,
     WEAKNESS,
+)
+from beta_magic.card_defs.green import TRANQUILITY
+from beta_magic import (
     CardType,
     DestructionIncident,
     DestructionResolutionStep,
@@ -20,12 +28,11 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
-    GRIZZLY_BEARS,
-    OBSIANUS_GOLEM,
-    SAVANNAH_LIONS,
-)
-from beta_magic.card_defs import WALL_OF_BONE, WALL_OF_BRAMBLES
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import OBSIANUS_GOLEM
+from beta_magic.card_defs.white import SAVANNAH_LIONS
+from beta_magic.card_defs.black import WALL_OF_BONE
+from beta_magic.card_defs.green import WALL_OF_BRAMBLES
 
 
 class PermanentDestructionSpellTests(unittest.TestCase):

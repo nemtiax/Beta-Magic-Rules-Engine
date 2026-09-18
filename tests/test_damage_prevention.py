@@ -1,17 +1,19 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.white import (
     HEALING_SALVE,
     GUARDIAN_ANGEL,
-    PREVENTION_CARDS,
     SAMITE_HEALER,
+)
+from tests.card_groups import PREVENTION_CARDS
+from beta_magic import (
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
 from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
@@ -61,6 +63,11 @@ class DamagePreventionTests(unittest.TestCase):
             priority = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(priority.id)
 
+    def finish_interrupts(self) -> None:
+        while self.game.interruptible_spell_id is not None:
+            priority = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(priority.id)
+
     def test_card_definitions(self) -> None:
         self.assertEqual(
             PREVENTION_CARDS,
@@ -88,6 +95,9 @@ class DamagePreventionTests(unittest.TestCase):
         self.alice.mana_pool.white = 1
         self.open_damage(2, 3)
         self.game.begin_prevention_spell(salve)
+        self.assertIsNone(self.game.pending_prevention)
+        self.assertIs(salve.zone, Zone.STACK)
+        self.finish_interrupts()
         packets = self.game.pending_damage.packets
 
         self.assertEqual(self.game.prevent_damage(self.alice.id, packets[0].id), 2)
@@ -117,6 +127,7 @@ class DamagePreventionTests(unittest.TestCase):
         self.game._deal_damage(self.bob, 2, "Second")
         self.game._resolve_damage_incident()
         self.game.begin_prevention_spell(salve)
+        self.finish_interrupts()
         first, second = self.game.pending_damage.packets
         self.game.prevent_damage(self.alice.id, first.id)
 

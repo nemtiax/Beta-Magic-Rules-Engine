@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.artifacts import BASALT_MONOLITH
+from beta_magic.card_defs.lands import FOREST
 from beta_magic import (
-    BASALT_MONOLITH,
-    FOREST,
     Card,
     CardType,
     GameState,

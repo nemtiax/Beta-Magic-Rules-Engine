@@ -1,6 +1,13 @@
 import unittest
 
-from beta_magic import Card, CardType, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    CardType,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.lands import MOUNTAIN
 from beta_magic.card_defs.red import POWER_SURGE

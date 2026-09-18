@@ -1,9 +1,9 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.black import NETHER_SHADOW
+from beta_magic.card_defs.white import SAVANNAH_LIONS
 from beta_magic import (
-    GRIZZLY_BEARS,
-    NETHER_SHADOW,
-    SAVANNAH_LIONS,
     Card,
     GameState,
     PlayerState,

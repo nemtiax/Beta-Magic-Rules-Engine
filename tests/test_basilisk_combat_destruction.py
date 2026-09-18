@@ -1,9 +1,13 @@
 import unittest
 
-from beta_magic import (
-    ANIMATE_WALL,
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.white import ANIMATE_WALL
+from beta_magic.card_defs.green import (
     COCKATRICE,
     THICKET_BASILISK,
+)
+from beta_magic import (
     Card,
     GameState,
     KeywordAbility,
@@ -11,13 +15,13 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.green import (
     GIANT_SPIDER,
     GRIZZLY_BEARS,
-    HILL_GIANT,
     WALL_OF_ICE,
     WALL_OF_WOOD,
 )
+from beta_magic.card_defs.red import HILL_GIANT
 
 
 class BasiliskCombatDestructionTests(unittest.TestCase):
@@ -44,8 +48,8 @@ class BasiliskCombatDestructionTests(unittest.TestCase):
 
     def fight(self, attacker, blocker):
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
         self.game.advance_combat()
         self.game.deal_combat_damage()
 
@@ -68,8 +72,8 @@ class BasiliskCombatDestructionTests(unittest.TestCase):
                 attacker = self.permanent(game.players[0], attacker_definition)
                 blocker = self.permanent(game.players[1], blocker_definition)
                 game.begin_combat()
-                game.declare_attackers([attacker])
-                game.declare_blockers({blocker: attacker})
+                declare_attackers(game, [attacker])
+                declare_blockers(game, {blocker: attacker})
                 game.advance_combat()
                 game.deal_combat_damage()
                 self.assertIn(blocker, game.players[1].graveyard)
@@ -103,8 +107,8 @@ class BasiliskCombatDestructionTests(unittest.TestCase):
         basilisk = self.permanent(self.alice, THICKET_BASILISK)
         blocker = self.permanent(self.bob, HILL_GIANT)
         self.game.begin_combat()
-        self.game.declare_attackers([basilisk])
-        self.game.declare_blockers({blocker: basilisk})
+        declare_attackers(self.game, [basilisk])
+        declare_blockers(self.game, {blocker: basilisk})
         self.game._move_card(basilisk, Zone.GRAVEYARD)
 
         self.game.advance_combat()

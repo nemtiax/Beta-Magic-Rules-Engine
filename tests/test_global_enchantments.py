@@ -1,12 +1,18 @@
 import unittest
 
-from beta_magic import (
-    BAD_MOON,
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.black import BAD_MOON
+from beta_magic.card_defs.white import (
     CASTLE,
     CRUSADE,
-    GLOBAL_ENCHANTMENTS,
-    ORCISH_ORIFLAMME,
-    LIVING_LANDS,
+)
+from tests.card_groups import GLOBAL_ENCHANTMENTS
+from beta_magic.card_defs.red import ORCISH_ORIFLAMME
+from beta_magic.card_defs.green import LIVING_LANDS
+from beta_magic import (
     CardType,
     Color,
     GameState,
@@ -14,13 +20,13 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.red import (
     GRAY_OGRE,
-    GRIZZLY_BEARS,
     MONSS_GOBLIN_RAIDERS,
-    SAVANNAH_LIONS,
-    SCATHE_ZOMBIES,
 )
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.white import SAVANNAH_LIONS
+from beta_magic.card_defs.black import SCATHE_ZOMBIES
 
 
 def player(player_id: str) -> PlayerState:
@@ -91,10 +97,10 @@ class GlobalEnchantmentTests(unittest.TestCase):
         bob_ogre = self.put_in_play(self.bob, GRAY_OGRE)
         self.assertEqual(self.game.creature_power(ogre), 2)
         self.game.begin_combat()
-        self.game.declare_attackers([ogre])
+        declare_attackers(self.game, [ogre])
         self.assertEqual(self.game.creature_power(ogre), 3)
         self.assertEqual(self.game.creature_power(bob_ogre), 2)
-        self.game.declare_blockers({})
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertEqual(self.bob.life, 17)
@@ -105,8 +111,8 @@ class GlobalEnchantmentTests(unittest.TestCase):
         lion = self.put_in_play(self.alice, SAVANNAH_LIONS)
         goblin = self.put_in_play(self.bob, MONSS_GOBLIN_RAIDERS)
         self.game.begin_combat()
-        self.game.declare_attackers([lion])
-        self.game.declare_blockers({goblin: lion})
+        declare_attackers(self.game, [lion])
+        declare_blockers(self.game, {goblin: lion})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertIn(lion, self.alice.battlefield)
@@ -119,7 +125,7 @@ class GlobalEnchantmentTests(unittest.TestCase):
         enchantment.zone = Zone.HAND
         self.alice.hand.append(enchantment)
         self.alice.mana_pool.white = 2
-        self.game.cast_enchantment(enchantment)
+        cast_and_resolve(self.game, enchantment)
         self.assertIn(enchantment, self.alice.battlefield)
         self.assertEqual(self.alice.mana_pool.total, 0)
 

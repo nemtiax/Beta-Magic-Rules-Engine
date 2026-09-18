@@ -1,16 +1,20 @@
 import unittest
 
-from beta_magic import (
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.white import (
     BLESSING,
-    FIREBREATHING,
     HOLY_ARMOR,
-    PUMP_ENCHANT_CREATURES,
+)
+from beta_magic.card_defs.red import FIREBREATHING
+from tests.card_groups import PUMP_ENCHANT_CREATURES
+from beta_magic import (
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class PumpEnchantmentTests(unittest.TestCase):
@@ -45,7 +49,7 @@ class PumpEnchantmentTests(unittest.TestCase):
         aura = self.put_in_hand(self.alice, definition)
         self.alice.mana_pool.white = white
         self.alice.mana_pool.red = red
-        self.game.cast_enchantment(aura, creature)
+        cast_and_resolve(self.game, aura, (creature,))
         return aura
 
     def finish_turn(self) -> None:

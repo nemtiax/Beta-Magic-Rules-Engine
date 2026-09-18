@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.black import DEMONIC_ATTORNEY
 from beta_magic.card_defs.lands import FOREST, PLAINS, SWAMP
 from beta_magic.types import GameStatus

@@ -1,18 +1,23 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.green import (
     GIANT_GROWTH,
     LLANOWAR_ELVES,
-    LIGHTNING_BOLT,
-    RIGHTEOUSNESS,
-    TARGETED_PUMP_SPELLS,
+)
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.white import RIGHTEOUSNESS
+from tests.card_groups import TARGETED_PUMP_SPELLS
+from beta_magic import (
     CardType,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, HILL_GIANT
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
 
 
 class CombatTrickTests(unittest.TestCase):
@@ -84,7 +89,7 @@ class CombatTrickTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "combat declaration"):
             self.game.activate_ability(self.alice.id, elves, 0)
 
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         self.game.pass_priority(self.alice.id)
         self.game.pass_priority(self.bob.id)
         with self.assertRaisesRegex(RuntimeError, "combat declaration"):
@@ -149,8 +154,8 @@ class CombatTrickTests(unittest.TestCase):
 
         self.assertEqual(self.game.legal_targets_for(righteousness), [])
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
 
         self.assertEqual(self.game.legal_targets_for(righteousness), [blocker])
         self.assertNotIn(attacker, self.game.legal_targets_for(righteousness))
@@ -160,8 +165,8 @@ class CombatTrickTests(unittest.TestCase):
         attacker = self.put_in_play(self.alice, HILL_GIANT)
         blocker = self.put_in_play(self.bob)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
         self.game.pass_priority(self.alice.id)
         righteousness = self.cast(self.bob, RIGHTEOUSNESS, blocker)
 

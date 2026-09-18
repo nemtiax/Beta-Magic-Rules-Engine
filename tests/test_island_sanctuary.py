@@ -1,11 +1,13 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import HOWLING_MINE
+from beta_magic.card_defs.lands import ISLAND
+from beta_magic.card_defs.white import ISLAND_SANCTUARY
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
 from beta_magic import (
-    GRIZZLY_BEARS,
-    HOWLING_MINE,
-    ISLAND,
-    ISLAND_SANCTUARY,
-    PHANTOM_MONSTER,
     Card,
     CardDefinition,
     CardType,
@@ -110,8 +112,8 @@ class IslandSanctuaryTests(unittest.TestCase):
         self.game.begin_combat()
 
         with self.assertRaisesRegex(ValueError, "Island Sanctuary"):
-            self.game.declare_attackers((bear,))
-        self.game.declare_attackers((flyer, islandwalker))
+            declare_attackers(self.game, (bear,))
+        declare_attackers(self.game, (flyer, islandwalker))
         self.assertEqual(self.game.combat.attackers, [flyer, islandwalker])
 
     def test_protection_ends_at_start_of_players_next_turn(self):

@@ -1,16 +1,17 @@
 import unittest
 
+from beta_magic.card_defs.white import FARMSTEAD
+from beta_magic.card_defs.artifacts import MANA_VAULT
+from beta_magic.card_defs.black import PARALYZE
 from beta_magic import (
-    FARMSTEAD,
-    MANA_VAULT,
-    PARALYZE,
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, PLAINS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import PLAINS
 
 
 class OptionalUpkeepPaymentTests(unittest.TestCase):

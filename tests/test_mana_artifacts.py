@@ -1,6 +1,6 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     BLACK_LOTUS,
     BASALT_MONOLITH,
     CELESTIAL_PRISM,
@@ -13,6 +13,8 @@ from beta_magic import (
     MOX_SAPPHIRE,
     MOXEN,
     SOL_RING,
+)
+from beta_magic import (
     CardType,
     Color,
     GameState,
@@ -20,7 +22,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST
+from beta_magic.card_defs.lands import FOREST
 
 
 class ManaArtifactTests(unittest.TestCase):

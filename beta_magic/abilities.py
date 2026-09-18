@@ -124,12 +124,6 @@ class TargetRequirement:
             )
         )
 
-    def accepts(self, card: Card) -> bool:
-        """Compatibility alias for card-target checks."""
-
-        return self.accepts_card(card)
-
-
 @dataclass(frozen=True, slots=True)
 class ActivatedManaAbility:
     """A permanent ability whose cost taps its source to produce mana."""
@@ -378,6 +372,18 @@ class ActivatedCreateTokenAbility:
     @property
     def label(self) -> str:
         return f"Pay {self.mana_cost.compact} and tap: Create {self.token_definition.name}"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivatedMaskedCreatureAbility:
+    """Cast a summoned creature face down with an additional bluff payment."""
+
+    tap_cost: bool = False
+    mana_cost: ManaCost = field(default_factory=ManaCost)
+
+    @property
+    def label(self) -> str:
+        return "Pay X: Cast a summoned creature face down (plus its normal cost)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,6 +672,7 @@ ActivatedAbility = (
     | ActivatedTemporaryAbility
     | ActivatedDrawAbility
     | ActivatedCreateTokenAbility
+    | ActivatedMaskedCreatureAbility
     | ActivatedRevealHandAbility
     | ActivatedDiscardAbility
     | ActivatedExtraTurnAbility
@@ -695,6 +702,7 @@ __all__ = [
     "ActivatedTemporaryAbility",
     "ActivatedDrawAbility",
     "ActivatedCreateTokenAbility",
+    "ActivatedMaskedCreatureAbility",
     "ActivatedRevealHandAbility",
     "ActivatedDiscardAbility",
     "ActivatedAttackRequirementAbility",

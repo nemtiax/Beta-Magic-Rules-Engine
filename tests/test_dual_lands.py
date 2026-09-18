@@ -1,6 +1,6 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BADLANDS,
     BAYOU,
     DUAL_LANDS,
@@ -12,13 +12,15 @@ from beta_magic import (
     TUNDRA,
     UNDERGROUND_SEA,
     VOLCANIC_ISLAND,
+)
+from beta_magic import (
     Color,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import FOREST
+from beta_magic.card_defs.lands import FOREST
 
 
 class DualLandTests(unittest.TestCase):
@@ -84,7 +86,7 @@ class DualLandTests(unittest.TestCase):
     def test_basic_land_uses_the_same_activated_ability_system(self) -> None:
         land = self.put_in_play(FOREST)
 
-        self.game.tap_land_for_mana(self.alice.id, land)
+        self.game.activate_ability(self.alice.id, land, 0)
 
         self.assertEqual(self.alice.mana_pool.green, 1)
         self.assertEqual(len(FOREST.activated_abilities), 1)
@@ -104,4 +106,3 @@ class DualLandTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Untap"):
             game.activate_ability("alice", land, 0)
-

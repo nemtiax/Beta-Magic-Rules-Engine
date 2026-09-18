@@ -11,6 +11,7 @@ from ..abilities import (
     ActivatedEventLifeGainAbility,
     ActivatedLandTypeAbility,
     ActivatedManaAbility,
+    ActivatedMaskedCreatureAbility,
     ActivatedPreventDamageAbility,
     ActivatedRevealHandAbility,
     ActivatedRegenerationAbility,
@@ -366,6 +367,18 @@ HELM_OF_CHATZUK = CardDefinition(
     ),
 )
 
+ILLUSIONARY_MASK = CardDefinition(
+    name="Illusionary Mask",
+    card_types=frozenset({CardType.ARTIFACT}),
+    mana_cost=ManaCost.parse("{2}"),
+    rules_text=(
+        "{X}: Cast a summoned creature from your hand face down. Pay "
+        "that creature's normal casting cost in addition to X. Turn it face "
+        "up as soon as it is tapped, deals damage, or receives damage."
+    ),
+    activated_abilities=(ActivatedMaskedCreatureAbility(),),
+)
+
 LAND_EVENT_ARTIFACTS = (ANKH_OF_MISHRA, DINGUS_EGG)
 
 _ANY_CREATURE_OR_PLAYER = TargetRequirement(
@@ -559,6 +572,7 @@ UTILITY_ARTIFACTS = (
     KORMUS_BELL,
     GAUNTLET_OF_MIGHT,
     HELM_OF_CHATZUK,
+    ILLUSIONARY_MASK,
     SUNGLASSES_OF_URZA,
     THE_HIVE,
 )
@@ -692,6 +706,7 @@ __all__ = [
     "KORMUS_BELL",
     "GAUNTLET_OF_MIGHT",
     "HELM_OF_CHATZUK",
+    "ILLUSIONARY_MASK",
     "LAND_EVENT_ARTIFACTS",
     "ROD_OF_RUIN",
     "CONSERVATOR",

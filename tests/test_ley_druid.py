@@ -1,10 +1,12 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     FOREST,
-    LEY_DRUID,
-    LIGHTNING_BOLT,
     PLAINS,
+)
+from beta_magic.card_defs.green import LEY_DRUID
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic import (
     Card,
     GameState,
     PlayerState,

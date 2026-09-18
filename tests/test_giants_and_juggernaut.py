@@ -1,9 +1,13 @@
 import unittest
 
-from beta_magic import (
-    JUGGERNAUT,
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.artifacts import JUGGERNAUT
+from beta_magic.card_defs.red import (
     STONE_GIANT,
     TWO_HEADED_GIANT_OF_FORIYS,
+)
+from beta_magic import (
     Card,
     GameState,
     KeywordAbility,
@@ -11,7 +15,10 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, WALL_OF_WOOD
+from beta_magic.card_defs.green import (
+    GRIZZLY_BEARS,
+    WALL_OF_WOOD,
+)
 
 
 class GiantsAndJuggernautTests(unittest.TestCase):
@@ -79,8 +86,8 @@ class GiantsAndJuggernautTests(unittest.TestCase):
         giant = self.permanent(self.bob, TWO_HEADED_GIANT_OF_FORIYS)
 
         self.game.begin_combat()
-        self.game.declare_attackers((attacker_one, attacker_two))
-        self.game.declare_blockers({giant: (attacker_one, attacker_two)})
+        declare_attackers(self.game, (attacker_one, attacker_two))
+        declare_blockers(self.game, {giant: (attacker_one, attacker_two)})
         self.game.advance_combat()
         self.game.deal_combat_damage(
             {giant: {attacker_one: 2, attacker_two: 2}}
@@ -95,10 +102,10 @@ class GiantsAndJuggernautTests(unittest.TestCase):
         attacker_two = self.permanent(self.alice, GRIZZLY_BEARS)
         blocker = self.permanent(self.bob, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers((attacker_one, attacker_two))
+        declare_attackers(self.game, (attacker_one, attacker_two))
 
         with self.assertRaisesRegex(ValueError, "cannot block 2 attackers"):
-            self.game.declare_blockers(
+            declare_blockers(self.game,
                 {blocker: (attacker_one, attacker_two)}
             )
 
@@ -106,23 +113,23 @@ class GiantsAndJuggernautTests(unittest.TestCase):
         juggernaut = self.permanent(self.alice, JUGGERNAUT)
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "must attack if possible"):
-            self.game.declare_attackers(())
-        self.game.declare_attackers((juggernaut,))
+            declare_attackers(self.game, ())
+        declare_attackers(self.game, (juggernaut,))
 
     def test_tapped_juggernaut_is_not_required_to_attack(self):
         juggernaut = self.permanent(self.alice, JUGGERNAUT)
         juggernaut.tapped = True
         self.game.begin_combat()
-        self.game.declare_attackers(())
+        declare_attackers(self.game, ())
 
     def test_juggernaut_cannot_be_blocked_by_a_wall(self):
         juggernaut = self.permanent(self.alice, JUGGERNAUT)
         wall = self.permanent(self.bob, WALL_OF_WOOD)
         self.game.begin_combat()
-        self.game.declare_attackers((juggernaut,))
+        declare_attackers(self.game, (juggernaut,))
 
         with self.assertRaisesRegex(ValueError, "cannot be blocked"):
-            self.game.declare_blockers({wall: juggernaut})
+            declare_blockers(self.game, {wall: juggernaut})
 
 
 if __name__ == "__main__":

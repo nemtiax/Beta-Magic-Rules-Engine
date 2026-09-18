@@ -1,12 +1,14 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
-    LIGHTNING_BOLT,
-    POWER_SINK,
-    SOL_RING,
     TUNDRA,
+)
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.blue import POWER_SINK
+from beta_magic.card_defs.artifacts import SOL_RING
+from beta_magic import (
     Card,
     CardType,
     Color,
@@ -15,7 +17,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 

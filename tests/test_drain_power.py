@@ -1,13 +1,17 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.blue import (
     DRAIN_POWER,
+    MANA_SHORT,
+)
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
-    MANA_FLARE,
-    MANA_SHORT,
     TUNDRA,
-    WILD_GROWTH,
+)
+from beta_magic.card_defs.red import MANA_FLARE
+from beta_magic.card_defs.green import WILD_GROWTH
+from beta_magic import (
     Card,
     CardType,
     Color,
@@ -16,7 +20,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 

@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import WHEEL_OF_FORTUNE
 from beta_magic import (
-    GRIZZLY_BEARS,
-    WHEEL_OF_FORTUNE,
     Card,
     GameState,
     PlayerState,

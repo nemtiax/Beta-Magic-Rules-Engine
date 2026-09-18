@@ -19,7 +19,11 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from .cards import Card
-from .abilities import ActivatedGlobalDamageAbility, ActivatedRedirectDamageAbility
+from .abilities import (
+    ActivatedGlobalDamageAbility,
+    ActivatedMaskedCreatureAbility,
+    ActivatedRedirectDamageAbility,
+)
 from .decks import (
     AEGIS_WARDS_DECK,
     ARCANE_DEPTHS_DECK,
@@ -37,12 +41,14 @@ from .decks import (
     make_enchantment_test_game,
     make_protection_test_game,
     make_random_starter_game,
+    make_saved_deck_game,
     make_test_game,
     make_timed_event_test_game,
     make_x_test_game,
     make_aura_test_game,
     make_banding_test_game,
     make_raging_river_test_game,
+    make_camouflage_test_game,
 )
 from .events import DamageEvent, GameEvent, ManaBurnEvent, SpellCastEvent
 from .effects import (
@@ -54,6 +60,7 @@ from .effects import (
     UpkeepCreatureSacrificeEffect,
 )
 from .game import GameState, PlayerState
+from .mana import ManaAllocation
 from .types import CardType, Color, CombatStep, TurnPhase, Zone
 from .ui_presentation import UiPresentationBuilder, mana_text
 from .ui_combat import CombatUiController
@@ -181,26 +188,65 @@ class GameViewModel(QObject):
             )
         raise RuntimeError("there is no pending target choice")
 
+    def _can_choose_pending_cast(self) -> bool:
+        pending = self.game.pending_cast
+        return bool(
+            pending is not None
+            and pending.decision_maker_id
+            == self.game.players[self.perspective_index].id
+        )
+
+    def _word_command_choice(self):
+        return self.game.current_word_command()
+
+    def _is_configuring_word_card(self, card: Card | None = None) -> bool:
+        choice = self._word_command_choice()
+        card_id = self._choices.word_command_card_id
+        return bool(
+            choice is not None
+            and choice.commander_id
+            == self.game.players[self.perspective_index].id
+            and card_id is not None
+            and (card is None or card.id == card_id)
+        )
+
+    def _begin_ui_cast(
+        self,
+        card: Card,
+        *,
+        x_value: int = 0,
+        land_subtype: str | None = None,
+        mode: str | None = None,
+        damage_source_key: str | None = None,
+    ):
+        if self._is_configuring_word_card(card):
+            player = self.game.players[self.perspective_index]
+            pending = self.game.begin_word_command_cast(
+                player.id,
+                card,
+                x_value=x_value,
+                land_subtype=land_subtype,
+                mode=mode,
+                damage_source_key=damage_source_key,
+            )
+            self._choices.word_command_card_id = None
+            return pending
+        return self.game.begin_cast(
+            card,
+            x_value=x_value,
+            land_subtype=land_subtype,
+            mode=mode,
+            damage_source_key=damage_source_key,
+        )
+
+    def _maximum_ui_x(self, card: Card, target_count: int = 1) -> int:
+        if self._is_configuring_word_card(card):
+            return self.game.maximum_word_command_x(card, target_count)
+        return self.game.maximum_affordable_x(card, target_count)
+
     @Property("QVariantMap", notify=stateChanged)
     def state(self) -> dict[str, Any]:
         return self._presentation.build()
-
-    def _player_data(
-        self, player: PlayerState, *, reveal_hand: bool
-    ) -> dict[str, Any]:
-        """Compatibility delegate for UI-focused tests and extensions."""
-
-        return self._presentation._player_data(player, reveal_hand=reveal_hand)
-
-    def _card_data(self, card: Card) -> dict[str, Any]:
-        """Compatibility delegate for UI-focused tests and extensions."""
-
-        return self._presentation._card_data(card)
-
-    def _card_colors(self, card: Card) -> tuple[str, str]:
-        """Compatibility delegate for UI-focused tests and extensions."""
-
-        return self._presentation._card_colors(card)
 
     def _perspective_card(self, card_id: str) -> Card | None:
         try:
@@ -358,7 +404,215 @@ class GameViewModel(QObject):
         )
 
     @Slot(str)
+    def chooseWordCommandCard(self, card_id: str) -> None:
+        choice = self._word_command_choice()
+        player = self.game.players[self.perspective_index]
+        try:
+            card = self._card_by_id(UUID(card_id))
+            if choice is None or choice.commander_id != player.id:
+                raise ValueError("only the Word of Command caster may choose")
+            if card is None or card not in self.game.word_commandable_cards():
+                raise ValueError(
+                    "that card cannot legally be played for Word of Command"
+                )
+            self._choices.word_command_card_id = card.id
+            if CardType.LAND in card.definition.card_types:
+                self._begin_ui_cast(card)
+                self._choices.clear_word_command()
+                commanded = self.game.player(choice.commanded_player_id)
+                self._message = f"Commanded {commanded.name} to play {card.name}."
+            elif card.definition.mana_cost.x_symbols:
+                maximum = self._maximum_ui_x(card)
+                if (
+                    card.definition.target_requirement is not None
+                    and card.definition.target_requirement.any_number
+                ):
+                    self._choices.begin_fireball(card, maximum)
+                else:
+                    self._choices.begin_x(card, maximum)
+            elif any(
+                isinstance(effect, ReverseDamageEffect)
+                for effect in card.definition.spell_effects
+            ):
+                self._choices.damage_source_card_id = card.id
+            elif any(
+                isinstance(effect, AttachedLandTypeEffect)
+                and effect.chosen_basic_subtype
+                for effect in card.definition.land_type_effects
+            ):
+                self._choices.land_type_card_id = card.id
+            elif card.definition.casting_modes:
+                self._choices.mode_card_id = card.id
+            else:
+                pending = self._begin_ui_cast(card)
+                if pending is not None:
+                    self._prompt(
+                        player.id,
+                        self._pending_target_prompt(),
+                        observer_message=(
+                            f"{player.name} is choosing targets for the commanded spell."
+                        ),
+                    )
+                else:
+                    self._message = f"Choose how to pay for commanded {card.name}."
+        except (ValueError, RuntimeError) as error:
+            self._tell_current(str(error))
+            self._choices.word_command_card_id = None
+        self.stateChanged.emit()
+
+    @Slot(str, int)
+    def toggleWordCommandMana(self, land_id: str, ability_index: int) -> None:
+        choice = self._word_command_choice()
+        player = self.game.players[self.perspective_index]
+        if (
+            choice is None
+            or choice.commander_id != player.id
+            or choice.stage != "choose_payment"
+        ):
+            return
+        try:
+            identifier = UUID(land_id)
+        except ValueError:
+            return
+        selected = self._choices.word_mana_activations
+        if selected.get(identifier) == ability_index:
+            selected.pop(identifier)
+        else:
+            selected[identifier] = ability_index
+        self._choices.word_mana_spending = None
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def chooseWordCommandSpending(self, amounts: str) -> None:
+        try:
+            parsed = tuple(int(value) for value in amounts.split(","))
+            ManaAllocation.from_amounts(parsed)
+        except (TypeError, ValueError):
+            return
+        self._choices.word_mana_spending = parsed
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmWordCommandMana(self) -> None:
+        choice = self._word_command_choice()
+        player = self.game.players[self.perspective_index]
+        if choice is None or choice.commander_id != player.id:
+            return
+        card = (
+            self._card_by_id(choice.card_id)
+            if choice.card_id is not None else None
+        )
+        card_name = card.name if card is not None else "commanded spell"
+        if self._run(
+            lambda: self.game.complete_word_command_payment(
+                player.id,
+                tuple(self._choices.word_mana_activations.items()),
+                (
+                    ManaAllocation.from_amounts(
+                        self._choices.word_mana_spending
+                    )
+                    if self._choices.word_mana_spending is not None else None
+                ),
+            ),
+            f"Commanded {card_name} was cast.",
+        ):
+            self._choices.clear_word_command()
+            self._apply_auto_passes()
+
+    @Slot()
+    def finishWordCommandWithoutPlay(self) -> None:
+        choice = self._word_command_choice()
+        player = self.game.players[self.perspective_index]
+        if choice is None or choice.commander_id != player.id:
+            return
+        if self._run(
+            lambda: self.game.finish_word_command_without_play(player.id),
+            "The revealed hand contained no legal play for Word of Command.",
+        ):
+            self._choices.clear_word_command()
+
+    @Slot(str)
     def toggleCard(self, card_id: str) -> None:
+        if self._choices.mask_source_id is not None:
+            player = self.game.players[self.perspective_index]
+            mask = self._card_by_id(self._choices.mask_source_id)
+            creature = self._card_by_id(UUID(card_id))
+            if mask is None:
+                self._choices.clear_mask()
+                self._tell_current("Illusionary Mask is no longer in play.")
+            elif self._choices.mask_target_required:
+                masked_creature = self._card_by_id(
+                    self._choices.mask_creature_id
+                )
+                if (
+                    masked_creature is None
+                    or creature not in self.game.legal_targets_for(
+                        masked_creature
+                    )
+                ):
+                    self._tell_current(
+                        "Choose a highlighted target for the concealed summon."
+                    )
+                elif self._run(
+                    lambda: self.game.cast_with_illusionary_mask(
+                        player.id,
+                        mask,
+                        masked_creature,
+                        mask_x=self._choices.mask_x_value,
+                        creature_x=self._choices.mask_creature_x_value,
+                        ability_index=self._choices.mask_ability_index,
+                        targets=(creature,),
+                    ),
+                    "Cast a summoned creature face down with Illusionary Mask.",
+                ):
+                    self._choices.clear_mask()
+                    self.selected_card_ids.clear()
+                    self._apply_auto_passes()
+            elif self._choices.mask_creature_id is not None:
+                self._tell_current(
+                    "Choose the Mask payment in the open dialog."
+                )
+            else:
+                try:
+                    legal = self.game.legal_illusionary_mask_creatures(
+                        player.id, mask, self._choices.mask_ability_index
+                    )
+                    if creature not in legal:
+                        raise ValueError(
+                            "Choose a highlighted summoned creature from your hand."
+                        )
+                    assert creature is not None
+                    creature_maximum = (
+                        self.game.maximum_affordable_mask_creature_x(
+                            player.id,
+                            mask,
+                            creature,
+                            ability_index=self._choices.mask_ability_index,
+                        )
+                    )
+                    mask_maximum = self.game.maximum_affordable_mask_x(
+                        player.id,
+                        mask,
+                        creature,
+                        ability_index=self._choices.mask_ability_index,
+                    )
+                except (ValueError, RuntimeError) as error:
+                    self._tell_current(str(error))
+                else:
+                    self._choices.begin_mask_x(
+                        creature,
+                        mask_maximum=mask_maximum,
+                        creature_maximum=creature_maximum,
+                    )
+                    self._prompt(
+                        player.id,
+                        f"Choose Illusionary Mask's X for {creature.name}.",
+                        observer_message=(
+                            f"{player.name} is concealing a summoned creature."
+                        ),
+                    )
+            self.stateChanged.emit()
+            return
         if self._choices.fireball_card_id is not None:
             card = self._card_by_id(UUID(card_id))
             if card is None or card not in self._fireball_legal_cards():
@@ -415,6 +669,18 @@ class GameViewModel(QObject):
             self.game.pending_cast is not None
             or self.game.pending_activation is not None
         ):
+            if (
+                self.game.pending_cast is not None
+                and not self._can_choose_pending_cast()
+            ):
+                chooser = self.game.player(
+                    self.game.pending_cast.decision_maker_id
+                )
+                self._tell_current(
+                    f"Switch to {chooser.name} to make this spell's choices."
+                )
+                self.stateChanged.emit()
+                return
             target = self._card_by_id(UUID(card_id))
             if target is None:
                 self._tell_current("Choose a legal card as the target.")
@@ -450,7 +716,7 @@ class GameViewModel(QObject):
                     self._choices.word_target_id = target.id
                     self._prompt_current(
                         f"Choose the word change for {spell.name}.",
-                        f"{self.game.player(self.game.pending_cast.caster_id).name} "
+                        f"{self.game.player(self.game.pending_cast.decision_maker_id).name} "
                         f"is choosing words for {spell.name}.",
                     )
                 self.stateChanged.emit()
@@ -572,6 +838,12 @@ class GameViewModel(QObject):
 
     @Slot(str)
     def activateCard(self, card_id: str) -> None:
+        if self._choices.mask_source_id is not None:
+            self._tell_current(
+                "Finish or cancel the Illusionary Mask choice first."
+            )
+            self.stateChanged.emit()
+            return
         if (
             self.game.pending_cast is not None
             or self.game.pending_activation is not None
@@ -600,7 +872,7 @@ class GameViewModel(QObject):
             ):
                 self._run(
                     lambda: self.game.begin_prevention_spell(card),
-                    f"Choose damage for {card.name} to prevent.",
+                    f"Cast {card.name}; waiting for interrupts.",
                 )
                 self.stateChanged.emit()
                 return
@@ -729,6 +1001,116 @@ class GameViewModel(QObject):
         self._choices.adjust_x(delta)
         self.stateChanged.emit()
 
+    @Slot(int)
+    def adjustMaskX(self, delta: int) -> None:
+        mask = self._card_by_id(self._choices.mask_source_id)
+        creature = self._card_by_id(self._choices.mask_creature_id)
+        if mask is None or creature is None:
+            return
+        player = self.game.players[self.perspective_index]
+        value = max(
+            0,
+            min(
+                self._choices.mask_x_maximum,
+                self._choices.mask_x_value + delta,
+            ),
+        )
+        try:
+            creature_maximum = self.game.maximum_affordable_mask_creature_x(
+                player.id,
+                mask,
+                creature,
+                mask_x=value,
+                ability_index=self._choices.mask_ability_index,
+            )
+        except (ValueError, RuntimeError) as error:
+            self._tell_current(str(error))
+        else:
+            self._choices.mask_x_value = value
+            self._choices.mask_creature_x_maximum = creature_maximum
+            self._choices.mask_creature_x_value = min(
+                self._choices.mask_creature_x_value, creature_maximum
+            )
+        self.stateChanged.emit()
+
+    @Slot(int)
+    def adjustMaskCreatureX(self, delta: int) -> None:
+        mask = self._card_by_id(self._choices.mask_source_id)
+        creature = self._card_by_id(self._choices.mask_creature_id)
+        if mask is None or creature is None:
+            return
+        player = self.game.players[self.perspective_index]
+        value = max(
+            0,
+            min(
+                self._choices.mask_creature_x_maximum,
+                self._choices.mask_creature_x_value + delta,
+            ),
+        )
+        try:
+            mask_maximum = self.game.maximum_affordable_mask_x(
+                player.id,
+                mask,
+                creature,
+                creature_x=value,
+                ability_index=self._choices.mask_ability_index,
+            )
+        except (ValueError, RuntimeError) as error:
+            self._tell_current(str(error))
+        else:
+            self._choices.mask_creature_x_value = value
+            self._choices.mask_x_maximum = mask_maximum
+            self._choices.mask_x_value = min(
+                self._choices.mask_x_value, mask_maximum
+            )
+        self.stateChanged.emit()
+
+    @Slot()
+    def confirmMaskCast(self) -> None:
+        mask = self._card_by_id(self._choices.mask_source_id)
+        creature = self._card_by_id(self._choices.mask_creature_id)
+        if mask is None or creature is None:
+            self.cancelMaskCast()
+            return
+        player = self.game.players[self.perspective_index]
+        creature_name = creature.name
+        if creature.definition.target_requirement is not None:
+            self._choices.mask_target_required = True
+            self._prompt(
+                player.id,
+                target_choice_prompt(
+                    creature.definition.target_requirement,
+                    creature.name,
+                ),
+                observer_message=(
+                    f"{player.name} is choosing a target for a concealed summon."
+                ),
+            )
+            self.stateChanged.emit()
+            return
+        if self._run(
+            lambda: self.game.cast_with_illusionary_mask(
+                player.id,
+                mask,
+                creature,
+                mask_x=self._choices.mask_x_value,
+                creature_x=self._choices.mask_creature_x_value,
+                ability_index=self._choices.mask_ability_index,
+            ),
+            f"Cast {creature_name} face down with Illusionary Mask.",
+        ):
+            self._choices.clear_mask()
+            self.selected_card_ids.clear()
+            self._apply_auto_passes()
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelMaskCast(self) -> None:
+        self._choices.clear_mask()
+        self.selected_card_ids.clear()
+        self._tell_current("Cancelled Illusionary Mask.")
+        self.stateChanged.emit()
+
     @Slot()
     def confirmXCast(self) -> None:
         if self._choices.x_card_id is None:
@@ -744,7 +1126,7 @@ class GameViewModel(QObject):
                 pending = (
                     self.game.begin_guardian_angel(card, x_value)
                     if card.definition.is_guardian_angel
-                    else self.game.begin_cast(card, x_value=x_value)
+                    else self._begin_ui_cast(card, x_value=x_value)
                 )
             else:
                 player = self.game.players[self.perspective_index]
@@ -759,14 +1141,21 @@ class GameViewModel(QObject):
         else:
             self._apply_auto_passes()
             self._choices.clear_x()
-            if pending is not None:
+            if card.definition.is_guardian_angel:
+                if self.game.pending_prevention is not None:
+                    player = self.game.players[self.perspective_index]
+                    self._prompt_current(
+                        f"Choose damage to prevent with {card.name} (X={x_value}).",
+                        f"{player.name} is assigning {card.name}'s prevention.",
+                    )
+                else:
+                    self._message = (
+                        f"Cast {card.name} with X={x_value}; waiting for interrupts."
+                    )
+            elif pending is not None:
                 player = self.game.players[self.perspective_index]
                 self._prompt_current(
-                    (
-                        f"Choose damage to prevent with {card.name} (X={x_value})."
-                        if card.definition.is_guardian_angel
-                        else self._pending_target_prompt(detail=f"X={x_value}")
-                    ),
+                    self._pending_target_prompt(detail=f"X={x_value}"),
                     f"{player.name} is choosing a target for {card.name}.",
                 )
             elif ability_index is None:
@@ -780,9 +1169,16 @@ class GameViewModel(QObject):
     @Slot()
     def cancelXCast(self) -> None:
         was_ability = self._choices.x_ability_index is not None
+        was_word_command = self._is_configuring_word_card()
         self._choices.clear_x()
+        if was_word_command:
+            self._choices.word_command_card_id = None
         self._message = (
-            "Cancelled activation." if was_ability else "Cancelled casting."
+            "Cancelled activation."
+            if was_ability
+            else "Choose a different card for Word of Command."
+            if was_word_command
+            else "Cancelled casting."
         )
         self.stateChanged.emit()
 
@@ -795,7 +1191,7 @@ class GameViewModel(QObject):
             self.cancelLandTypeChoice()
             return
         try:
-            pending = self.game.begin_cast(card, land_subtype=subtype)
+            pending = self._begin_ui_cast(card, land_subtype=subtype)
         except (ValueError, RuntimeError) as error:
             self._tell_current(str(error))
         else:
@@ -813,6 +1209,8 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelLandTypeChoice(self) -> None:
+        if self._is_configuring_word_card():
+            self._choices.word_command_card_id = None
         self._choices.land_type_card_id = None
         self._message = "Land-type choice cancelled."
         self.stateChanged.emit()
@@ -826,7 +1224,7 @@ class GameViewModel(QObject):
             self.cancelCastingMode()
             return
         try:
-            pending = self.game.begin_cast(card, mode=mode)
+            pending = self._begin_ui_cast(card, mode=mode)
         except (ValueError, RuntimeError) as error:
             self._tell_current(str(error))
         else:
@@ -844,6 +1242,8 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelCastingMode(self) -> None:
+        if self._is_configuring_word_card():
+            self._choices.word_command_card_id = None
         self._choices.mode_card_id = None
         self._message = "Casting-mode choice cancelled."
         self.stateChanged.emit()
@@ -857,7 +1257,7 @@ class GameViewModel(QObject):
             self.cancelDamageSourceChoice()
             return
         try:
-            self.game.begin_cast(card, damage_source_key=source_key)
+            self._begin_ui_cast(card, damage_source_key=source_key)
         except (ValueError, RuntimeError) as error:
             self._tell_current(str(error))
         else:
@@ -868,12 +1268,20 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelDamageSourceChoice(self) -> None:
+        if self._is_configuring_word_card():
+            self._choices.word_command_card_id = None
         self._choices.damage_source_card_id = None
         self._message = "Damage-source choice cancelled."
         self.stateChanged.emit()
 
     @Slot(str, int)
     def activateAbility(self, card_id: str, ability_index: int) -> None:
+        if self._choices.mask_source_id is not None:
+            self._tell_current(
+                "Finish or cancel the Illusionary Mask choice first."
+            )
+            self.stateChanged.emit()
+            return
         if (
             self.game.pending_cast is not None
             or self.game.pending_activation is not None
@@ -916,6 +1324,32 @@ class GameViewModel(QObject):
                         f"{player.name} is choosing damage for {card.name}."
                     ),
                 )
+            self.stateChanged.emit()
+            return
+        if isinstance(ability, ActivatedMaskedCreatureAbility):
+            try:
+                legal = self.game.legal_illusionary_mask_creatures(
+                    player.id, card, ability_index
+                )
+            except (ValueError, RuntimeError) as error:
+                self._tell_current(str(error))
+            else:
+                if not legal:
+                    self._tell_current(
+                        "There is no affordable summoned creature in your hand."
+                    )
+                else:
+                    self.selected_card_ids.clear()
+                    self._choices.begin_mask_creature_choice(
+                        card, ability_index
+                    )
+                    self._prompt(
+                        player.id,
+                        "Choose a highlighted summoned creature from your hand.",
+                        observer_message=(
+                            f"{player.name} is choosing a creature for Illusionary Mask."
+                        ),
+                    )
             self.stateChanged.emit()
             return
         pending: list[object] = []
@@ -1331,6 +1765,9 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelTarget(self) -> None:
+        if self._choices.mask_target_required:
+            self.cancelMaskCast()
+            return
         if (
             self.game.pending_cast is None
             and self.game.pending_activation is None
@@ -1343,6 +1780,21 @@ class GameViewModel(QObject):
             self.game.cancel_pending_activation()
             self._message = f"Cancelled {source_name}'s ability."
         else:
+            if not self._can_choose_pending_cast():
+                chooser = self.game.player(
+                    self.game.pending_cast.decision_maker_id
+                )
+                self._tell_current(
+                    f"Switch to {chooser.name} to make this spell's choices."
+                )
+                self.stateChanged.emit()
+                return
+            if self.game.pending_cast.word_command_id is not None:
+                self._tell_current(
+                    "A spell chosen for Word of Command must be played."
+                )
+                self.stateChanged.emit()
+                return
             spell_name = self.game.pending_cast.spell.name
             self.game.cancel_pending_cast()
             self._choices.clear_fork()
@@ -1356,6 +1808,13 @@ class GameViewModel(QObject):
         target = self._card_by_id(self._choices.word_target_id)
         if pending is None or target is None:
             self.cancelTextWordChoice()
+            return
+        if not self._can_choose_pending_cast():
+            self._tell_current(
+                f"Switch to {self.game.player(pending.decision_maker_id).name} "
+                "to make this spell's choices."
+            )
+            self.stateChanged.emit()
             return
         effect = next(
             (
@@ -1383,7 +1842,7 @@ class GameViewModel(QObject):
             lambda: self.game.complete_pending_cast(
                 (target,), word_from=old, word_to=new
             ),
-            f"Cast {spell_name} targeting {target.name}: "
+            f"Cast {spell_name} targeting {self.game.public_card_name(target)}: "
             f"{old_word} becomes {new_word}.",
         ):
             self._choices.word_target_id = None
@@ -1391,6 +1850,18 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelTextWordChoice(self) -> None:
+        if (
+            self.game.pending_cast is not None
+            and not self._can_choose_pending_cast()
+        ):
+            chooser = self.game.player(
+                self.game.pending_cast.decision_maker_id
+            )
+            self._tell_current(
+                f"Switch to {chooser.name} to make this spell's choices."
+            )
+            self.stateChanged.emit()
+            return
         self._choices.word_target_id = None
         if self.game.pending_cast is not None:
             spell_name = self.game.pending_cast.spell.name
@@ -1404,6 +1875,7 @@ class GameViewModel(QObject):
         resolved: list[tuple[Card, ...] | None] = []
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
+        prevention_before = self.game.pending_prevention
         closing_phase = self.game.pending_phase_advance
         closing_combat_response = bool(
             self.game.combat is not None
@@ -1433,6 +1905,21 @@ class GameViewModel(QObject):
         ):
             return
         if self._prompt_raging_river_choice():
+            self.stateChanged.emit()
+            return
+        if (
+            prevention_before is None
+            and self.game.pending_prevention is not None
+        ):
+            pending = self.game.pending_prevention
+            chooser = self.game.player(pending.controller_id)
+            self._prompt(
+                chooser.id,
+                f"Interrupts finished. Choose damage for {pending.source.name} to prevent.",
+                observer_message=(
+                    f"{chooser.name} is assigning {pending.source.name}'s prevention."
+                ),
+            )
             self.stateChanged.emit()
             return
         false_orders_choice = (
@@ -1543,6 +2030,24 @@ class GameViewModel(QObject):
             )
             self.stateChanged.emit()
 
+    @Slot()
+    def cancelAutoPassTurn(self) -> None:
+        player = self.game.players[self.perspective_index]
+        if self._auto_pass_turns.get(player.id) != self.game.turn_number:
+            self._tell_current("Auto-pass is not enabled for this turn.")
+            self.stateChanged.emit()
+            return
+        self._auto_pass_turns.pop(player.id, None)
+        self._prompt(
+            player.id,
+            "You will no longer automatically pass priority this turn.",
+            observer_message=(
+                f"{player.name} will no longer automatically pass priority "
+                "this turn."
+            ),
+        )
+        self.stateChanged.emit()
+
     @Slot(bool)
     def chooseUpkeepPayment(self, pay: bool) -> None:
         player = self.game.players[self.perspective_index]
@@ -1640,6 +2145,15 @@ class GameViewModel(QObject):
                 f"Activated {source.name} targeting {target.name}.",
             )
             return
+        if not self._can_choose_pending_cast():
+            chooser = self.game.player(
+                self.game.pending_cast.decision_maker_id
+            )
+            self._tell_current(
+                f"Switch to {chooser.name} to make this spell's choices."
+            )
+            self.stateChanged.emit()
+            return
         spell = self.game.pending_cast.spell
         self._run(
             lambda: self.game.complete_pending_cast((target,)),
@@ -1655,7 +2169,8 @@ class GameViewModel(QObject):
         return bool(
             pending is not None
             and self._fork_original() is not None
-            and pending.caster_id == self.game.players[self.perspective_index].id
+            and pending.decision_maker_id
+            == self.game.players[self.perspective_index].id
         )
 
     def _fork_legal_cards(self) -> list[Card]:
@@ -1690,11 +2205,11 @@ class GameViewModel(QObject):
             state.x_value,
             budget,
         )
-        caster = self.game.player(self.game.pending_cast.caster_id)
+        chooser = self.game.player(self.game.pending_cast.decision_maker_id)
         self._prompt(
-            caster.id,
+            chooser.id,
             f"Choose targets for Fork's {original.name} copy.",
-            observer_message=f"{caster.name} is choosing targets for Fork's copy.",
+            observer_message=f"{chooser.name} is choosing targets for Fork's copy.",
         )
 
     def _fork_target(self, key: str) -> Card | PlayerState | None:
@@ -1774,6 +2289,18 @@ class GameViewModel(QObject):
 
     @Slot()
     def cancelFork(self) -> None:
+        if (
+            self.game.pending_cast is not None
+            and not self._can_choose_pending_cast()
+        ):
+            chooser = self.game.player(
+                self.game.pending_cast.decision_maker_id
+            )
+            self._tell_current(
+                f"Switch to {chooser.name} to make this spell's choices."
+            )
+            self.stateChanged.emit()
+            return
         if self.game.pending_cast is not None:
             self.game.cancel_pending_cast()
         self._choices.clear_fork()
@@ -1788,7 +2315,10 @@ class GameViewModel(QObject):
         card = self._fireball_card()
         return bool(
             card is not None
-            and card in self.game.players[self.perspective_index].hand
+            and (
+                card in self.game.players[self.perspective_index].hand
+                or self._is_configuring_word_card(card)
+            )
         )
 
     def _fireball_legal_cards(self) -> list[Card]:
@@ -1810,7 +2340,7 @@ class GameViewModel(QObject):
         else:
             target_count = len(keys) + 1
             try:
-                maximum = self.game.maximum_affordable_x(card, target_count)
+                maximum = self._maximum_ui_x(card, target_count)
             except (ValueError, RuntimeError) as error:
                 self._tell_current(str(error))
                 return
@@ -1819,9 +2349,7 @@ class GameViewModel(QObject):
                 self._choices.fireball_x_value, maximum
             )
         target_count = max(1, len(keys))
-        self._choices.fireball_x_maximum = self.game.maximum_affordable_x(
-            card, target_count
-        )
+        self._choices.fireball_x_maximum = self._maximum_ui_x(card, target_count)
 
     @Slot(int)
     def adjustFireballX(self, delta: int) -> None:
@@ -1867,11 +2395,14 @@ class GameViewModel(QObject):
         x_value = self._choices.fireball_x_value
         labels = ", ".join(target.name for target in targets)
         def commit() -> None:
-            self.game.begin_cast(card, x_value=x_value)
+            self._begin_ui_cast(card, x_value=x_value)
             try:
                 self.game.complete_pending_cast(tuple(targets))
             except (ValueError, RuntimeError):
-                if self.game.pending_cast is not None:
+                if (
+                    self.game.pending_cast is not None
+                    and self.game.pending_cast.word_command_id is None
+                ):
                     self.game.cancel_pending_cast()
                 raise
 
@@ -1885,6 +2416,8 @@ class GameViewModel(QObject):
     def cancelFireball(self) -> None:
         if not self._can_choose_fireball():
             return
+        if self._is_configuring_word_card():
+            self._choices.word_command_card_id = None
         self._choices.clear_fireball()
         self._message = "Cancelled casting Fireball."
         self.stateChanged.emit()
@@ -2390,13 +2923,22 @@ class GameViewModel(QObject):
             lambda: self.game.declare_blockers(assignments),
             f"{count} blocker(s) declared.",
         ):
+            invalid_count = self.game.combat.camouflage_invalid_block_count
+            camouflage_result = (
+                f" Camouflage removed {invalid_count} impossible block "
+                f"assignment{'s' if invalid_count != 1 else ''}."
+                if invalid_count
+                else ""
+            )
             self._combat_ui.reset()
             self._prompt(
                 attacker.id,
-                f"{defender.name} declared {count} blocker(s). You may play fast "
+                f"{defender.name} declared {count} blocker(s).{camouflage_result} "
+                "You may play fast "
                 "effects or pass before damage.",
                 observer_message=(
-                    f"Declared {count} blocker(s); waiting for {attacker.name} "
+                    f"Declared {count} blocker(s).{camouflage_result} Waiting for "
+                    f"{attacker.name} "
                     "to act or pass."
                 ),
             )
@@ -2519,9 +3061,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="use cheap creature decks with a guaranteed early Raging River",
     )
     deck_group.add_argument(
+        "--camouflage-test-decks",
+        action="store_true",
+        help="use cheap creature decks focused on concealed blockers",
+    )
+    deck_group.add_argument(
         "--random-starter-decks",
         action="store_true",
         help="give both players independently generated 60-card Beta starters",
+    )
+    deck_group.add_argument(
+        "--deck-files",
+        nargs=2,
+        metavar=("PLAYER_ONE", "PLAYER_TWO"),
+        help="load two draft-builder JSON decks for player one and player two",
     )
     return parser.parse_args(argv)
 
@@ -2535,8 +3088,16 @@ def main(argv: list[str] | None = None) -> int:
     # interpret options owned by the game.
     app = QGuiApplication([sys.argv[0]])
     app.setApplicationName("Beta Magic")
-    if args.random_starter_decks:
+    if args.deck_files:
+        game_factory = partial(
+            make_saved_deck_game,
+            args.deck_files[0],
+            args.deck_files[1],
+        )
+    elif args.random_starter_decks:
         game_factory = make_random_starter_game
+    elif args.camouflage_test_decks:
+        game_factory = make_camouflage_test_game
     elif args.raging_river_test_decks:
         game_factory = make_raging_river_test_game
     elif args.banding_test_decks:
@@ -2557,7 +3118,11 @@ def main(argv: list[str] | None = None) -> int:
         game_factory = make_demo_game
     if args.ante:
         game_factory = partial(game_factory, ante=True)
-    game = game_factory()
+    try:
+        game = game_factory()
+    except (OSError, ValueError) as error:
+        print(f"Could not load deck files: {error}", file=sys.stderr)
+        return 2
     engine = create_engine(GameViewModel(game, game_factory=game_factory))
     if not engine.rootObjects():
         return 1

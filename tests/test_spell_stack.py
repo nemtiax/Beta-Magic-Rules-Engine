@@ -1,13 +1,13 @@
 import unittest
 
+from beta_magic.card_defs.red import LIGHTNING_BOLT
 from beta_magic import (
-    LIGHTNING_BOLT,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class SpellStackTests(unittest.TestCase):

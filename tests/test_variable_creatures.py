@@ -1,20 +1,24 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.black import (
     BAD_MOON,
-    BAYOU,
-    FOREST,
-    KELDON_WARLORD,
     NIGHTMARE,
     PLAGUE_RATS,
+)
+from beta_magic.card_defs.lands import (
+    BAYOU,
+    FOREST,
     SWAMP,
-    WALL_OF_WOOD,
+)
+from beta_magic.card_defs.red import KELDON_WARLORD
+from beta_magic.card_defs.green import WALL_OF_WOOD
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class VariableCreatureTests(unittest.TestCase):

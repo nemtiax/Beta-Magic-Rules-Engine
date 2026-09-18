@@ -3,12 +3,12 @@ import unittest
 from beta_magic import (
     Card,
     GameState,
-    ORCISH_ARTILLERY,
-    PRODIGAL_SORCERER,
     PlayerState,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.red import ORCISH_ARTILLERY
+from beta_magic.card_defs.blue import PRODIGAL_SORCERER
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class DamageAbilityCreatureTests(unittest.TestCase):

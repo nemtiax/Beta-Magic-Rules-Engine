@@ -1,21 +1,23 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.red import (
     DRAGON_WHELP,
-    FROZEN_SHADE,
     GRANITE_GARGOYLE,
     LIGHTNING_BOLT,
-    PUMP_CREATURES,
     SHIVAN_DRAGON,
     WALL_OF_FIRE,
-    WALL_OF_WATER,
+)
+from beta_magic.card_defs.black import FROZEN_SHADE
+from tests.card_groups import PUMP_CREATURES
+from beta_magic.card_defs.blue import WALL_OF_WATER
+from beta_magic import (
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import MOUNTAIN
+from beta_magic.card_defs.lands import MOUNTAIN
 
 
 class PumpCreatureTests(unittest.TestCase):

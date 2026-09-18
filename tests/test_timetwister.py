@@ -1,8 +1,8 @@
 import unittest
 
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import TIMETWISTER
 from beta_magic import (
-    GRIZZLY_BEARS,
-    TIMETWISTER,
     Card,
     GameState,
     PlayerState,

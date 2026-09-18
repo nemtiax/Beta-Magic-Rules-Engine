@@ -1,17 +1,23 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
-from beta_magic.card_defs import (
-    ANIMATE_DEAD,
-    CLOCKWORK_BEAST,
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
+from beta_magic.card_defs.black import ANIMATE_DEAD
+from beta_magic.card_defs.artifacts import CLOCKWORK_BEAST
+from beta_magic.card_defs.blue import (
     CLONE,
-    FOREST,
-    GRIZZLY_BEARS,
-    HILL_GIANT,
     UNSUMMON,
     VESUVAN_DOPPELGANGER,
-    WHITE_KNIGHT,
 )
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
+from beta_magic.card_defs.white import WHITE_KNIGHT
 
 
 class AnimateDeadTests(unittest.TestCase):

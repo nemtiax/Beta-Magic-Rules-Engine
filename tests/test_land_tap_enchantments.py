@@ -1,14 +1,18 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BAYOU,
-    EVIL_PRESENCE,
     FOREST,
-    ICY_MANIPULATOR,
-    LIFETAP,
-    LIVING_LANDS,
-    MANABARBS,
     MOUNTAIN,
+)
+from beta_magic.card_defs.black import EVIL_PRESENCE
+from beta_magic.card_defs.artifacts import ICY_MANIPULATOR
+from beta_magic.card_defs.blue import LIFETAP
+from beta_magic.card_defs.green import LIVING_LANDS
+from beta_magic.card_defs.red import MANABARBS
+from beta_magic import (
     Card,
     GameState,
     PlayerState,
@@ -127,7 +131,7 @@ class LandTapEnchantmentTests(unittest.TestCase):
         while self.game.current_phase is not TurnPhase.MAIN:
             self.game.advance_phase()
         self.game.begin_combat()
-        self.game.declare_attackers([forest])
+        declare_attackers(self.game, [forest])
         self.pass_event_window()
 
         self.assertEqual(self.alice.life, 21)

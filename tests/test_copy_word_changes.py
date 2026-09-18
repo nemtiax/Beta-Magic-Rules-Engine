@@ -1,13 +1,20 @@
 import unittest
 
-from beta_magic import Card, Color, GameState, KeywordAbility, PlayerState, Zone
-from beta_magic.card_defs import (
-    BOG_WRAITH,
-    GAUNTLET_OF_MIGHT,
+from beta_magic import (
+    Card,
+    Color,
+    GameState,
+    KeywordAbility,
+    PlayerState,
+    Zone,
+)
+from beta_magic.card_defs.black import BOG_WRAITH
+from beta_magic.card_defs.artifacts import GAUNTLET_OF_MIGHT
+from beta_magic.card_defs.green import (
     GRIZZLY_BEARS,
     SHANODIN_DRYADS,
-    VESUVAN_DOPPELGANGER,
 )
+from beta_magic.card_defs.blue import VESUVAN_DOPPELGANGER
 from beta_magic.card_defs.blue import CLONE, COPY_ARTIFACT
 
 

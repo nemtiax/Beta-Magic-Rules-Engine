@@ -3,15 +3,13 @@ from pathlib import Path
 import unittest
 
 from beta_magic import ALL_CARDS
-from beta_magic.card_defs import (
-    ARTIFACT_CARDS,
-    BLACK_CARDS,
-    BLUE_CARDS,
-    GREEN_CARDS,
-    LAND_CARDS,
-    RED_CARDS,
-    WHITE_CARDS,
-)
+from beta_magic.card_defs.artifacts import ARTIFACT_CARDS
+from beta_magic.card_defs.black import BLACK_CARDS
+from beta_magic.card_defs.blue import BLUE_CARDS
+from beta_magic.card_defs.green import GREEN_CARDS
+from beta_magic.card_defs.lands import LAND_CARDS
+from beta_magic.card_defs.red import RED_CARDS
+from beta_magic.card_defs.white import WHITE_CARDS
 
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "beta_magic"
@@ -38,7 +36,7 @@ class CardDefinitionArchitectureTests(unittest.TestCase):
             + ARTIFACT_CARDS
             + LAND_CARDS
         )
-        self.assertEqual(len(grouped), 288)
+        self.assertEqual(len(grouped), 291)
         self.assertEqual(len(grouped), len(set(grouped)))
         self.assertEqual(set(grouped), set(ALL_CARDS))
 
@@ -60,6 +58,9 @@ class CardDefinitionArchitectureTests(unittest.TestCase):
 
     def test_legacy_catalog_intake_is_gone(self) -> None:
         self.assertFalse((PACKAGE_ROOT / "card_defs" / "_legacy.py").exists())
+
+    def test_mechanic_groups_are_not_part_of_the_production_catalog(self) -> None:
+        self.assertFalse((PACKAGE_ROOT / "card_defs" / "groups.py").exists())
 
 
 if __name__ == "__main__":

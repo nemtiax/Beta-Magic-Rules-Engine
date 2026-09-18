@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Iterable
+from uuid import UUID
 
 from .types import Color
 
@@ -145,6 +146,73 @@ class ManaCost:
         return "".join(symbols)
 
 
+@dataclass(frozen=True, slots=True)
+class ManaAllocation:
+    """A color-by-color quantity of mana produced, spent, or retained."""
+
+    white: int = 0
+    blue: int = 0
+    black: int = 0
+    red: int = 0
+    green: int = 0
+    colorless: int = 0
+
+    def __post_init__(self) -> None:
+        if any(value < 0 for value in self.amounts):
+            raise ValueError("mana allocations cannot contain negative amounts")
+
+    @property
+    def amounts(self) -> tuple[int, ...]:
+        return (
+            self.white,
+            self.blue,
+            self.black,
+            self.red,
+            self.green,
+            self.colorless,
+        )
+
+    @property
+    def total(self) -> int:
+        return sum(self.amounts)
+
+    def amount(self, color: Color) -> int:
+        return getattr(self, _POOL_FIELDS[color])
+
+    @classmethod
+    def from_amounts(cls, amounts: Iterable[int]) -> ManaAllocation:
+        values = tuple(amounts)
+        if len(values) != len(Color):
+            raise ValueError("a mana allocation needs one amount per color")
+        return cls(*values)
+
+
+@dataclass(frozen=True, slots=True)
+class LandManaActivation:
+    """One currently available mana mode of one controlled land."""
+
+    land_id: UUID
+    land_name: str
+    ability_index: int
+    production: ManaAllocation
+
+
+@dataclass(frozen=True, slots=True)
+class LandManaPaymentPlan:
+    """A validated set of land activations and the resulting mana payment."""
+
+    activations: tuple[LandManaActivation, ...]
+    production: ManaAllocation
+    spending: ManaAllocation
+    excess_production: int
+
+    @property
+    def exact(self) -> bool:
+        """Whether every unit produced by the selected lands can be spent."""
+
+        return self.excess_production == 0
+
+
 @dataclass(slots=True)
 class ManaPool:
     """Mana currently available to a player."""
@@ -177,6 +245,13 @@ class ManaPool:
 
     def amount(self, color: Color) -> int:
         return getattr(self, _POOL_FIELDS[color])
+
+    @classmethod
+    def from_amounts(cls, amounts: Iterable[int]) -> ManaPool:
+        values = tuple(amounts)
+        if len(values) != len(Color):
+            raise ValueError("a mana pool needs one amount per color")
+        return cls(*values)
 
     def add(self, color: Color, amount: int = 1) -> None:
         if amount < 0:
@@ -231,6 +306,123 @@ class ManaPool:
             if not remaining:
                 break
         return None if remaining else spent
+
+    def payment_plans(
+        self,
+        cost: ManaCost,
+        substitutions: tuple[tuple[Color, Color], ...] = (),
+    ) -> tuple[ManaAllocation, ...]:
+        """Return every color allocation that can pay ``cost``.
+
+        Ordinary payments retain their deterministic historical behavior via
+        :meth:`pay`.  Effects which give another player control over payment
+        decisions need the full set so they can distinguish, for example,
+        spending red rather than green mana on a generic cost.
+        """
+
+        colors = tuple(Color)
+        color_indexes = {color: index for index, color in enumerate(colors)}
+        initial_available = self.amounts
+        initial_spent = (0,) * len(colors)
+        states = {(initial_available, initial_spent)}
+
+        def allocations(
+            required: int,
+            source_indexes: tuple[int, ...],
+            available: tuple[int, ...],
+        ) -> tuple[tuple[int, ...], ...]:
+            results: list[tuple[int, ...]] = []
+
+            def visit(position: int, remaining: int, chosen: list[int]) -> None:
+                if position == len(source_indexes):
+                    if remaining == 0:
+                        result = [0] * len(colors)
+                        for source_index, amount in zip(source_indexes, chosen):
+                            result[source_index] = amount
+                        results.append(tuple(result))
+                    return
+                source_index = source_indexes[position]
+                maximum = min(remaining, available[source_index])
+                for amount in range(maximum + 1):
+                    chosen.append(amount)
+                    visit(position + 1, remaining - amount, chosen)
+                    chosen.pop()
+
+            visit(0, required, [])
+            return tuple(results)
+
+        colored_requirements = (
+            (Color.WHITE, cost.white),
+            (Color.BLUE, cost.blue),
+            (Color.BLACK, cost.black),
+            (Color.RED, cost.red),
+            (Color.GREEN, cost.green),
+        )
+        for paid_as, required in colored_requirements:
+            if not required:
+                continue
+            eligible = [paid_as]
+            eligible.extend(
+                source
+                for source, accepted_as in substitutions
+                if accepted_as is paid_as and source not in eligible
+            )
+            source_indexes = tuple(color_indexes[color] for color in eligible)
+            next_states: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+            for available, spent in states:
+                for allocated in allocations(required, source_indexes, available):
+                    next_states.add(
+                        (
+                            tuple(
+                                amount - used
+                                for amount, used in zip(available, allocated)
+                            ),
+                            tuple(
+                                amount + used
+                                for amount, used in zip(spent, allocated)
+                            ),
+                        )
+                    )
+            states = next_states
+            if not states:
+                return ()
+
+        generic_indexes = tuple(
+            color_indexes[color]
+            for color in (
+                Color.COLORLESS,
+                Color.WHITE,
+                Color.BLUE,
+                Color.BLACK,
+                Color.RED,
+                Color.GREEN,
+            )
+        )
+        final_spending: set[tuple[int, ...]] = set()
+        for available, spent in states:
+            for allocated in allocations(cost.generic, generic_indexes, available):
+                final_spending.add(
+                    tuple(
+                        amount + used
+                        for amount, used in zip(spent, allocated)
+                    )
+                )
+        return tuple(
+            ManaAllocation.from_amounts(amounts)
+            for amounts in sorted(final_spending)
+        )
+
+    def pay_allocation(self, allocation: ManaAllocation) -> None:
+        """Spend an already selected, color-specific payment allocation."""
+
+        if any(
+            amount > self.amount(color)
+            for color, amount in zip(Color, allocation.amounts)
+        ):
+            raise ValueError("mana pool cannot pay the selected allocation")
+        for color, amount in zip(Color, allocation.amounts):
+            field_name = _POOL_FIELDS[color]
+            setattr(self, field_name, getattr(self, field_name) - amount)
 
     def can_pay(
         self,

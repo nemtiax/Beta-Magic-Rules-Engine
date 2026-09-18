@@ -1,16 +1,18 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     COPPER_TABLET,
     BLACK_VISE,
-    DISENCHANT,
     TIMED_ARTIFACTS,
+)
+from beta_magic.card_defs.white import DISENCHANT
+from beta_magic import (
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class TimedEventTests(unittest.TestCase):

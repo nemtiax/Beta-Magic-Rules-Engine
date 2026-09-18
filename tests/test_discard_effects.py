@@ -1,12 +1,16 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     DISRUPTING_SCEPTER,
-    GRIZZLY_BEARS,
-    HYPNOTIC_SPECTER,
     JADE_MONOLITH,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.black import (
+    HYPNOTIC_SPECTER,
     MIND_TWIST,
-    VETERAN_BODYGUARD,
+)
+from beta_magic.card_defs.white import VETERAN_BODYGUARD
+from beta_magic import (
     Card,
     DamageIncidentKind,
     DamageResolutionStep,

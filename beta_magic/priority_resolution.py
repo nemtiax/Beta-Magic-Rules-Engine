@@ -29,9 +29,10 @@ from .abilities import (
     ActivatedTemporaryAbility,
     ActivatedUntapAbility,
     ActivatedUnblockableAbility,
+    TargetRequirement,
 )
 from .cards import Card
-from .casting import AbilityOnStack, SpellOnStack
+from .casting import AbilityOnStack, PendingCast, SpellOnStack
 from .combat import AttackRequirement, PendingFalseOrdersChoice
 from .damage import DamageIncidentKind, DamageRecipientKind
 from .destruction import DestructionIncident, DestructionTarget
@@ -53,6 +54,7 @@ from .effects import (
     DiscardHandsAndDrawEffect,
     DiscardHandAnteAndDrawEffect,
     DemonicAttorneyEffect,
+    WordOfCommandEffect,
     NaturalSelectionEffect,
     LibrarySearchEffect,
     SacrificeCreatureForManaEffect,
@@ -72,15 +74,39 @@ from .effects import (
     SirensCallEffect,
     BlazeOfGloryEffect,
     FalseOrdersEffect,
+    CamouflageEffect,
     TemporaryPumpEffect,
     TapLandsAndEmptyManaPoolEffect,
     SwapLibraryTopWithAnteEffect,
 )
-from .mana import ManaCost
-from .types import CardType, Color, CombatStep, KeywordAbility, Zone
+from .mana import (
+    LandManaActivation,
+    LandManaPaymentPlan,
+    ManaAllocation,
+    ManaCost,
+)
+from .types import CardType, Color, CombatStep, KeywordAbility, TurnPhase, Zone
 
 if TYPE_CHECKING:
     from .game import PlayerState
+
+
+@dataclass(frozen=True, slots=True)
+class BatchLegalitySnapshot:
+    """Target and source legality frozen before a batch changes game state."""
+
+    spells: dict[UUID, bool]
+    spell_targets: dict[UUID, tuple[Card | PlayerState, ...]]
+    abilities: tuple[bool, ...]
+
+
+@dataclass(slots=True)
+class BatchConsequences:
+    """Zone-changing results deferred until every batch member is applied."""
+
+    destruction: list[tuple[Card, bool]] = field(default_factory=list)
+    regeneration: list[Card] = field(default_factory=list)
+    exile: list[tuple[Card, ExileTargetsEffect]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -121,6 +147,7 @@ class PendingTombCleanupChoice:
 @dataclass(frozen=True, slots=True)
 class PendingDrainPowerChoice:
     caster_id: str
+    decision_maker_id: str
     land_id: UUID
     land_name: str
     mana_options: tuple[tuple[Color, int], ...]
@@ -137,6 +164,28 @@ class PendingPowerSinkPayment:
 class PendingDemonicAttorneyChoice:
     caster_id: str
     opponent_id: str
+
+
+@dataclass(slots=True)
+class PendingWordOfCommandChoice:
+    """A resolved Word whose caster is making the opponent's casting choices."""
+
+    id: UUID
+    commander_id: str
+    commanded_player_id: str
+    source_name: str = "Word of Command"
+    card_id: UUID | None = None
+    stage: str = "choose_card"
+    x_value: int = 0
+    chosen_land_subtype: str | None = None
+    chosen_mode: str | None = None
+    damage_source_key: str | None = None
+    targets: tuple[Card | PlayerState, ...] = ()
+    copied_spell_targets: tuple[Card | PlayerState, ...] | None = None
+    copied_spell_x_value: int | None = None
+    copied_declared_target_requirement: TargetRequirement | None = None
+    chosen_word_from: Color | str | None = None
+    chosen_word_to: Color | str | None = None
 
 
 @dataclass(slots=True)
@@ -180,6 +229,396 @@ class PendingBalance:
 
 class PriorityBatchResolutionMixin:
     """Coordinate priority, interrupts, and simultaneous fast-effect batches."""
+
+    def current_word_command(self) -> PendingWordOfCommandChoice | None:
+        return (
+            self.pending_word_command_choices[0]
+            if self.pending_word_command_choices else None
+        )
+
+    def _word_command_card(self, choice: PendingWordOfCommandChoice) -> Card | None:
+        commanded = self.player(choice.commanded_player_id)
+        return next(
+            (card for card in commanded.hand if card.id == choice.card_id),
+            None,
+        )
+
+    def _word_command_timing_is_legal(
+        self, card: Card, caster: PlayerState
+    ) -> bool:
+        """Whether ``card`` could be the play compelled by a resolved Word."""
+
+        types = card.definition.card_types
+        if CardType.LAND in types:
+            return bool(
+                caster is self.active_player
+                and self.current_phase is TurnPhase.MAIN
+                and self.combat is None
+                and self.lands_played_this_turn == 0
+            )
+        if card.definition.requires_ante and not self.ante_enabled:
+            return False
+        if self.current_phase is TurnPhase.UNTAP:
+            return False
+        if self.combat is not None and self.combat.step in {
+            CombatStep.DECLARE_ATTACKERS,
+            CombatStep.DECLARE_BLOCKERS,
+            CombatStep.RIVER_DEFENDER_ASSIGNMENT,
+            CombatStep.RIVER_ATTACKER_ASSIGNMENT,
+            CombatStep.DAMAGE,
+        }:
+            return False
+        if card.definition.is_permanent or CardType.SORCERY in types:
+            return bool(
+                caster is self.active_player
+                and self.current_phase is TurnPhase.MAIN
+                and self.combat is None
+            )
+        if CardType.INTERRUPT in types:
+            # Once Word has resolved there is no spell left for a counter or
+            # lace to interrupt. Standalone mana interrupts and interrupts
+            # whose printed target can be a permanent remain legal.
+            requirement = card.definition.target_requirement
+            can_target_in_play = bool(
+                requirement is not None
+                and (
+                    requirement.zone is Zone.BATTLEFIELD
+                    or Zone.BATTLEFIELD in requirement.additional_zones
+                )
+            )
+            return can_target_in_play or any(
+                isinstance(effect, (AddManaEffect, SacrificeCreatureForManaEffect))
+                for effect in card.definition.spell_effects
+            )
+        if CardType.INSTANT not in types:
+            return False
+        if any(
+            isinstance(effect, SirensCallEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            caster is self.active_player
+            or self.attacks_this_turn
+            or self.combat is not None
+        ):
+            return False
+        if any(
+            isinstance(effect, BlazeOfGloryEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            self.combat is None
+            or self.combat.step is not CombatStep.ATTACKER_RESPONSE
+        ):
+            return False
+        if any(
+            isinstance(effect, FalseOrdersEffect)
+            for effect in card.definition.spell_effects
+        ) and (
+            self.combat is None
+            or self.combat.step is not CombatStep.BLOCKER_RESPONSE
+        ):
+            return False
+        if any(
+            isinstance(effect, TemporaryPumpEffect)
+            and effect.destroy_at_end_of_turn_if_attacked
+            for effect in card.definition.spell_effects
+        ) and self.attacks_this_turn and self.combat is None:
+            return False
+        if any(
+            isinstance(effect, PreventCombatDamageEffect)
+            for effect in card.definition.spell_effects
+        ) and self.attacks_this_turn and self.combat is None:
+            return False
+        return not card.definition.is_guardian_angel
+
+    def _validate_word_command_card(
+        self,
+        choice: PendingWordOfCommandChoice,
+        card: Card,
+        *,
+        x_value: int = 0,
+        chosen_mode: str | None = None,
+        target_count: int = 1,
+        require_targets: bool = True,
+    ) -> ManaCost:
+        caster = self.player(choice.commanded_player_id)
+        if card not in caster.hand:
+            raise ValueError("Word of Command must choose a card in that hand")
+        if not self._word_command_timing_is_legal(card, caster):
+            raise RuntimeError(f"{card.name} cannot legally be played now")
+        if x_value < 0:
+            raise ValueError("X cannot be negative")
+        if not card.definition.mana_cost.x_symbols and x_value:
+            raise ValueError(f"{card.name} has no X in its mana cost")
+        if (
+            card.definition.casting_modes
+            and chosen_mode not in card.definition.casting_modes
+        ):
+            raise ValueError(f"{card.name} requires a casting mode choice")
+        if not card.definition.casting_modes and chosen_mode is not None:
+            raise ValueError(f"{card.name} does not have casting modes")
+        if any(
+            isinstance(effect, SwapLibraryTopWithAnteEffect)
+            for effect in card.definition.spell_effects
+        ) and not caster.library:
+            raise RuntimeError(f"{card.name} requires a card in its caster's library")
+        if any(
+            isinstance(effect, ReverseDamageEffect)
+            for effect in card.definition.spell_effects
+        ) and not self.damage_source_choices(caster.id):
+            raise RuntimeError(f"{card.name} has no damage source to choose")
+        cost = self.spell_mana_cost(card, x_value, target_count)
+        if (
+            CardType.LAND not in card.definition.card_types
+            and not self.can_pay_mana_with_lands(caster.id, cost)
+        ):
+            raise RuntimeError(
+                f"{caster.name} cannot pay for {card.name} using their mana pool and lands"
+            )
+        requirement = card.definition.target_requirement
+        if requirement is not None and require_targets:
+            legal_count = len(
+                self.legal_targets_for(
+                    card,
+                    mode=chosen_mode,
+                    acting_player_id=choice.commanded_player_id,
+                    decision_player_id=choice.commander_id,
+                )
+            ) + len(
+                self.legal_player_targets_for(
+                    card,
+                    acting_player_id=choice.commanded_player_id,
+                )
+            )
+            needed = x_value if requirement.count_equals_x else requirement.count
+            if requirement.any_number:
+                needed = 1
+            if needed and legal_count < needed:
+                raise RuntimeError(f"there are no legal targets for {card.name}")
+        return cost
+
+    def word_commandable_cards(self) -> tuple[Card, ...]:
+        """Return the cards the current Word commander is obliged to consider."""
+
+        choice = self.current_word_command()
+        if choice is None or choice.stage != "choose_card":
+            return ()
+        commanded = self.player(choice.commanded_player_id)
+        legal: list[Card] = []
+        for card in commanded.hand:
+            modes = card.definition.casting_modes or (None,)
+            for mode in modes:
+                try:
+                    self._validate_word_command_card(
+                        choice, card, chosen_mode=mode
+                    )
+                except (ValueError, RuntimeError):
+                    continue
+                legal.append(card)
+                break
+        return tuple(legal)
+
+    def finish_word_command_without_play(self, commander_id: str) -> None:
+        """Finish Word only when the revealed hand contains no legal play."""
+
+        choice = self.current_word_command()
+        if choice is None or choice.commander_id != commander_id:
+            raise ValueError("only the Word of Command caster may finish the choice")
+        if self.word_commandable_cards():
+            raise RuntimeError("a legal card must be played for Word of Command")
+        self.pending_word_command_choices.pop(0)
+
+    def maximum_word_command_x(self, card: Card, target_count: int = 1) -> int:
+        choice = self.current_word_command()
+        if choice is None:
+            raise RuntimeError("there is no Word of Command choice pending")
+        if not card.definition.mana_cost.x_symbols:
+            raise ValueError(f"{card.name} has no X in its mana cost")
+        maximum = 0
+        while True:
+            candidate = maximum + 1
+            try:
+                self._validate_word_command_card(
+                    choice,
+                    card,
+                    x_value=candidate,
+                    target_count=target_count,
+                )
+            except (ValueError, RuntimeError):
+                break
+            maximum = candidate
+        requirement = card.definition.target_requirement
+        if requirement is not None and requirement.count_equals_x:
+            maximum = min(
+                maximum,
+                len(
+                    self.legal_targets_for(
+                        card,
+                        acting_player_id=choice.commanded_player_id,
+                        decision_player_id=choice.commander_id,
+                    )
+                )
+                + len(
+                    self.legal_player_targets_for(
+                        card,
+                        acting_player_id=choice.commanded_player_id,
+                    )
+                ),
+            )
+        return maximum
+
+    def begin_word_command_cast(
+        self,
+        commander_id: str,
+        card: Card,
+        *,
+        x_value: int = 0,
+        land_subtype: str | None = None,
+        mode: str | None = None,
+        damage_source_key: str | None = None,
+    ) -> PendingCast | None:
+        """Choose the compelled card and gather its normal casting choices."""
+
+        choice = self.current_word_command()
+        if choice is None or choice.commander_id != commander_id:
+            raise ValueError("only the Word of Command caster may choose the card")
+        if choice.stage != "choose_card":
+            raise RuntimeError("the commanded play has already been chosen")
+        self._validate_word_command_card(
+            choice, card, x_value=x_value, chosen_mode=mode
+        )
+        self._validate_land_type_choice(card, land_subtype)
+        if any(
+            isinstance(effect, ReverseDamageEffect)
+            for effect in card.definition.spell_effects
+        ):
+            legal_sources = {
+                key
+                for key, _name, _amount in self.damage_source_choices(
+                    choice.commanded_player_id
+                )
+            }
+            if damage_source_key not in legal_sources:
+                raise ValueError(f"{card.name} requires a damage source choice")
+        elif damage_source_key is not None:
+            raise ValueError(f"{card.name} does not choose a damage source")
+        if CardType.LAND in card.definition.card_types:
+            self.pending_word_command_choices.pop(0)
+            self._play_land_for(self.player(choice.commanded_player_id), card)
+            return None
+        choice.card_id = card.id
+        choice.x_value = x_value
+        choice.chosen_land_subtype = land_subtype
+        choice.chosen_mode = mode
+        choice.damage_source_key = damage_source_key
+        if card.definition.target_requirement is not None:
+            self.pending_cast = PendingCast(
+                spell=card,
+                caster_id=choice.commanded_player_id,
+                decision_maker_id=choice.commander_id,
+                x_value=x_value,
+                chosen_land_subtype=land_subtype,
+                chosen_mode=mode,
+                damage_source_key=damage_source_key,
+                word_command_id=choice.id,
+            )
+            choice.stage = "choose_targets"
+            return self.pending_cast
+        choice.stage = "choose_payment"
+        return None
+
+    def _store_word_command_targets(
+        self,
+        pending: PendingCast,
+        targets: tuple[Card | PlayerState, ...],
+    ) -> None:
+        choice = self.current_word_command()
+        if choice is None or choice.id != pending.word_command_id:
+            raise RuntimeError("the Word of Command choice is no longer pending")
+        choice.targets = targets
+        choice.copied_spell_targets = pending.copied_spell_targets
+        choice.copied_spell_x_value = pending.copied_spell_x_value
+        choice.copied_declared_target_requirement = (
+            pending.copied_declared_target_requirement
+        )
+        choice.chosen_word_from = pending.chosen_word_from
+        choice.chosen_word_to = pending.chosen_word_to
+        choice.stage = "choose_payment"
+
+    def word_command_mana_options(self) -> tuple[LandManaActivation, ...]:
+        choice = self.current_word_command()
+        if choice is None or choice.stage != "choose_payment":
+            return ()
+        return self.land_mana_activations(choice.commanded_player_id)
+
+    def complete_word_command_payment(
+        self,
+        commander_id: str,
+        activations: Iterable[tuple[UUID, int]],
+        spending: ManaAllocation | None = None,
+    ) -> Card:
+        """Tap the lands selected by the commander and announce the forced spell."""
+
+        choice = self.current_word_command()
+        if choice is None or choice.commander_id != commander_id:
+            raise ValueError("only the Word of Command caster may choose the payment")
+        if choice.stage != "choose_payment":
+            raise RuntimeError("finish choosing the commanded spell first")
+        card = self._word_command_card(choice)
+        if card is None:
+            raise RuntimeError(
+                "the commanded card is no longer in its owner's hand"
+            )
+        caster = self.player(choice.commanded_player_id)
+        cost = self._validate_word_command_card(
+            choice,
+            card,
+            x_value=choice.x_value,
+            chosen_mode=choice.chosen_mode,
+            target_count=len(choice.targets) or 1,
+            require_targets=False,
+        )
+        plan: LandManaPaymentPlan = self.plan_land_mana_payment(
+            caster.id,
+            cost,
+            activations,
+            require_exact_when_available=True,
+            spending=spending,
+        )
+        self._clear_land_tap_undo_window()
+        for activation in plan.activations:
+            land = next(
+                permanent
+                for permanent in caster.battlefield
+                if permanent.id == activation.land_id
+            )
+            ability = self.activated_abilities(land)[activation.ability_index]
+            assert isinstance(ability, ActivatedManaAbility)
+            if ability.tap_cost:
+                self._tap_permanent(land)
+            for recipient_id, color, amount in self._land_activation_mana_contributions(
+                caster, land, ability
+            ):
+                self.player(recipient_id).mana_pool.add(color, amount)
+        self.pending_word_command_choices.pop(0)
+        self._cast_spell(
+            card,
+            choice.targets,
+            caster,
+            choice.x_value,
+            chosen_land_subtype=choice.chosen_land_subtype,
+            chosen_mode=choice.chosen_mode,
+            damage_source_key=choice.damage_source_key,
+            copied_spell_targets=choice.copied_spell_targets,
+            copied_spell_x_value=choice.copied_spell_x_value,
+            copied_declared_target_requirement=(
+                choice.copied_declared_target_requirement
+            ),
+            chosen_word_from=choice.chosen_word_from,
+            chosen_word_to=choice.chosen_word_to,
+            decision_maker_id=choice.commander_id,
+            mana_allocation=plan.spending,
+        )
+        return card
 
     def choose_demonic_attorney(self, player_id: str, *, concede: bool) -> None:
         """Resolve the opponent's choice after Demonic Attorney resolves."""
@@ -366,8 +805,19 @@ class PriorityBatchResolutionMixin:
             self.interruptible_spell_id = None
             self.consecutive_passes = 0
             if root is None:
+                if self._continue_incident_spell_resolutions():
+                    return ()
                 self._restore_pending_context_priority()
                 return None
+            if root.incident_window_mode is not None:
+                self._continue_incident_spell_resolutions()
+                if self.pending_prevention is None:
+                    caster = self.player(root.caster_id)
+                    self.priority_player_index = (
+                        self.players.index(caster) + 1
+                    ) % len(self.players)
+                    self.consecutive_passes = 0
+                return ()
             caster = self.player(root.caster_id)
             self.priority_player_index = (
                 self.players.index(caster) + 1
@@ -588,8 +1038,10 @@ class PriorityBatchResolutionMixin:
         if not self.pending_drain_power_choices:
             raise RuntimeError("there is no Drain Power mana choice pending")
         choice = self.pending_drain_power_choices[0]
-        if choice.caster_id != player_id:
-            raise ValueError("only the Drain Power caster may choose the mana")
+        if choice.decision_maker_id != player_id:
+            raise ValueError(
+                "only the spell's decision-maker may choose the mana"
+            )
         amount = next(
             (
                 option_amount
@@ -600,7 +1052,7 @@ class PriorityBatchResolutionMixin:
         )
         if amount is None:
             raise ValueError(f"{choice.land_name} cannot produce {color.value}")
-        self.player(player_id).mana_pool.add(color, amount)
+        self.player(choice.caster_id).mana_pool.add(color, amount)
         self.pending_drain_power_choices.pop(0)
 
     def _land_mana_bonus(self) -> int:
@@ -977,6 +1429,17 @@ class PriorityBatchResolutionMixin:
             ),
             None,
         )
+        if (
+            legal_target
+            and target is not None
+            and target.zone is Zone.STACK
+            and counter_effect is not None
+            and counter_effect.x_equals_target_cost
+        ):
+            target_spell = self.stack_spells[target.id]
+            legal_target = spell.x_value == self.spell_casting_cost_value(
+                target, target_spell.x_value
+            )
         power_sink_started = False
         if (
             legal_target
@@ -1063,6 +1526,7 @@ class PriorityBatchResolutionMixin:
                 self.stack_spells[copy_card.id] = SpellOnStack(
                     card=copy_card,
                     caster_id=spell.caster_id,
+                    decision_maker_id=spell.decision_maker_id,
                     targets=(
                         spell.copied_spell_targets
                         if spell.copied_spell_targets is not None
@@ -1080,6 +1544,7 @@ class PriorityBatchResolutionMixin:
                         if spell.copied_declared_target_requirement is not None
                         else original.declared_target_requirement
                     ),
+                    incident_window_mode=original.incident_window_mode,
                 )
             color_effect = next(
                 (
@@ -1172,21 +1637,18 @@ class PriorityBatchResolutionMixin:
             self._restore_pending_context_priority()
         self.check_state_based_actions()
 
-    def _resolve_batch(self) -> tuple[Card, ...]:
-        """Apply one 1993 fast-effect batch, then stabilize exactly once."""
-
-        cards = tuple(self.stack)
-        self.interruptible_spell_id = None
-        spells = tuple(self.stack_spells[card.id] for card in cards)
-        abilities = tuple(self.batch_abilities)
-        caught_event_ids = {event.id for event in self.event_opportunities}
-        self._begin_damage_incident(DamageIncidentKind.FAST_EFFECT_BATCH)
+    def _snapshot_batch_spell_targets(
+        self, spells: tuple[SpellOnStack, ...]
+    ) -> tuple[
+        dict[UUID, bool],
+        dict[UUID, tuple[Card | PlayerState, ...]],
+    ]:
+        """Freeze spell target legality before the batch changes state."""
 
         # Target validity is fixed before any member of the simultaneous batch
         # changes zones or characteristics.
         legal: dict[UUID, bool] = {}
         legal_spell_targets: dict[UUID, tuple[Card | PlayerState, ...]] = {}
-        control_aura_entered = False
         for spell in spells:
             requirement = spell.card.definition.target_requirement
             if requirement is not None:
@@ -1214,7 +1676,14 @@ class PriorityBatchResolutionMixin:
                 or not spell.targets
                 or bool(valid_targets)
             )
-        legal_abilities = [
+        return legal, legal_spell_targets
+
+    def _snapshot_batch_ability_legality(
+        self, abilities: tuple[AbilityOnStack, ...]
+    ) -> tuple[bool, ...]:
+        """Freeze activated-ability legality at batch resolution start."""
+
+        return tuple(
             (
                 (
                     ability.event_id is not None
@@ -1263,14 +1732,38 @@ class PriorityBatchResolutionMixin:
                 )
             )
             for ability in abilities
-        ]
+        )
 
+    def _snapshot_batch_legality(
+        self,
+        spells: tuple[SpellOnStack, ...],
+        abilities: tuple[AbilityOnStack, ...],
+    ) -> BatchLegalitySnapshot:
+        """Capture all legality information used by a simultaneous batch."""
+
+        spell_legality, spell_targets = self._snapshot_batch_spell_targets(
+            spells
+        )
+        return BatchLegalitySnapshot(
+            spell_legality,
+            spell_targets,
+            self._snapshot_batch_ability_legality(abilities),
+        )
+
+    def _resolve_batch_permanent_spells(
+        self,
+        spells: tuple[SpellOnStack, ...],
+        legality: BatchLegalitySnapshot,
+    ) -> None:
+        """Move legal permanent spells into play as one batch."""
+
+        control_aura_entered = False
         # Slow permanents enter as part of the same instant. This lets their
         # continuous effects participate in the final state of the batch.
         for spell in spells:
             card = spell.card
-            resolved_targets = legal_spell_targets[card.id]
-            if legal[card.id] and card.definition.is_permanent:
+            resolved_targets = legality.spell_targets[card.id]
+            if legality.spells[card.id] and card.definition.is_permanent:
                 copied_animated_creature = False
                 if card.definition.animates_dead_creature:
                     target = next(
@@ -1288,6 +1781,7 @@ class PriorityBatchResolutionMixin:
                         if not self.queue_creature_copy_entry(
                             target,
                             spell.caster_id,
+                            chooser_id=spell.decision_maker_id,
                             attachment_id=card.id,
                         ):
                             self._move_card(card, Zone.GRAVEYARD)
@@ -1393,21 +1887,25 @@ class PriorityBatchResolutionMixin:
 
         # Aura attachments are established above as part of permanent entry.
         # Reconcile control only after every permanent in the simultaneous
-        # batch has entered, so Control Magic and Steal Artifact take effect
-        # through the normal batch-casting path just as they do through the
-        # direct compatibility path.
+        # batch has entered, so all control-changing Auras see the complete
+        # result of that batch.
         if control_aura_entered:
             self._reconcile_control_effects()
 
-        pending_destruction: list[tuple[Card, bool]] = []
-        pending_regeneration: list[Card] = []
-        pending_exile: list[tuple[Card, ExileTargetsEffect]] = []
+    def _resolve_batch_spell_effects(
+        self,
+        spells: tuple[SpellOnStack, ...],
+        legality: BatchLegalitySnapshot,
+    ) -> BatchConsequences:
+        """Apply nonpermanent spell effects and collect deferred results."""
+
+        consequences = BatchConsequences()
         for spell in spells:
             card = spell.card
-            if not legal[card.id] or card.definition.is_permanent:
+            if not legality.spells[card.id] or card.definition.is_permanent:
                 continue
             caster = self.player(spell.caster_id)
-            resolved_targets = legal_spell_targets[card.id]
+            resolved_targets = legality.spell_targets[card.id]
             for effect in card.definition.spell_effects:
                 if isinstance(effect, DamageEffect):
                     recipients = (
@@ -1430,7 +1928,7 @@ class PriorityBatchResolutionMixin:
                         )
                 elif isinstance(effect, DividedDamageEffect):
                     share = spell.x_value // len(spell.targets)
-                    for recipient in legal_spell_targets[card.id]:
+                    for recipient in legality.spell_targets[card.id]:
                         self._deal_damage(
                             recipient,
                             share,
@@ -1483,7 +1981,7 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, ChannelEffect):
                     self.channel_active_players.add(caster.id)
                 elif isinstance(effect, RegenerateTargetsEffect):
-                    pending_regeneration.extend(
+                    consequences.regeneration.extend(
                         target
                         for target in resolved_targets
                         if isinstance(target, Card)
@@ -1563,13 +2061,24 @@ class PriorityBatchResolutionMixin:
                     self.pending_demonic_attorney_choices.append(
                         PendingDemonicAttorneyChoice(caster.id, opponent.id)
                     )
+                elif isinstance(effect, WordOfCommandEffect):
+                    opponent = next(
+                        player for player in self.players if player.id != caster.id
+                    )
+                    self.pending_word_command_choices.append(
+                        PendingWordOfCommandChoice(
+                            uuid4(),
+                            spell.decision_maker_id,
+                            opponent.id,
+                        )
+                    )
                 elif isinstance(effect, NaturalSelectionEffect):
                     target = next(
                         item for item in resolved_targets if not isinstance(item, Card)
                     )
                     self.pending_natural_selection_choices.append(
                         PendingNaturalSelectionChoice(
-                            caster.id,
+                            spell.decision_maker_id,
                             target.id,
                             [card.id for card in reversed(target.library[-3:])],
                         )
@@ -1577,7 +2086,7 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, LibrarySearchEffect):
                     self.pending_library_search_choices.append(
                         PendingLibrarySearchChoice(
-                            caster.id,
+                            spell.decision_maker_id,
                             caster.id,
                             spell.card.name,
                             effect.card_types,
@@ -1609,7 +2118,7 @@ class PriorityBatchResolutionMixin:
                     ):
                         self.pending_false_orders_choices.extend(
                             PendingFalseOrdersChoice(
-                                spell.caster_id,
+                                spell.decision_maker_id,
                                 target.id,
                                 card.name,
                             )
@@ -1618,6 +2127,8 @@ class PriorityBatchResolutionMixin:
                             and target.controller_id
                             == self.combat.defending_player_id
                         )
+                elif isinstance(effect, CamouflageEffect):
+                    self.apply_camouflage(spell.caster_id)
                 elif isinstance(effect, BalanceEffect):
                     self._begin_balance()
                 elif isinstance(effect, ExtraTurnEffect):
@@ -1655,7 +2166,7 @@ class PriorityBatchResolutionMixin:
                                 source_controller_id=spell.caster_id,
                             )
                 elif isinstance(effect, DestroyTargetsEffect):
-                    pending_destruction.extend(
+                    consequences.destruction.extend(
                         (target, effect.regeneration_allowed)
                         for target in resolved_targets
                         if isinstance(target, Card)
@@ -1668,7 +2179,7 @@ class PriorityBatchResolutionMixin:
                             for subtype in effect.subtypes
                         ),
                     )
-                    pending_destruction.extend(
+                    consequences.destruction.extend(
                         (permanent, effect.regeneration_allowed)
                         for player in self.players
                         for permanent in tuple(player.battlefield)
@@ -1691,7 +2202,11 @@ class PriorityBatchResolutionMixin:
                             effect.destination is Zone.BATTLEFIELD
                             and target.definition.copies_creature
                         ):
-                            self.queue_creature_copy_entry(target, caster.id)
+                            self.queue_creature_copy_entry(
+                                target,
+                                caster.id,
+                                chooser_id=spell.decision_maker_id,
+                            )
                             continue
                         if effect.under_caster_control:
                             target.controller_id = caster.id
@@ -1701,7 +2216,7 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, ExileTargetsEffect):
                     for target in resolved_targets:
                         if isinstance(target, Card):
-                            pending_exile.append((target, effect))
+                            consequences.exile.append((target, effect))
                 elif isinstance(effect, ReverseDamageEffect):
                     if spell.damage_source_key is None:
                         continue
@@ -1786,6 +2301,7 @@ class PriorityBatchResolutionMixin:
                                         self.pending_drain_power_choices.append(
                                             PendingDrainPowerChoice(
                                                 caster.id,
+                                                spell.decision_maker_id,
                                                 permanent.id,
                                                 permanent.name,
                                                 options,
@@ -1799,8 +2315,17 @@ class PriorityBatchResolutionMixin:
                             target.mana_pool.empty()
                         else:
                             target.mana_pool.empty()
+        return consequences
 
-        for declared, is_legal in zip(abilities, legal_abilities):
+    def _resolve_batch_activated_abilities(
+        self,
+        abilities: tuple[AbilityOnStack, ...],
+        legality: BatchLegalitySnapshot,
+        consequences: BatchConsequences,
+    ) -> None:
+        """Apply legal activated abilities in the simultaneous batch."""
+
+        for declared, is_legal in zip(abilities, legality.abilities):
             if not is_legal:
                 continue
             if isinstance(declared.ability, ActivatedDamageAbility):
@@ -1843,13 +2368,13 @@ class PriorityBatchResolutionMixin:
                                 source_controller_id=declared.controller_id,
                             )
             elif isinstance(declared.ability, ActivatedDestroyAbility):
-                pending_destruction.extend(
+                consequences.destruction.extend(
                     (target, declared.ability.regeneration_allowed)
                     for target in declared.targets
                     if isinstance(target, Card)
                 )
             elif isinstance(declared.ability, ActivatedDestroyAllAbility):
-                pending_destruction.extend(
+                consequences.destruction.extend(
                     (permanent, declared.ability.regeneration_allowed)
                     for player in self.players
                     for permanent in tuple(player.battlefield)
@@ -2005,6 +2530,12 @@ class PriorityBatchResolutionMixin:
                             )
                         )
 
+    def _apply_batch_zone_and_incident_results(
+        self,
+        consequences: BatchConsequences,
+    ) -> None:
+        """Apply deferred exile, destruction, and regeneration results."""
+
         # Swords to Plowshares counts the creature's full power immediately
         # before it leaves play.  Pump spells and abilities announced in
         # response belong to this same Beta batch, so all of their modifiers
@@ -2021,14 +2552,14 @@ class PriorityBatchResolutionMixin:
                     else 0
                 ),
             )
-            for target, effect in pending_exile
+            for target, effect in consequences.exile
         ]
         for target, controller, life_gain in exile_results:
             self._move_card(target, Zone.EXILE)
             self._gain_life(controller, life_gain)
 
         destruction_by_card: dict[Card, bool] = {}
-        for card, regeneration_allowed in pending_destruction:
+        for card, regeneration_allowed in consequences.destruction:
             destruction_by_card[card] = (
                 destruction_by_card.get(card, True) and regeneration_allowed
             )
@@ -2044,7 +2575,7 @@ class PriorityBatchResolutionMixin:
         ]
         if destruction_targets:
             self.pending_destruction = DestructionIncident(destruction_targets)
-        for target in pending_regeneration:
+        for target in consequences.regeneration:
             incoming_damage = sum(
                 packet.remaining
                 for packet in (
@@ -2082,6 +2613,13 @@ class PriorityBatchResolutionMixin:
         if self.pending_damage is None:
             self._open_destruction_incident()
 
+    def _finish_batch_resolution(
+        self,
+        spells: tuple[SpellOnStack, ...],
+        caught_event_ids: set[UUID],
+    ) -> None:
+        """Move resolved spells off the stack and stabilize once."""
+
         graveyard_lengths = self._graveyard_lengths()
         for spell in spells:
             card = spell.card
@@ -2093,90 +2631,23 @@ class PriorityBatchResolutionMixin:
         self.check_state_based_actions()
         self._refresh_graveyard_return_choice()
         self._close_event_opportunities(caught_event_ids)
+
+    def _resolve_batch(self) -> tuple[Card, ...]:
+        """Apply one 1993 fast-effect batch, then stabilize exactly once."""
+
+        cards = tuple(self.stack)
+        self.interruptible_spell_id = None
+        spells = tuple(self.stack_spells[card.id] for card in cards)
+        abilities = tuple(self.batch_abilities)
+        caught_event_ids = {event.id for event in self.event_opportunities}
+        self._begin_damage_incident(DamageIncidentKind.FAST_EFFECT_BATCH)
+
+        legality = self._snapshot_batch_legality(spells, abilities)
+        self._resolve_batch_permanent_spells(spells, legality)
+        consequences = self._resolve_batch_spell_effects(spells, legality)
+        self._resolve_batch_activated_abilities(
+            abilities, legality, consequences
+        )
+        self._apply_batch_zone_and_incident_results(consequences)
+        self._finish_batch_resolution(spells, caught_event_ids)
         return cards
-
-    def _resolve_spell_effects(
-        self,
-        card: Card,
-        targets: tuple[Card | PlayerState, ...],
-        caster: PlayerState,
-    ) -> None:
-        for effect in card.definition.spell_effects:
-            if isinstance(effect, DamageEffect):
-                recipients: tuple[Card | PlayerState, ...]
-                if effect.recipient is EffectRecipient.CASTER:
-                    recipients = (caster,)
-                else:
-                    recipients = targets
-                for recipient in recipients:
-                    if (
-                        effect.disintegrates_target
-                        and isinstance(recipient, Card)
-                    ):
-                        self.disintegrated_this_turn.add(recipient.id)
-                    self._deal_damage(
-                        recipient,
-                        effect.amount,
-                        card.name,
-                        source_card=card,
-                        source_controller_id=caster.id,
-                    )
-            elif isinstance(effect, DestroyTargetsEffect):
-                self._destroy_permanents(
-                    target for target in targets if isinstance(target, Card)
-                )
-            elif isinstance(effect, PreventCombatDamageEffect):
-                self.prevent_combat_damage_this_turn = True
-            elif isinstance(effect, DestroyAllEffect):
-                effect = replace(
-                    effect,
-                    subtypes=frozenset(
-                        self.land_word(card, subtype)
-                        for subtype in effect.subtypes
-                    ),
-                )
-                self._destroy_permanents(
-                    permanent
-                    for player in self.players
-                    for permanent in tuple(player.battlefield)
-                    if effect.matches(
-                        permanent,
-                        current_card_types=self.card_types(permanent),
-                        current_subtypes=(
-                            self.land_subtypes(permanent)
-                            if CardType.LAND
-                            in permanent.definition.card_types
-                            else None
-                        ),
-                    )
-                )
-            elif isinstance(effect, MoveTargetsEffect):
-                for target in targets:
-                    if not isinstance(target, Card):
-                        continue
-                    if (
-                        effect.destination is Zone.BATTLEFIELD
-                        and target.definition.copies_creature
-                    ):
-                        self.queue_creature_copy_entry(target, caster.id)
-                        continue
-                    if effect.under_caster_control:
-                        target.controller_id = caster.id
-                    self._move_card(target, effect.destination)
-                    if effect.destination is Zone.BATTLEFIELD:
-                        target.entered_battlefield_turn = self.turn_number
-            elif isinstance(effect, ExileTargetsEffect):
-                for target in targets:
-                    if not isinstance(target, Card):
-                        continue
-                    controller = self.player(
-                        target.controller_id or target.owner_id
-                    )
-                    life_gain = (
-                        max(0, self.creature_power(target))
-                        if effect.controller_gains_life_equal_to_power
-                        else 0
-                    )
-                    self._move_card(target, Zone.EXILE)
-                    self._gain_life(controller, life_gain)
-

@@ -18,6 +18,7 @@ from ..effects import (
     DestroyTargetsEffect,
     DiscardHandAnteAndDrawEffect,
     DemonicAttorneyEffect,
+    WordOfCommandEffect,
     LibrarySearchEffect,
     SacrificeCreatureForManaEffect,
     DrainLifeEffect,
@@ -128,6 +129,20 @@ DEMONIC_TUTOR = CardDefinition(
     ),
     colors=frozenset({Color.BLACK}),
     spell_effects=(LibrarySearchEffect(),),
+)
+
+WORD_OF_COMMAND = CardDefinition(
+    name="Word of Command",
+    card_types=frozenset({CardType.INSTANT}),
+    mana_cost=ManaCost.parse("{B}{B}"),
+    rules_text=(
+        "Look at opponent's hand and choose any card opponent can legally "
+        "play using mana from their mana pool or lands. Opponent plays it "
+        "immediately; you make all decisions it calls for. Word of Command "
+        "cannot be countered after you have looked at that hand."
+    ),
+    colors=frozenset({Color.BLACK}),
+    spell_effects=(WordOfCommandEffect(),),
 )
 
 DRAIN_LIFE = CardDefinition(
@@ -811,6 +826,7 @@ BLACK_CARDS = tuple(
             WARP_ARTIFACT,
             WEAKNESS,
             WILL_O_THE_WISP,
+            WORD_OF_COMMAND,
             ZOMBIE_MASTER,
         ),
         key=lambda card: card.name,

@@ -1,8 +1,10 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.white import (
     PERSONAL_INCARNATION,
     VETERAN_BODYGUARD,
+)
+from beta_magic import (
     Card,
     DamageIncidentKind,
     DamageRecipientKind,
@@ -12,7 +14,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class PersonalIncarnationBodyguardTests(unittest.TestCase):

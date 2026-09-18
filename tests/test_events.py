@@ -1,7 +1,11 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from beta_magic.card_defs.white import HOLY_STRENGTH
 from beta_magic import (
-    HOLY_STRENGTH,
     CardMovedEvent,
     DamageEvent,
     GameState,
@@ -11,7 +15,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, HILL_GIANT
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
 
 
 class EngineEventTests(unittest.TestCase):
@@ -41,12 +46,18 @@ class EngineEventTests(unittest.TestCase):
         self.alice.mana_pool.white = 1
         checkpoint = len(self.game.events)
 
-        self.game.cast_enchantment(aura, target)
+        cast_and_resolve(self.game, aura, (target,))
 
         events = self.game.events[checkpoint:]
-        movement = next(event for event in events if isinstance(event, CardMovedEvent))
+        movements = [event for event in events if isinstance(event, CardMovedEvent)]
         cast = next(event for event in events if isinstance(event, SpellCastEvent))
-        self.assertEqual((movement.source, movement.destination), (Zone.HAND, Zone.BATTLEFIELD))
+        self.assertEqual(
+            [(event.source, event.destination) for event in movements],
+            [
+                (Zone.HAND, Zone.STACK),
+                (Zone.STACK, Zone.BATTLEFIELD),
+            ],
+        )
         self.assertEqual(cast.target_ids, (target.id,))
         self.assertEqual(cast.target_names, (target.name,))
 
@@ -55,8 +66,8 @@ class EngineEventTests(unittest.TestCase):
             self.game.advance_phase()
         attacker = self.put_in_play(self.alice, HILL_GIANT)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.bob.mana_pool.green = 1
         checkpoint = len(self.game.events)

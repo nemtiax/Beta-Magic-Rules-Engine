@@ -1,13 +1,22 @@
 from importlib.util import find_spec
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from beta_draft import DraftCard, DraftSession, default_catalog
 
 
 PYSIDE_AVAILABLE = find_spec("PySide6") is not None
 if PYSIDE_AVAILABLE:
-    from beta_draft.ui import DraftViewModel, _pool_sort_key, _present_card
+    from PySide6.QtCore import QUrl
+
+    from beta_draft.ui import (
+        DraftViewModel,
+        _allocate_basic_lands,
+        _pool_sort_key,
+        _present_card,
+    )
 
 
 class _CyclingGenerator:
@@ -114,6 +123,159 @@ class DraftPresentationTests(unittest.TestCase):
             ["Flight", "Air Elemental"],
         )
         self.assertEqual([card["name"] for card in groups[7]["cards"]], ["Island"])
+
+    def test_completed_draft_opens_builder_with_cards_in_sideboard(self):
+        session = DraftSession(
+            generator=_CyclingGenerator(),
+            bots=[_FirstBot()],
+            table_size=2,
+            rounds=1,
+        )
+        model = DraftViewModel(session=session)
+
+        while not session.complete:
+            model.draftCard(session.current_pack[-1].id)
+
+        state = model.state
+        self.assertTrue(state["complete"])
+        self.assertEqual(state["heading"], "Build your deck")
+        self.assertEqual(state["deckCount"], 0)
+        self.assertEqual(state["sideboardCount"], 15)
+        self.assertFalse(state["canSaveDeck"])
+        self.assertEqual(
+            sum(group["count"] for group in state["sideboardGroups"]),
+            15,
+        )
+
+        chosen = next(
+            group["cards"][0]
+            for group in state["sideboardGroups"]
+            if group["cards"]
+        )
+        model.addCardToDeck(chosen["id"])
+
+        state = model.state
+        self.assertEqual(state["deckCount"], 1)
+        self.assertEqual(state["sideboardCount"], 14)
+        self.assertEqual(
+            [
+                card["id"]
+                for group in state["deckGroups"]
+                for card in group["cards"]
+            ],
+            [chosen["id"]],
+        )
+        self.assertIn("to the deck", state["message"])
+
+        model.moveCardToSideboard(chosen["id"])
+
+        self.assertEqual(model.state["deckCount"], 0)
+        self.assertEqual(model.state["sideboardCount"], 15)
+        self.assertIn("to the sideboard", model.state["message"])
+
+    def test_new_draft_clears_deck_builder_selection(self):
+        session = DraftSession(
+            generator=_CyclingGenerator(),
+            bots=[_FirstBot()],
+            table_size=2,
+            rounds=1,
+        )
+        model = DraftViewModel(session=session)
+        while not session.complete:
+            model.draftCard(session.current_pack[-1].id)
+        model.addCardToDeck(session.human_pool[0].id)
+        self.assertEqual(model.state["deckCount"], 1)
+
+        model.startNewDraft(False, False, 2, 1)
+
+        self.assertFalse(model.state["complete"])
+        self.assertEqual(model.state["deckCount"], 0)
+        self.assertEqual(model.state["sideboardCount"], 0)
+
+    def test_auto_fill_basics_reaches_forty_and_credits_dual_lands(self):
+        catalog = default_catalog()
+        spells = [
+            *(
+                DraftCard(f"bolt-{index}", catalog.get("Lightning Bolt"))
+                for index in range(5)
+            ),
+            *(
+                DraftCard(f"twiddle-{index}", catalog.get("Twiddle"))
+                for index in range(5)
+            ),
+            DraftCard("badlands", catalog.get("Badlands")),
+        ]
+        session = DraftSession(
+            generator=_CyclingGenerator(),
+            bots=[_FirstBot()],
+            table_size=2,
+            rounds=1,
+        )
+        session.human_pool[:] = spells
+        session.complete = True
+        session.packs = []
+        session.pack_ids = []
+        model = DraftViewModel(session=session)
+        for card in spells:
+            model.addCardToDeck(card.id)
+
+        model.autoFillBasicLands()
+
+        state = model.state
+        counts = {land["name"]: land["count"] for land in state["basicLands"]}
+        self.assertEqual(state["deckDraftedCount"], 11)
+        self.assertEqual(state["basicLandCount"], 29)
+        self.assertEqual(state["deckCount"], 40)
+        self.assertEqual(counts["Island"], 15)
+        self.assertEqual(counts["Mountain"], 14)
+        self.assertEqual(counts["Plains"], 0)
+        self.assertEqual(counts["Swamp"], 0)
+        self.assertEqual(counts["Forest"], 0)
+
+        model.adjustBasicLand("Plains", 1)
+        self.assertEqual(model.state["deckCount"], 41)
+        model.adjustBasicLand("Plains", -1)
+        self.assertEqual(model.state["deckCount"], 40)
+
+    def test_colorless_deck_gets_an_even_editable_basic_land_start(self):
+        catalog = default_catalog()
+        cards = [DraftCard("ring", catalog.get("Sol Ring"))]
+
+        allocation = _allocate_basic_lands(cards, 7)
+
+        self.assertEqual(
+            allocation,
+            {"Plains": 2, "Island": 2, "Swamp": 1, "Mountain": 1, "Forest": 1},
+        )
+
+    def test_completed_forty_card_deck_can_be_saved(self):
+        session = DraftSession(
+            generator=_CyclingGenerator(),
+            bots=[_FirstBot()],
+            table_size=2,
+            rounds=1,
+        )
+        model = DraftViewModel(session=session)
+        while not session.complete:
+            model.draftCard(session.current_pack[-1].id)
+        for card in session.human_pool[:10]:
+            model.addCardToDeck(card.id)
+        model.autoFillBasicLands()
+        self.assertTrue(model.state["canSaveDeck"])
+
+        expected_path = Path.cwd() / "ruby-lightning.json"
+        destination = QUrl.fromLocalFile(str(expected_path))
+        with patch(
+            "beta_draft.ui.save_deck_file",
+            return_value=expected_path,
+        ) as save:
+            model.saveDeck(destination)
+
+        path, name, card_names = save.call_args.args
+        self.assertEqual(path, expected_path)
+        self.assertEqual(name, "ruby-lightning")
+        self.assertEqual(len(card_names), 40)
+        self.assertIn("Saved 40-card deck", model.state["message"])
 
     def test_hovering_an_offered_card_changes_preview_without_changing_draft(self):
         session = DraftSession(

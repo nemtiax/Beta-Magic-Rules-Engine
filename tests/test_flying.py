@@ -1,20 +1,22 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
 from beta_magic import (
     CardType,
-    FLYING_CREATURES,
     GameState,
     KeywordAbility,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from tests.card_groups import FLYING_CREATURES
+from beta_magic.card_defs.blue import (
     AIR_ELEMENTAL,
-    SCRYB_SPRITES,
     WALL_OF_AIR,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import SCRYB_SPRITES
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
@@ -57,19 +59,19 @@ class FlyingTests(unittest.TestCase):
     def begin_with_attacker(self, definition):
         attacker = self.put_in_play(self.alice, definition)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         return attacker
 
     def test_ground_creature_cannot_block_flying_attacker(self) -> None:
         flyer = self.begin_with_attacker(SCRYB_SPRITES)
         bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
         with self.assertRaisesRegex(ValueError, "cannot block.*Flying"):
-            self.game.declare_blockers({bear: flyer})
+            declare_blockers(self.game, {bear: flyer})
 
     def test_flyer_can_block_flying_attacker(self) -> None:
         attacker = self.begin_with_attacker(SCRYB_SPRITES)
         blocker = self.put_in_play(self.bob, AIR_ELEMENTAL)
-        self.game.declare_blockers({blocker: attacker})
+        declare_blockers(self.game, {blocker: attacker})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertIn(attacker, self.alice.graveyard)
@@ -78,7 +80,7 @@ class FlyingTests(unittest.TestCase):
     def test_flyer_can_block_nonflying_attacker(self) -> None:
         attacker = self.begin_with_attacker(GRIZZLY_BEARS)
         blocker = self.put_in_play(self.bob, SCRYB_SPRITES)
-        self.game.declare_blockers({blocker: attacker})
+        declare_blockers(self.game, {blocker: attacker})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         self.assertIn(blocker, self.bob.graveyard)
@@ -88,7 +90,7 @@ class FlyingTests(unittest.TestCase):
         wall = self.put_in_play(self.alice, WALL_OF_AIR)
         self.game.begin_combat()
         with self.assertRaisesRegex(ValueError, "Wall and cannot attack"):
-            self.game.declare_attackers([wall])
+            declare_attackers(self.game, [wall])
 
         # Use a fresh game direction to exercise its legal blocking ability.
         game = GameState([player("charlie"), player("dana")])
@@ -98,8 +100,8 @@ class FlyingTests(unittest.TestCase):
         attacker = self.put_in_play(game.players[0], SCRYB_SPRITES)
         flying_wall = self.put_in_play(game.players[1], WALL_OF_AIR)
         game.begin_combat()
-        game.declare_attackers([attacker])
-        game.declare_blockers({flying_wall: attacker})
+        declare_attackers(game, [attacker])
+        declare_blockers(game, {flying_wall: attacker})
 
 
 if __name__ == "__main__":

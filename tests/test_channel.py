@@ -1,10 +1,12 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.green import (
     CHANNEL,
-    FOREST,
-    LICH,
     LIVING_ARTIFACT,
+)
+from beta_magic.card_defs.lands import FOREST
+from beta_magic.card_defs.black import LICH
+from beta_magic import (
     Card,
     CardType,
     GameState,

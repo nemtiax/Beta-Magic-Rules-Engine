@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import AnteAward, Card, GameState, PlayerState, Zone
+from beta_magic import (
+    AnteAward,
+    Card,
+    GameState,
+    PlayerState,
+    Zone,
+)
 from beta_magic.card_defs.lands import FOREST, ISLAND, MOUNTAIN, PLAINS
 from beta_magic.types import GameStatus
 from beta_magic.ui import GameViewModel, parse_args

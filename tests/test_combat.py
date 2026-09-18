@@ -1,5 +1,7 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
 from beta_magic import (
     CombatStep,
     GameState,
@@ -7,12 +9,12 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.red import (
     GRAY_OGRE,
-    GRIZZLY_BEARS,
     HILL_GIANT,
     MONSS_GOBLIN_RAIDERS,
 )
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:
@@ -38,8 +40,8 @@ class CombatTests(unittest.TestCase):
 
     def reach_damage(self, attackers, blockers=None):
         self.game.begin_combat()
-        self.game.declare_attackers(attackers)
-        self.game.declare_blockers(blockers or {})
+        declare_attackers(self.game, attackers)
+        declare_blockers(self.game, blockers or {})
         self.game.advance_combat()
         self.assertEqual(self.game.combat.step, CombatStep.DAMAGE)
 
@@ -81,14 +83,14 @@ class CombatTests(unittest.TestCase):
         )
         self.game.begin_combat()
         with self.assertRaises(ValueError):
-            self.game.declare_attackers([new_bear])
+            declare_attackers(self.game, [new_bear])
 
     def test_only_one_attack_and_phase_cannot_advance_during_combat(self) -> None:
         self.game.begin_combat()
         with self.assertRaises(RuntimeError):
             self.game.advance_phase()
-        self.game.declare_attackers([])
-        self.game.declare_blockers({})
+        declare_attackers(self.game, [])
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.game.deal_combat_damage()
         with self.assertRaises(RuntimeError):
@@ -99,9 +101,9 @@ class CombatTests(unittest.TestCase):
         self.game.begin_combat()
         self.assertEqual(self.alice.life, 20)
         self.assertEqual(self.alice.mana_pool.green, 1)
-        self.game.declare_attackers([])
+        declare_attackers(self.game, [])
         self.assertEqual(self.alice.life, 19)
-        self.game.declare_blockers({})
+        declare_blockers(self.game, {})
         self.game.advance_combat()
         self.bob.mana_pool.blue = 1
         self.game.deal_combat_damage()
@@ -116,14 +118,14 @@ class CombatTests(unittest.TestCase):
         self.assertEqual(self.game.combat.step, CombatStep.DECLARE_ATTACKERS)
         self.assertIsNone(self.game.priority_player_index)
         self.assertEqual(
-            self.game.declare_attackers([bear]), CombatStep.ATTACKER_RESPONSE
+            declare_attackers(self.game, [bear]), CombatStep.ATTACKER_RESPONSE
         )
         self.game.pass_priority(self.alice.id)
         self.game.pass_priority(self.bob.id)
         self.assertEqual(self.game.combat.step, CombatStep.DECLARE_BLOCKERS)
         self.assertIsNone(self.game.priority_player_index)
         self.assertEqual(
-            self.game.declare_blockers({}), CombatStep.BLOCKER_RESPONSE
+            declare_blockers(self.game, {}), CombatStep.BLOCKER_RESPONSE
         )
         self.game.pass_priority(self.alice.id)
         self.game.pass_priority(self.bob.id)

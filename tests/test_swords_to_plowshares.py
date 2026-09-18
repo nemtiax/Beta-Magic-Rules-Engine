@@ -1,20 +1,26 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.effects import (
     ContinuousEffect,
     ExileTargetsEffect,
+)
+from beta_magic import (
     GameState,
     PlayerState,
-    SWORDS_TO_PLOWSHARES,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import (
+from beta_magic.card_defs.white import SWORDS_TO_PLOWSHARES
+from beta_magic.card_defs.black import (
     FROZEN_SHADE,
+    BLACK_KNIGHT,
+)
+from beta_magic.card_defs.green import (
     GIANT_GROWTH,
     GRIZZLY_BEARS,
+)
+from beta_magic.card_defs.white import (
     HOLY_STRENGTH,
-    BLACK_KNIGHT,
     PERSONAL_INCARNATION,
 )
 from beta_magic.cards import Card

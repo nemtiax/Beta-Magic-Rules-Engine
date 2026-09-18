@@ -1,12 +1,14 @@
 import unittest
 
-from beta_magic import (
-    ANIMATE_ARTIFACT,
-    HOLY_STRENGTH,
-    ISLAND,
+from beta_magic.card_defs.blue import ANIMATE_ARTIFACT
+from beta_magic.card_defs.white import HOLY_STRENGTH
+from beta_magic.card_defs.lands import ISLAND
+from beta_magic.card_defs.artifacts import (
     NEVINYRRALS_DISK,
     SOL_RING,
-    WALL_OF_BONE,
+)
+from beta_magic.card_defs.black import WALL_OF_BONE
+from beta_magic import (
     Card,
     CardType,
     GameState,
@@ -14,7 +16,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 class NevinyrralsDiskTests(unittest.TestCase):

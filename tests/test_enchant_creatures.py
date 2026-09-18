@@ -1,27 +1,41 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from tests.support import cast_and_resolve
+
+from tests.card_groups import (
     ABILITY_ENCHANT_CREATURES,
-    ASPECT_OF_WOLF,
-    BLACK_WARD,
-    BLUE_WARD,
-    CONTROL_MAGIC,
     ENCHANT_CREATURES,
-    FLIGHT,
-    FEAR,
-    BURROWING,
-    HOLY_STRENGTH,
-    LANCE,
     PUMP_ENCHANT_CREATURES,
     PROTECTION_ENCHANT_CREATURES,
+    SIMPLE_ENCHANT_CREATURES,
+)
+from beta_magic.card_defs.green import (
+    ASPECT_OF_WOLF,
+    REGENERATION,
+    WEB,
+)
+from beta_magic.card_defs.white import (
+    BLACK_WARD,
+    BLUE_WARD,
+    HOLY_STRENGTH,
+    LANCE,
     GREEN_WARD,
     RED_WARD,
-    REGENERATION,
-    SIMPLE_ENCHANT_CREATURES,
+    WHITE_WARD,
+)
+from beta_magic.card_defs.blue import (
+    CONTROL_MAGIC,
+    FLIGHT,
+)
+from beta_magic.card_defs.black import (
+    FEAR,
     UNHOLY_STRENGTH,
     WEAKNESS,
-    WEB,
-    WHITE_WARD,
+)
+from beta_magic.card_defs.red import BURROWING
+from beta_magic import (
     CardType,
     GameState,
     KeywordAbility,
@@ -29,9 +43,10 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import PLAINS
-from beta_magic.card_defs import CRUSADE
-from beta_magic.card_defs import GRIZZLY_BEARS, SAVANNAH_LIONS
+from beta_magic.card_defs.lands import PLAINS
+from beta_magic.card_defs.white import CRUSADE
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.white import SAVANNAH_LIONS
 
 
 def player(player_id: str) -> PlayerState:
@@ -106,7 +121,7 @@ class EnchantCreatureTests(unittest.TestCase):
         aura = self.put_in_hand(self.alice, HOLY_STRENGTH)
         self.alice.mana_pool.white = 1
 
-        self.game.cast_enchantment(aura, bear)
+        cast_and_resolve(self.game, aura, (bear,))
 
         self.assertIn(aura, self.alice.battlefield)
         self.assertEqual(aura.enchanted_card_id, bear.id)
@@ -123,8 +138,8 @@ class EnchantCreatureTests(unittest.TestCase):
         self.alice.mana_pool.white = 1
         self.alice.mana_pool.black = 1
 
-        self.game.cast_enchantment(holy, bear)
-        self.game.cast_enchantment(unholy, bear)
+        cast_and_resolve(self.game, holy, (bear,))
+        cast_and_resolve(self.game, unholy, (bear,))
 
         self.assertEqual(
             (self.game.creature_power(bear), self.game.creature_toughness(bear)),
@@ -136,8 +151,8 @@ class EnchantCreatureTests(unittest.TestCase):
         aura = self.put_in_hand(self.alice, HOLY_STRENGTH)
         self.alice.mana_pool.white = 1
 
-        with self.assertRaisesRegex(ValueError, "must target a creature"):
-            self.game.cast_enchantment(aura, land)
+        with self.assertRaisesRegex(RuntimeError, "no legal targets"):
+            self.game.begin_cast(aura)
 
         self.assertIn(aura, self.alice.hand)
         self.assertEqual(self.alice.mana_pool.white, 1)
@@ -146,7 +161,7 @@ class EnchantCreatureTests(unittest.TestCase):
         bear = self.put_in_play(self.bob)
         aura = self.put_in_hand(self.alice, HOLY_STRENGTH)
         self.alice.mana_pool.white = 1
-        self.game.cast_enchantment(aura, bear)
+        cast_and_resolve(self.game, aura, (bear,))
 
         self.game.put_permanent_in_graveyard(bear)
 
@@ -159,7 +174,7 @@ class EnchantCreatureTests(unittest.TestCase):
         weakness = self.put_in_hand(self.alice, WEAKNESS)
         self.alice.mana_pool.black = 1
 
-        self.game.cast_enchantment(weakness, lion)
+        cast_and_resolve(self.game, weakness, (lion,))
 
         self.assertIn(lion, self.bob.graveyard)
         self.assertIn(weakness, self.alice.graveyard)
@@ -178,7 +193,7 @@ class EnchantCreatureTests(unittest.TestCase):
         self.assertIn(aura, self.alice.hand)
         self.assertEqual(self.alice.mana_pool.white, 1)
         with self.assertRaisesRegex(RuntimeError, "choose targets"):
-            self.game.tap_land_for_mana(self.alice.id, land)
+            self.game.activate_ability(self.alice.id, land, 0)
         with self.assertRaisesRegex(RuntimeError, "choose targets"):
             self.game.begin_combat()
         with self.assertRaisesRegex(RuntimeError, "choose targets"):
@@ -208,7 +223,7 @@ class EnchantCreatureTests(unittest.TestCase):
         bear = self.put_in_play(self.bob)
         aura = self.put_in_hand(self.alice, HOLY_STRENGTH)
         self.alice.mana_pool.white = 1
-        self.game.cast_enchantment(aura, bear)
+        cast_and_resolve(self.game, aura, (bear,))
 
         self.game.move_card(bear, Zone.EXILE)
 
@@ -221,30 +236,30 @@ class EnchantCreatureTests(unittest.TestCase):
         blocker = self.put_in_play(self.bob)
         enchantment = self.put_in_hand(self.alice, FLIGHT)
         self.alice.mana_pool.blue = 1
-        self.game.cast_enchantment(enchantment, attacker)
+        cast_and_resolve(self.game, enchantment, (attacker,))
 
         self.assertIn(
             KeywordAbility.FLYING, self.game.creature_abilities(attacker)
         )
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
         with self.assertRaisesRegex(ValueError, "Flying"):
-            self.game.declare_blockers({blocker: attacker})
+            declare_blockers(self.game, {blocker: attacker})
 
     def test_lance_grants_first_strike_during_combat(self) -> None:
         attacker = self.put_in_play(self.alice)
         blocker = self.put_in_play(self.bob, SAVANNAH_LIONS)
         enchantment = self.put_in_hand(self.alice, LANCE)
         self.alice.mana_pool.white = 1
-        self.game.cast_enchantment(enchantment, attacker)
+        cast_and_resolve(self.game, enchantment, (attacker,))
 
         self.assertIn(
             KeywordAbility.FIRST_STRIKE,
             self.game.creature_abilities(attacker),
         )
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker})
         self.game.advance_combat()
         self.game.deal_combat_damage()
 
@@ -257,7 +272,7 @@ class EnchantCreatureTests(unittest.TestCase):
         lion = self.put_in_play(self.alice, SAVANNAH_LIONS)
         weakness = self.put_in_hand(self.alice, WEAKNESS)
         self.alice.mana_pool.black = 1
-        self.game.cast_enchantment(weakness, lion)
+        cast_and_resolve(self.game, weakness, (lion,))
         self.assertEqual(
             (self.game.creature_power(lion), self.game.creature_toughness(lion)),
             (1, 1),

@@ -11,6 +11,7 @@ from typing import Sequence
 
 from .bot import DraftBot
 from .cards import Card
+from .deck_files import save_deck_file
 from .models import DraftConfig, DraftContext, PickEvaluation
 from .session import DraftCard, DraftSession
 
@@ -46,6 +47,13 @@ _POOL_GROUPS = (
     ("Multicolor", "#c7aa63"),
     ("Colorless", "#aaa7a1"),
     ("Lands", "#c9bea5"),
+)
+_BASIC_LANDS = (
+    ("W", "Plains"),
+    ("U", "Island"),
+    ("B", "Swamp"),
+    ("R", "Mountain"),
+    ("G", "Forest"),
 )
 
 
@@ -161,6 +169,86 @@ def _present_card(offered: DraftCard) -> dict:
     }
 
 
+def _present_card_groups(cards: Sequence[DraftCard]) -> list[dict]:
+    """Present physical cards in the fixed color columns used by the UI."""
+
+    grouped_cards: list[list[dict]] = [[] for _ in _POOL_GROUPS]
+    for offered in sorted(cards, key=_pool_sort_key):
+        grouped_cards[_pool_group_index(offered.card)].append(
+            _present_card(offered)
+        )
+    return [
+        {
+            "label": label,
+            "accent": accent,
+            "cards": grouped_cards[index],
+            "count": len(grouped_cards[index]),
+        }
+        for index, (label, accent) in enumerate(_POOL_GROUPS)
+    ]
+
+
+def _allocate_basic_lands(
+    cards: Sequence[DraftCard], basic_count: int
+) -> dict[str, int]:
+    """Allocate basics from colored pips after crediting existing land sources."""
+
+    allocation = {name: 0 for _, name in _BASIC_LANDS}
+    if basic_count <= 0:
+        return allocation
+
+    demand = {color: 0 for color, _ in _BASIC_LANDS}
+    existing_sources = {color: 0 for color, _ in _BASIC_LANDS}
+    for offered in cards:
+        card = offered.card
+        if card.is_land:
+            for color in set(card.produced_mana):
+                if color in existing_sources:
+                    existing_sources[color] += 1
+            continue
+        for color in re.findall(r"\{([WUBRG])\}", card.mana_cost):
+            demand[color] += 1
+
+    relevant_colors = [color for color, _ in _BASIC_LANDS if demand[color]]
+    if relevant_colors:
+        total_demand = sum(demand[color] for color in relevant_colors)
+        source_equivalents = basic_count + sum(
+            existing_sources[color] for color in relevant_colors
+        )
+        needs = {
+            color: max(
+                0.0,
+                source_equivalents * demand[color] / total_demand
+                - existing_sources[color],
+            )
+            for color in relevant_colors
+        }
+    else:
+        # With no colored requirements, any basics work. An even split is the
+        # least surprising editable starting point.
+        relevant_colors = [color for color, _ in _BASIC_LANDS]
+        needs = {color: 1.0 for color in relevant_colors}
+
+    total_need = sum(needs.values())
+    exact = {
+        color: basic_count * needs[color] / total_need
+        for color in relevant_colors
+    }
+    color_order = {color: index for index, (color, _) in enumerate(_BASIC_LANDS)}
+    color_counts = {color: int(exact[color]) for color in relevant_colors}
+    remainder = basic_count - sum(color_counts.values())
+    for color in sorted(
+        relevant_colors,
+        key=lambda value: (-(exact[value] - color_counts[value]), color_order[value]),
+    )[:remainder]:
+        color_counts[color] += 1
+
+    names = dict(_BASIC_LANDS)
+    for color, count in color_counts.items():
+        allocation[names[color]] = count
+    return allocation
+
+
 if Signal is not None:
     class DraftViewModel(QObject):
         """Small QML-facing adapter; all draft progression remains in DraftSession."""
@@ -197,6 +285,8 @@ if Signal is not None:
             self._score_display_enabled = score_display_enabled
             self._color_plan_display_enabled = color_plan_display_enabled
             self._advisor = advisor or self._make_advisor()
+            self._deck_card_ids: set[str] = set()
+            self._basic_land_counts = {name: 0 for _, name in _BASIC_LANDS}
             self._inspected_id = (
                 self._session.current_pack[0].id
                 if self._session.current_pack else ""
@@ -301,23 +391,22 @@ if Signal is not None:
                 _present_card(card)
                 for card in sorted(session.human_pool, key=_pool_sort_key)
             ]
-            grouped_cards: list[list[dict]] = [[] for _ in _POOL_GROUPS]
-            for offered in sorted(session.human_pool, key=_pool_sort_key):
-                grouped_cards[_pool_group_index(offered.card)].append(
-                    _present_card(offered)
-                )
-            pool_groups = [
-                {
-                    "label": label,
-                    "accent": accent,
-                    "cards": grouped_cards[index],
-                    "count": len(grouped_cards[index]),
-                }
-                for index, (label, accent) in enumerate(_POOL_GROUPS)
+            deck_cards = [
+                card for card in session.human_pool
+                if card.id in self._deck_card_ids
             ]
+            sideboard_cards = [
+                card for card in session.human_pool
+                if card.id not in self._deck_card_ids
+            ]
+            basic_land_count = sum(self._basic_land_counts.values())
+            deck_count = len(deck_cards) + basic_land_count
             if session.complete:
-                heading = "Draft complete"
-                subheading = f"Your pool contains {len(pool)} cards."
+                heading = "Build your deck"
+                subheading = (
+                    f"{deck_count} cards in deck; "
+                    f"{len(sideboard_cards)} in sideboard"
+                )
             else:
                 heading = f"Round {session.round_number} · Pick {session.pick_number}"
                 subheading = (
@@ -330,8 +419,26 @@ if Signal is not None:
                 "complete": session.complete,
                 "pack": pack,
                 "pool": pool,
-                "poolGroups": pool_groups,
+                "poolGroups": _present_card_groups(session.human_pool),
                 "poolCount": len(pool),
+                "deckGroups": _present_card_groups(deck_cards),
+                "deckCount": deck_count,
+                "deckDraftedCount": len(deck_cards),
+                "sideboardGroups": _present_card_groups(sideboard_cards),
+                "sideboardCount": len(sideboard_cards),
+                "basicLands": [
+                    {
+                        **_present_card(
+                            DraftCard(
+                                f"basic-{color}", session.catalog.get(name)
+                            )
+                        ),
+                        "count": self._basic_land_counts[name],
+                    }
+                    for color, name in _BASIC_LANDS
+                ],
+                "basicLandCount": basic_land_count,
+                "canSaveDeck": session.complete and deck_count >= 40,
                 "preview": self._preview(),
                 "noBasicLands": session.no_basic_lands,
                 "packStyle": (
@@ -380,9 +487,119 @@ if Signal is not None:
             )
             self._inspected_id = chosen.id
             if self._session.complete:
-                self._message = f"Drafted {chosen.card.name}. The draft is complete."
+                self._message = (
+                    f"Drafted {chosen.card.name}. The draft is complete; "
+                    "double-click sideboard cards to add them to your deck."
+                )
             else:
                 self._message = f"Drafted {chosen.card.name}. The next pack has arrived."
+            self.stateChanged.emit()
+
+        def _move_deck_card(self, card_id: str, *, to_deck: bool) -> None:
+            if not self._session.complete:
+                self._message = "Finish the draft before building your deck."
+                self.stateChanged.emit()
+                return
+            offered = next(
+                (card for card in self._session.human_pool if card.id == card_id),
+                None,
+            )
+            if offered is None:
+                self._message = "That card is not in your drafted pool."
+                self.stateChanged.emit()
+                return
+            if to_deck:
+                self._deck_card_ids.add(card_id)
+                destination = "deck"
+            else:
+                self._deck_card_ids.discard(card_id)
+                destination = "sideboard"
+            self._inspected_id = card_id
+            self._message = f"Moved {offered.card.name} to the {destination}."
+            self.stateChanged.emit()
+
+        @Slot(str)
+        def addCardToDeck(self, card_id: str) -> None:
+            self._move_deck_card(card_id, to_deck=True)
+
+        @Slot(str)
+        def moveCardToSideboard(self, card_id: str) -> None:
+            self._move_deck_card(card_id, to_deck=False)
+
+        @Slot(str, int)
+        def adjustBasicLand(self, name: str, change: int) -> None:
+            if not self._session.complete:
+                self._message = "Finish the draft before adding basic lands."
+                self.stateChanged.emit()
+                return
+            if name not in self._basic_land_counts or change not in {-1, 1}:
+                self._message = "That is not a valid basic-land adjustment."
+                self.stateChanged.emit()
+                return
+            self._basic_land_counts[name] = max(
+                0, self._basic_land_counts[name] + change
+            )
+            self._message = (
+                f"{name}: {self._basic_land_counts[name]} in the deck."
+            )
+            self.stateChanged.emit()
+
+        @Slot()
+        def autoFillBasicLands(self) -> None:
+            if not self._session.complete:
+                self._message = "Finish the draft before adding basic lands."
+                self.stateChanged.emit()
+                return
+            deck_cards = [
+                card for card in self._session.human_pool
+                if card.id in self._deck_card_ids
+            ]
+            target = max(0, 40 - len(deck_cards))
+            self._basic_land_counts = _allocate_basic_lands(deck_cards, target)
+            if target:
+                self._message = (
+                    f"Set a {target}-card basic-land mix to make a 40-card deck."
+                )
+            else:
+                self._message = (
+                    "The selected drafted cards already fill at least 40 slots; "
+                    "removed added basic lands."
+                )
+            self.stateChanged.emit()
+
+        @Slot(QUrl)
+        def saveDeck(self, destination: QUrl) -> None:
+            if not self._session.complete:
+                self._message = "Finish the draft before saving a deck."
+                self.stateChanged.emit()
+                return
+            deck_cards = [
+                card for card in self._session.human_pool
+                if card.id in self._deck_card_ids
+            ]
+            card_names = [card.card.name for card in deck_cards]
+            for _, name in _BASIC_LANDS:
+                card_names.extend((name,) * self._basic_land_counts[name])
+            if len(card_names) < 40:
+                self._message = (
+                    f"Add {40 - len(card_names)} more cards before saving."
+                )
+                self.stateChanged.emit()
+                return
+            local_path = destination.toLocalFile()
+            if not local_path:
+                self._message = "Choose a local file for the saved deck."
+                self.stateChanged.emit()
+                return
+            path = Path(local_path)
+            try:
+                saved_path = save_deck_file(path, path.stem or "Draft Deck", card_names)
+            except (OSError, ValueError) as error:
+                self._message = f"Could not save deck: {error}"
+            else:
+                self._message = (
+                    f"Saved {len(card_names)}-card deck as {saved_path.name}."
+                )
             self.stateChanged.emit()
 
         @Slot(bool)
@@ -427,6 +644,8 @@ if Signal is not None:
             self._rounds = rounds
             self._session = self._make_session()
             self._advisor = self._make_advisor()
+            self._deck_card_ids.clear()
+            self._basic_land_counts = {name: 0 for _, name in _BASIC_LANDS}
             self._inspected_id = self._session.current_pack[0].id
             self._message = "Started a new draft. Double-click a card to pick it."
             self.stateChanged.emit()

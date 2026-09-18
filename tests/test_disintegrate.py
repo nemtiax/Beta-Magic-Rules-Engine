@@ -1,9 +1,9 @@
 import unittest
 
+from beta_magic.card_defs.red import DISINTEGRATE
+from beta_magic.card_defs.black import DRUDGE_SKELETONS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic import (
-    DISINTEGRATE,
-    DRUDGE_SKELETONS,
-    GRIZZLY_BEARS,
     Card,
     CardType,
     DamageResolutionStep,

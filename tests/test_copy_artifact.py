@@ -1,14 +1,18 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.artifacts import (
     CLOCKWORK_BEAST,
     GAUNTLET_OF_MIGHT,
-    COPY_ARTIFACT,
-    FOREST,
-    ANIMATE_ARTIFACT,
     SOL_RING,
     TIME_VAULT,
+)
+from beta_magic.card_defs.blue import (
+    COPY_ARTIFACT,
+    ANIMATE_ARTIFACT,
     UNSUMMON,
+)
+from beta_magic.card_defs.lands import FOREST
+from beta_magic import (
     Card,
     CardType,
     Color,

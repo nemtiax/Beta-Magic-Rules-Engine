@@ -1,9 +1,11 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.lands import (
     BASIC_LANDS,
     FOREST,
     ISLAND,
+)
+from beta_magic import (
     Card,
     CardDefinition,
     CardType,
@@ -81,12 +83,12 @@ class BasicLandTests(unittest.TestCase):
         assert color is not None
         self.game.play_land(land)
         self.pass_land_response()
-        self.game.tap_land_for_mana("alice", land)
+        self.game.activate_ability("alice", land, 0)
 
         self.assertTrue(land.tapped)
         self.assertEqual(self.alice.mana_pool.amount(color), 1)
         with self.assertRaises(RuntimeError):
-            self.game.tap_land_for_mana("alice", land)
+            self.game.activate_ability("alice", land, 0)
 
     def test_land_play_gives_opponent_the_next_response_opportunity(self) -> None:
         self.enter_main()
@@ -99,11 +101,11 @@ class BasicLandTests(unittest.TestCase):
         )
         self.assertIsNotNone(self.game.pending_action_response)
         with self.assertRaisesRegex(RuntimeError, "Bob has priority"):
-            self.game.tap_land_for_mana(self.alice.id, land)
+            self.game.activate_ability(self.alice.id, land, 0)
 
         self.game.pass_priority(self.bob.id)
         self.assertIsNone(self.game.pending_action_response)
-        self.game.tap_land_for_mana(self.alice.id, land)
+        self.game.activate_ability(self.alice.id, land, 0)
 
     def test_land_responder_may_start_another_batch_after_one_resolves(self) -> None:
         self.enter_main()
@@ -129,7 +131,7 @@ class BasicLandTests(unittest.TestCase):
         land = self.alice.hand[0]
         self.game.play_land(land)
         self.pass_land_response()
-        self.game.tap_land_for_mana("alice", land)
+        self.game.activate_ability("alice", land, 0)
 
         self.game.advance_phase()
 
@@ -145,9 +147,9 @@ class BasicLandTests(unittest.TestCase):
         self.bob.battlefield.append(bob_land)
 
         with self.assertRaisesRegex(RuntimeError, "Alice has priority"):
-            self.game.tap_land_for_mana("bob", bob_land)
+            self.game.activate_ability("bob", bob_land, 0)
         self.game.propose_phase_advance()
-        self.game.tap_land_for_mana("bob", bob_land)
+        self.game.activate_ability("bob", bob_land, 0)
         self.assertEqual(self.bob.mana_pool.amount(Color.GREEN), 1)
         self.game.pass_priority(self.bob.id)
         self.game.pass_priority(self.alice.id)
@@ -160,7 +162,7 @@ class BasicLandTests(unittest.TestCase):
         land.zone = Zone.BATTLEFIELD
         self.alice.battlefield.append(land)
         with self.assertRaisesRegex(RuntimeError, "Untap phase"):
-            self.game.tap_land_for_mana("alice", land)
+            self.game.activate_ability("alice", land, 0)
         self.assertFalse(land.tapped)
 
 

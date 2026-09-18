@@ -1,6 +1,12 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState, TurnPhase, Zone
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+    TurnPhase,
+    Zone,
+)
 from beta_magic.card_defs.black import DRAIN_LIFE
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.lands import SWAMP

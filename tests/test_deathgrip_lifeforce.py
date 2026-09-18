@@ -1,14 +1,18 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.black import (
     DEATHGRIP,
     DEATHLACE,
     DARK_RITUAL,
+    TERROR,
+)
+from beta_magic.card_defs.green import (
     GIANT_GROWTH,
     GRIZZLY_BEARS,
     LIFEFORCE,
-    TERROR,
-    ActivatedCounterSpellAbility,
+)
+from beta_magic.abilities import ActivatedCounterSpellAbility
+from beta_magic import (
     Card,
     Color,
     GameState,

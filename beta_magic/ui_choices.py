@@ -17,6 +17,14 @@ class TransientChoiceState:
     x_maximum: int = 0
     x_minimum: int = 0
     x_ability_index: int | None = None
+    mask_source_id: UUID | None = None
+    mask_creature_id: UUID | None = None
+    mask_ability_index: int = 0
+    mask_x_value: int = 0
+    mask_x_maximum: int = 0
+    mask_creature_x_value: int = 0
+    mask_creature_x_maximum: int = 0
+    mask_target_required: bool = False
     land_type_card_id: UUID | None = None
     mode_card_id: UUID | None = None
     damage_source_card_id: UUID | None = None
@@ -37,6 +45,9 @@ class TransientChoiceState:
     guardian_angel_amount: int = 1
     guardian_angel_maximum: int = 1
     word_target_id: UUID | None = None
+    word_command_card_id: UUID | None = None
+    word_mana_activations: dict[UUID, int] = field(default_factory=dict)
+    word_mana_spending: tuple[int, ...] | None = None
 
     def reset(self) -> None:
         self.x_card_id = None
@@ -44,6 +55,7 @@ class TransientChoiceState:
         self.x_maximum = 0
         self.x_minimum = 0
         self.x_ability_index = None
+        self.clear_mask()
         self.land_type_card_id = None
         self.mode_card_id = None
         self.damage_source_card_id = None
@@ -55,6 +67,7 @@ class TransientChoiceState:
         self.clear_fork()
         self.clear_guardian_angel()
         self.word_target_id = None
+        self.clear_word_command()
 
     def begin_x(self, card: Card, maximum: int) -> None:
         self.x_card_id = card.id
@@ -84,6 +97,36 @@ class TransientChoiceState:
         self.x_maximum = 0
         self.x_minimum = 0
         self.x_ability_index = None
+
+    def begin_mask_creature_choice(
+        self, mask: Card, ability_index: int
+    ) -> None:
+        self.clear_mask()
+        self.mask_source_id = mask.id
+        self.mask_ability_index = ability_index
+
+    def begin_mask_x(
+        self,
+        creature: Card,
+        *,
+        mask_maximum: int,
+        creature_maximum: int,
+    ) -> None:
+        self.mask_creature_id = creature.id
+        self.mask_x_value = mask_maximum
+        self.mask_x_maximum = mask_maximum
+        self.mask_creature_x_value = 0
+        self.mask_creature_x_maximum = creature_maximum
+
+    def clear_mask(self) -> None:
+        self.mask_source_id = None
+        self.mask_creature_id = None
+        self.mask_ability_index = 0
+        self.mask_x_value = 0
+        self.mask_x_maximum = 0
+        self.mask_creature_x_value = 0
+        self.mask_creature_x_maximum = 0
+        self.mask_target_required = False
 
     def begin_redirection_amount(self, packet_id: UUID, maximum: int) -> None:
         self.redirection_packet_id = packet_id
@@ -151,3 +194,8 @@ class TransientChoiceState:
         self.guardian_angel_packet_id = None
         self.guardian_angel_amount = 1
         self.guardian_angel_maximum = 1
+
+    def clear_word_command(self) -> None:
+        self.word_command_card_id = None
+        self.word_mana_activations.clear()
+        self.word_mana_spending = None

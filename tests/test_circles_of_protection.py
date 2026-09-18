@@ -1,21 +1,23 @@
 import unittest
 
-from beta_magic import (
-    BLACK_KNIGHT,
+from beta_magic.card_defs.black import BLACK_KNIGHT
+from beta_magic.card_defs.white import (
     CIRCLE_OF_PROTECTION_BLACK,
     CIRCLE_OF_PROTECTION_BLUE,
     CIRCLE_OF_PROTECTION_GREEN,
     CIRCLE_OF_PROTECTION_RED,
     CIRCLE_OF_PROTECTION_WHITE,
     CIRCLES_OF_PROTECTION,
+)
+from beta_magic import (
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
 from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
-from beta_magic.card_defs import PHANTOM_MONSTER
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.blue import PHANTOM_MONSTER
+from beta_magic.card_defs.green import GRIZZLY_BEARS
 
 
 def player(player_id: str) -> PlayerState:

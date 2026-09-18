@@ -1,8 +1,29 @@
+from contextlib import redirect_stderr
+from io import StringIO
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.lands import (
     BASIC_LANDS,
+    DUAL_LANDS,
+    TROPICAL_ISLAND,
+    TAIGA,
+    ISLAND,
+)
+from beta_magic import (
     ALL_CARDS,
+    GameStatus,
+    GameState,
+    Card,
+    CardDefinition,
+    PlayerState,
+    CardType,
+    KeywordAbility,
+    TurnPhase,
+    Zone,
+)
+from tests.card_groups import (
     FLYING_CREATURES,
     SPECIAL_FLYING_CREATURES,
     FIRST_STRIKE_CREATURES,
@@ -10,24 +31,16 @@ from beta_magic import (
     PREVENTION_CARDS,
     GLOBAL_ENCHANTMENTS,
     ENCHANT_CREATURES,
-    BAD_MOON,
-    CRUSADE,
     TRAMPLE_CREATURES,
     TARGETED_DAMAGE_SPELLS,
     PERMANENT_DESTRUCTION_SPELLS,
-    DUAL_LANDS,
     MANA_CREATURES,
     PUMP_CREATURES,
-    MANA_ARTIFACTS,
-    UTILITY_ARTIFACTS,
-    GLASSES_OF_URZA,
     REACH_CREATURES,
     TARGETED_PUMP_SPELLS,
     LANDWALK_CREATURES,
     CREATURE_LORDS,
-    CIRCLES_OF_PROTECTION,
     GRAVEYARD_RECURSION_SPELLS,
-    TIMED_ARTIFACTS,
     TIMED_ENCHANTMENTS,
     UPKEEP_CREATURES,
     VARIABLE_CREATURES,
@@ -40,74 +53,81 @@ from beta_magic import (
     BLUE_UTILITY_SPELLS,
     VANILLA_CREATURES,
     VANILLA_WALLS,
-    GameStatus,
-    GameState,
-    Card,
-    CardDefinition,
-    PlayerState,
-    CardType,
-    KeywordAbility,
-    TurnPhase,
-    Zone,
-    WAR_MAMMOTH,
-    ORCISH_ORIFLAMME,
-    HOLY_STRENGTH,
+)
+from beta_magic.card_defs.black import (
+    BAD_MOON,
     UNHOLY_STRENGTH,
     WEAKNESS,
-    FLIGHT,
-    LANCE,
-    LIGHTNING_BOLT,
-    PSIONIC_BLAST,
-    DISENCHANT,
-    SHATTER,
-    TRANQUILITY,
-    TUNNEL,
-    TROPICAL_ISLAND,
-    TAIGA,
-    BIRDS_OF_PARADISE,
-    LLANOWAR_ELVES,
-    DRAGON_WHELP,
     FROZEN_SHADE,
+    BOG_WRAITH,
+    ROYAL_ASSASSIN,
+    DRUDGE_SKELETONS,
+    WILL_O_THE_WISP,
+    WALL_OF_BONE,
+    NIGHTMARE,
+    PLAGUE_RATS,
+    CURSED_LAND,
+    WARP_ARTIFACT,
+    HOWL_FROM_BEYOND,
+)
+from beta_magic.card_defs.white import (
+    CRUSADE,
+    CIRCLES_OF_PROTECTION,
+    HOLY_STRENGTH,
+    LANCE,
+    DISENCHANT,
+    RIGHTEOUSNESS,
+    NORTHERN_PALADIN,
+    BLESSING,
+    HOLY_ARMOR,
+)
+from beta_magic.card_defs.artifacts import (
+    MANA_ARTIFACTS,
+    UTILITY_ARTIFACTS,
+    GLASSES_OF_URZA,
+    TIMED_ARTIFACTS,
     BLACK_LOTUS,
     SOL_RING,
+    COPPER_TABLET,
+)
+from beta_magic.card_defs.green import (
+    WAR_MAMMOTH,
+    TRANQUILITY,
+    BIRDS_OF_PARADISE,
+    LLANOWAR_ELVES,
     GIANT_GROWTH,
-    RIGHTEOUSNESS,
-    BOG_WRAITH,
     SHANODIN_DRYADS,
-    LORD_OF_ATLANTIS,
+    REGROWTH,
+    FORCE_OF_NATURE,
+    WALL_OF_BRAMBLES,
+    WANDERLUST,
+    STREAM_OF_LIFE,
+    HURRICANE,
+)
+from beta_magic.card_defs.red import (
+    ORCISH_ORIFLAMME,
+    LIGHTNING_BOLT,
+    SHATTER,
+    TUNNEL,
+    DRAGON_WHELP,
     GOBLIN_KING,
     BURROWING,
-    REGROWTH,
-    COPPER_TABLET,
-    PHANTASMAL_FORCES,
-    FORCE_OF_NATURE,
-    PRODIGAL_SORCERER,
     ORCISH_ARTILLERY,
     DWARVEN_DEMOLITION_TEAM,
     GOBLIN_BALLOON_BRIGADE,
-    NORTHERN_PALADIN,
-    ROYAL_ASSASSIN,
-    DRUDGE_SKELETONS,
     UTHDEN_TROLL,
-    WILL_O_THE_WISP,
-    WALL_OF_BONE,
-    WALL_OF_BRAMBLES,
     KELDON_WARLORD,
-    NIGHTMARE,
-    PLAGUE_RATS,
-    ISLAND,
-    CURSED_LAND,
-    FEEDBACK,
-    WANDERLUST,
-    WARP_ARTIFACT,
-    BLESSING,
-    HOLY_ARMOR,
     FIREBREATHING,
-    STREAM_OF_LIFE,
-    BRAINGEYSER,
-    HOWL_FROM_BEYOND,
     EARTHQUAKE,
-    HURRICANE,
+)
+from beta_magic.card_defs.blue import (
+    FLIGHT,
+    PSIONIC_BLAST,
+    LORD_OF_ATLANTIS,
+    PHANTASMAL_FORCES,
+    PRODIGAL_SORCERER,
+    FEEDBACK,
+    BRAINGEYSER,
 )
 from beta_magic.decks import (
     ARCANE_DEPTHS_DECK,
@@ -130,15 +150,18 @@ from beta_magic.decks import (
     SHADOW_COATS_DECK,
     RIVERBANK_RAIDERS_DECK,
     RIVERBANK_GUARDIANS_DECK,
+    CAMOUFLAGE_RAIDERS_DECK,
+    CAMOUFLAGE_GUARDIANS_DECK,
     make_aura_test_game,
     make_raging_river_test_game,
+    make_camouflage_test_game,
 )
 from beta_magic.ui import (
     GameViewModel,
     mana_text,
     parse_args,
 )
-from beta_magic.card_defs import HILL_GIANT
+from beta_magic.card_defs.red import HILL_GIANT
 from beta_magic.card_defs.green import NATURAL_SELECTION
 from beta_magic.card_defs.black import DEMONIC_TUTOR
 
@@ -179,7 +202,7 @@ class DemoGameTests(unittest.TestCase):
         self.assertTrue(view_model.state["canDeclareAttackers"])
         self.assertFalse(view_model.state["canDeclareBlockers"])
 
-        game.declare_attackers([attacker])
+        declare_attackers(game, [attacker])
         view_model.switchPerspective()
         self.assertFalse(view_model.state["canDeclareAttackers"])
         self.assertFalse(view_model.state["canDeclareBlockers"])
@@ -228,6 +251,30 @@ class DemoGameTests(unittest.TestCase):
         game.turn_number += 1
         view_model.switchPerspective()
         self.assertFalse(view_model.state["autoPassingTurn"])
+
+    def test_auto_pass_can_be_revoked_before_a_later_priority_window(self) -> None:
+        game = make_test_game()
+        view_model = GameViewModel(game)
+        view_model.advance()  # Untap advances immediately to upkeep.
+        view_model.advance()  # Active player proposes leaving upkeep.
+        view_model.switchPerspective()
+
+        view_model.autoPassTurn()
+        self.assertEqual(game.current_phase, TurnPhase.DRAW)
+        self.assertTrue(view_model.state["autoPassingTurn"])
+        self.assertTrue(view_model.state["contextActionsVisible"])
+
+        view_model.cancelAutoPassTurn()
+        self.assertFalse(view_model.state["autoPassingTurn"])
+        self.assertFalse(view_model.state["contextActionsVisible"])
+
+        view_model.switchPerspective()
+        view_model.advance()  # Active player proposes leaving draw.
+        self.assertEqual(game.current_phase, TurnPhase.DRAW)
+        self.assertEqual(game.priority_player_index, 1)
+
+        view_model.switchPerspective()
+        self.assertTrue(view_model.state["hasPriority"])
 
     def test_auto_pass_responds_to_an_opponents_untargeted_spell(self) -> None:
         game = make_test_game()
@@ -433,7 +480,7 @@ class DemoGameTests(unittest.TestCase):
             view_model.game.players[0].library + view_model.game.players[0].hand
         )
         creature = next(card for card in cards if card.definition.mana_cost.mana_value)
-        data = view_model._card_data(creature)
+        data = view_model._presentation._card_data(creature)
         self.assertEqual(data["manaCost"], creature.definition.mana_cost.compact)
         self.assertNotIn("{", data["manaCost"])
         self.assertIn("artCropUrl", data)
@@ -591,7 +638,7 @@ class DemoGameTests(unittest.TestCase):
         land.controller_id = player.id
         player.battlefield.append(land)
 
-        data = view_model._card_data(land)
+        data = view_model._presentation._card_data(land)
         self.assertEqual(
             [ability["label"] for ability in data["activatedAbilities"]],
             ["Add G", "Add U"],
@@ -618,7 +665,9 @@ class DemoGameTests(unittest.TestCase):
             ]
             view_model.game.pass_priority(priority.id)
 
-        ability = view_model._card_data(elves)["activatedAbilities"][0]
+        ability = view_model._presentation._card_data(elves)[
+            "activatedAbilities"
+        ][0]
         self.assertFalse(ability["enabled"])
         view_model.activateAbility(str(elves.id), 0)
         self.assertFalse(elves.tapped)
@@ -647,7 +696,7 @@ class DemoGameTests(unittest.TestCase):
                 view_model.game.priority_player_index
             ]
             view_model.game.pass_priority(priority.id)
-        data = view_model._card_data(lotus)
+        data = view_model._presentation._card_data(lotus)
         self.assertEqual(data["manaCost"], "0")
         self.assertEqual(
             [ability["label"] for ability in data["activatedAbilities"]],
@@ -666,6 +715,8 @@ class DemoGameTests(unittest.TestCase):
         self.assertFalse(parse_args([]).protection_test_decks)
         self.assertFalse(parse_args([]).aura_test_decks)
         self.assertFalse(parse_args([]).raging_river_test_decks)
+        self.assertFalse(parse_args([]).camouflage_test_decks)
+        self.assertIsNone(parse_args([]).deck_files)
         self.assertTrue(parse_args(["--test-decks"]).test_decks)
         self.assertTrue(
             parse_args(["--enchantment-test-decks"]).enchantment_test_decks
@@ -681,6 +732,15 @@ class DemoGameTests(unittest.TestCase):
         self.assertTrue(
             parse_args(["--raging-river-test-decks"]).raging_river_test_decks
         )
+        self.assertTrue(
+            parse_args(["--camouflage-test-decks"]).camouflage_test_decks
+        )
+        self.assertEqual(
+            parse_args(["--deck-files", "one.json", "two.json"]).deck_files,
+            ["one.json", "two.json"],
+        )
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            parse_args(["--deck-files", "one.json", "two.json", "--test-decks"])
 
     def test_raging_river_test_decks_open_with_the_river_and_fast_mana(
         self,
@@ -699,6 +759,27 @@ class DemoGameTests(unittest.TestCase):
                     for card in player.hand),
                 3,
             )
+
+    def test_camouflage_test_decks_open_with_fast_attackers_and_blockers(
+        self,
+    ) -> None:
+        game = make_camouflage_test_game()
+
+        self.assertEqual(len(CAMOUFLAGE_RAIDERS_DECK), 20)
+        self.assertEqual(len(CAMOUFLAGE_GUARDIANS_DECK), 20)
+        raider_names = [card.name for card in game.players[0].hand]
+        guardian_names = [card.name for card in game.players[1].hand]
+        self.assertEqual(raider_names.count("Camouflage"), 2)
+        for name in (
+            "Forest", "Plains", "Mox Emerald", "Scryb Sprites",
+            "Timber Wolves",
+        ):
+            self.assertIn(name, raider_names)
+        for name in (
+            "Forest", "Mountain", "Mox Ruby", "Grizzly Bears",
+            "Ironclaw Orcs", "Goblin Balloon Brigade", "Giant Spider",
+        ):
+            self.assertIn(name, guardian_names)
 
     def test_aura_test_decks_open_with_creatures_mana_and_auras(self) -> None:
         game = make_aura_test_game()
@@ -1122,8 +1203,8 @@ class DemoGameTests(unittest.TestCase):
         attacker.zone = Zone.BATTLEFIELD
         game.players[0].battlefield.append(attacker)
         game.begin_combat()
-        game.declare_attackers([attacker])
-        game.declare_blockers({})
+        declare_attackers(game, [attacker])
+        declare_blockers(game, {})
         game.advance_combat()
         view_model = GameViewModel(game)
 
@@ -1142,8 +1223,8 @@ class DemoGameTests(unittest.TestCase):
         attacker.zone = Zone.BATTLEFIELD
         game.players[0].battlefield.append(attacker)
         game.begin_combat()
-        game.declare_attackers([attacker])
-        game.declare_blockers({})
+        declare_attackers(game, [attacker])
+        declare_blockers(game, {})
         game.advance_combat()
         game.players[1].mana_pool.green = 1
         view_model = GameViewModel(game)

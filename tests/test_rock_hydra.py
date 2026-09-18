@@ -1,6 +1,10 @@
 import unittest
 
-from beta_magic import Card, GameState, PlayerState
+from beta_magic import (
+    Card,
+    GameState,
+    PlayerState,
+)
 from beta_magic.card_defs.red import ROCK_HYDRA
 from beta_magic.damage import DamageIncidentKind
 from beta_magic.types import TurnPhase, Zone

@@ -1,15 +1,18 @@
 import unittest
 
+from beta_magic.card_defs.white import DEATH_WARD, DISENCHANT
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.artifacts import LIVING_WALL
 from beta_magic import (
-    DEATH_WARD,
-    LIGHTNING_BOLT,
     Card,
     GameState,
     PlayerState,
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
+from beta_magic.destruction import DestructionResolutionStep
 
 
 class RegenerationSpellTests(unittest.TestCase):
@@ -66,7 +69,8 @@ class RegenerationSpellTests(unittest.TestCase):
         self.assertIn(ward, self.bob.graveyard)
 
     def test_death_ward_does_not_override_tunnels_regeneration_ban(self) -> None:
-        from beta_magic import TUNNEL, WALL_OF_BRAMBLES
+        from beta_magic.card_defs.red import TUNNEL
+        from beta_magic.card_defs.green import WALL_OF_BRAMBLES
 
         wall = self.put_in_play(self.bob, WALL_OF_BRAMBLES)
         tunnel = self.put_in_hand(self.alice, TUNNEL)
@@ -85,6 +89,73 @@ class RegenerationSpellTests(unittest.TestCase):
             self.game.pass_priority(player.id)
 
         self.assertIn(wall, self.bob.graveyard)
+
+    def test_death_ward_can_be_cast_in_damage_regeneration_window(self) -> None:
+        bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        healthy_bear = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        ward = self.put_in_hand(self.bob, DEATH_WARD)
+        self.bob.mana_pool.white = 1
+        self.game.pause_for_damage_windows = True
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(bear, 2, "Test damage")
+        self.game._resolve_damage_incident()
+
+        for _ in range(4):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.assertIs(
+            self.game.pending_damage.step,
+            DamageResolutionStep.REGENERATION,
+        )
+
+        self.game.pass_priority(self.alice.id)
+        self.game.begin_cast(ward)
+        self.assertEqual(self.game.legal_targets_for(), [bear])
+        self.assertNotIn(healthy_bear, self.game.legal_targets_for())
+        self.game.complete_pending_cast((bear,))
+
+        self.assertIs(ward.zone, Zone.STACK)
+        self.assertEqual(self.game.interruptible_spell_id, ward.id)
+        self.assertIs(
+            self.game.players[self.game.priority_player_index], self.alice
+        )
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+
+        self.assertIs(ward.zone, Zone.GRAVEYARD)
+        self.assertEqual(bear.damage, 0)
+        self.assertTrue(bear.tapped)
+        self.assertIn(bear.id, self.game.pending_damage.regenerated_card_ids)
+
+    def test_death_ward_can_be_cast_in_destroy_regeneration_window(self) -> None:
+        bear = self.put_in_play(self.bob, LIVING_WALL)
+        disenchant = self.put_in_hand(self.alice, DISENCHANT)
+        ward = self.put_in_hand(self.bob, DEATH_WARD)
+        self.alice.mana_pool.white = 2
+        self.bob.mana_pool.white = 1
+        self.game.pause_for_damage_windows = True
+
+        self.game.begin_cast(disenchant)
+        self.game.complete_pending_cast((bear,))
+        for _ in range(4):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.assertIs(
+            self.game.pending_destruction.step,
+            DestructionResolutionStep.REGENERATION,
+        )
+
+        self.game.pass_priority(self.alice.id)
+        self.game.begin_cast(ward)
+        self.game.complete_pending_cast((bear,))
+        self.game.pass_priority(self.alice.id)
+        self.game.pass_priority(self.bob.id)
+
+        self.assertIs(ward.zone, Zone.GRAVEYARD)
+        self.assertTrue(bear.tapped)
+        self.assertIn(
+            bear.id, self.game.pending_destruction.regenerated_card_ids
+        )
 
 
 if __name__ == "__main__":

@@ -35,6 +35,17 @@
   nested interrupt sequence; once it finishes, the surrounding resolution
   window resumes without advancing. Any destruction caused by an interrupt
   is likewise completed before its surrounding damage or destruction window.
+- A spell announced for use in the damage-prevention step still receives the
+  ordinary dedicated interrupt window for a spell. This applies to Healing
+  Salve, Guardian Angel, Reverse Damage, and Simulacrum. Activated prevention
+  abilities remain fast effects rather than spells and do not gain a separate
+  Counterspell-style interrupt window.
+- Death Ward may likewise be announced when a creature is facing death in a
+  damage or destroy-effect regeneration window, and receives the same normal
+  spell interrupt window before it regenerates its target. Beta has no spell
+  assigned specifically to the redirection step: its implemented redirectors
+  are permanent abilities or automatic effects, so they do not create a
+  Counterspell-style window. Simulacrum belongs to prevention under its ruling.
 
 # Interrupt windows
 
@@ -185,3 +196,61 @@
   rulings, a Clone or Doppelganger that copies a creature currently sustained
   by Animate Dead immediately dies; animating the dead copy card itself does
   not cause that outcome.
+
+# Face-down creatures
+
+- Beta face-down creatures retain their real characteristics; they are not
+  modern nameless 2/2 creatures. Their continuous effects and abilities keep
+  working, but players who have not seen the face know only the creature's
+  public game state. Target declarations may therefore gamble on hidden
+  characteristics and fizzle when the real card is checked on resolution.
+- A creature's controller may see its face. If control changes while it is
+  face down, the new controller may also look and prior knowledge is retained.
+  Counters and the number of attached enchantments remain public, while the
+  attached enchantment faces are concealed along with the creature.
+- The concealment reason is recorded explicitly. Illusionary Mask creatures
+  turn face up upon actually tapping or dealing or receiving unprevented
+  damage. Camouflage creatures wait for Camouflage's eventual combat reveal
+  procedure. Moving a face-down card out of play reveals it.
+- Illusionary Mask's ability does not tap the Mask. It casts only a genuine
+  nonartifact Summon card from its controller's hand, paying the card's real
+  colored/generic (and, where applicable, real X) cost plus an independent
+  nonnegative Mask X. The spell is concealed during its interrupt window;
+  opponents may gamble with characteristic-dependent interrupts, which are
+  checked against the true spell only on resolution. The Mask X is an
+  additional disguise payment and is not part of the creature spell's
+  casting cost for effects such as Spell Blast. Any normal casting decision,
+  such as Clone's copy choice, is still made before the concealed spell is
+  committed. Destroying the Mask does not reveal creatures it summoned.
+- Clone and Vesuvan Doppelganger use the concealed creature's true copyable
+  characteristics internally. Those copied traits remain hidden from a
+  player who could not see the original until the original is revealed.
+- Camouflage is an ordinary instant and may be cast outside combat (where it
+  does nothing), but it conceals attackers only while fast effects are being
+  played after attackers and before blockers. The engine shuffles those
+  attackers once and preserves that order through blocker declaration and UI
+  perspective changes. The defender assigns blockers to the concealed
+  positions; all attackers are then revealed and block assignments that are
+  impossible because of concealed characteristics are removed. Camouflage's
+  special concealed-defense procedure supersedes ordinary Lure and Blaze of
+  Glory assignment requirements for that declaration, while already-public
+  Raging River sides remain binding.
+
+# Controlled casting decisions
+
+- Spell state distinguishes the player who actually casts a spell from the
+  player who makes that spell's decisions. Ordinary spells use the same player
+  for both roles. The actual caster still pays, controls the spell/permanent,
+  and receives cast-related effects; the decision-maker chooses targets and
+  caster-owned resolution choices such as a Demonic Tutor search.
+- Land-only payment planning is non-mutating. It includes the prospective
+  payer's pool, current land mana modes, and mana added by effects such as Wild
+  Growth, Mana Flare, and Gauntlet of Might, while excluding nonland mana
+  sources. A selected plan can also be checked against Word of Command's
+  ruling that excess land mana may not be produced when an exact plan exists.
+- Word of Command is allowed to resolve before its private hand choice begins,
+  so it can still be countered normally but cannot be countered after the hand
+  has been seen. If a legal card exists, its caster must choose one; the
+  commanded card is then announced as a spell cast by the opponent and opens
+  a fresh interrupt window. The Word caster chooses X, modes, targets, lands,
+  land mana modes, and the colors spent from an existing mana pool.

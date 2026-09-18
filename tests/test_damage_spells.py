@@ -1,9 +1,11 @@
 import unittest
 
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.red import LIGHTNING_BOLT
+from beta_magic.card_defs.blue import PSIONIC_BLAST
+from tests.card_groups import TARGETED_DAMAGE_SPELLS
 from beta_magic import (
-    LIGHTNING_BOLT,
-    PSIONIC_BLAST,
-    TARGETED_DAMAGE_SPELLS,
     CardType,
     DamageEvent,
     GameState,
@@ -12,7 +14,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs import GRIZZLY_BEARS, HILL_GIANT
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.red import HILL_GIANT
 
 
 class TargetedDamageSpellTests(unittest.TestCase):
@@ -146,8 +149,8 @@ class TargetedDamageSpellTests(unittest.TestCase):
         attacker.zone = Zone.BATTLEFIELD
         game.players[0].battlefield.append(attacker)
         game.begin_combat()
-        game.declare_attackers([attacker])
-        game.declare_blockers({})
+        declare_attackers(game, [attacker])
+        declare_blockers(game, {})
         game.advance_combat()
         with self.assertRaisesRegex(RuntimeError, "combat damage"):
             game.begin_cast(bolt)

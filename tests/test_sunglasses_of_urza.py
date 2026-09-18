@@ -1,11 +1,13 @@
 import unittest
 
-from beta_magic import (
+from beta_magic.card_defs.red import (
     DISINTEGRATE,
     FIREBREATHING,
-    GRIZZLY_BEARS,
     LIGHTNING_BOLT,
-    SUNGLASSES_OF_URZA,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.artifacts import SUNGLASSES_OF_URZA
+from beta_magic import (
     Card,
     CardDefinition,
     CardType,
@@ -13,9 +15,11 @@ from beta_magic import (
     ManaCost,
     PlayerState,
     TurnPhase,
+    Zone,
+)
+from beta_magic.effects import (
     UpkeepCostEffect,
     UpkeepFailure,
-    Zone,
 )
 
 

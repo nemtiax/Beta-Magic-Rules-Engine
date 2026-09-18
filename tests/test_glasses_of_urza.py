@@ -1,9 +1,11 @@
 import unittest
 
-from beta_magic import (
-    GLASSES_OF_URZA,
+from beta_magic.card_defs.artifacts import GLASSES_OF_URZA
+from beta_magic.card_defs.lands import (
     FOREST,
     ISLAND,
+)
+from beta_magic import (
     Card,
     CardType,
     GameState,

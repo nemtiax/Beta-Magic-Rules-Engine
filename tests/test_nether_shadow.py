@@ -1,10 +1,14 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.black import (
     DARK_RITUAL,
-    GRIZZLY_BEARS,
-    ISLAND,
     NETHER_SHADOW,
+)
+from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.lands import ISLAND
+from beta_magic import (
     Card,
     CardType,
     GameState,
@@ -88,7 +92,7 @@ class NetherShadowTests(unittest.TestCase):
             self.game.advance_phase()
 
         self.game.begin_combat()
-        self.game.declare_attackers((shadow,))
+        declare_attackers(self.game, (shadow,))
         self.assertIn(shadow, self.game.combat.attackers)
 
     def test_player_can_decline_for_remainder_of_upkeep(self):

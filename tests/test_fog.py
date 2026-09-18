@@ -1,13 +1,19 @@
 import unittest
 
-from beta_magic import (
+from tests.support import declare_attackers, declare_blockers
+
+from beta_magic.card_defs.green import (
     ELVISH_ARCHERS,
     FOG,
     GRIZZLY_BEARS,
-    HILL_GIANT,
-    MONSS_GOBLIN_RAIDERS,
     THICKET_BASILISK,
     WAR_MAMMOTH,
+)
+from beta_magic.card_defs.red import (
+    HILL_GIANT,
+    MONSS_GOBLIN_RAIDERS,
+)
+from beta_magic import (
     Card,
     CardType,
     CombatStep,
@@ -55,8 +61,8 @@ class FogTests(unittest.TestCase):
 
     def reach_damage(self, attacker: Card, blocker: Card | None = None) -> None:
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({blocker: attacker} if blocker else {})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {blocker: attacker} if blocker else {})
         self.game.advance_combat()
         self.assertEqual(self.game.combat.step, CombatStep.DAMAGE)
 
@@ -134,7 +140,7 @@ class FogTests(unittest.TestCase):
         attacker = self.permanent(self.alice, GRIZZLY_BEARS)
         self.cast_fog()
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
+        declare_attackers(self.game, [attacker])
 
         self.game._deal_damage(self.bob, 3, "noncombat effect")
 
@@ -143,8 +149,8 @@ class FogTests(unittest.TestCase):
     def test_can_be_cast_during_the_last_pre_damage_response_window(self) -> None:
         attacker = self.permanent(self.alice, GRIZZLY_BEARS)
         self.game.begin_combat()
-        self.game.declare_attackers([attacker])
-        self.game.declare_blockers({})
+        declare_attackers(self.game, [attacker])
+        declare_blockers(self.game, {})
         self.assertEqual(self.game.combat.step, CombatStep.BLOCKER_RESPONSE)
 
         self.cast_fog()
