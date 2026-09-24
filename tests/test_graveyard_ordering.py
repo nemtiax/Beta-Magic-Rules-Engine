@@ -3,6 +3,7 @@ import unittest
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.black import NETHER_SHADOW
 from beta_magic.card_defs.white import SAVANNAH_LIONS
+from beta_magic.card_defs.artifacts import GIANT_WASP_TOKEN
 from beta_magic import (
     Card,
     GameState,
@@ -84,6 +85,47 @@ class GraveyardOrderingTests(unittest.TestCase):
         while choice.card_ids_bottom_to_top.index(shadow.id) > 0:
             self.game.move_graveyard_order_card(self.alice.id, shadow, -1)
         self.game.confirm_graveyard_order(self.alice.id)
+
+        while self.game.current_phase is not TurnPhase.UPKEEP:
+            self.game.advance_phase()
+        self.assertEqual(self.game.legal_graveyard_returns(), (shadow,))
+
+    def test_stolen_cards_are_ordered_by_owner_and_tokens_are_excluded(self):
+        shadow = self.permanent(self.alice, NETHER_SHADOW)
+        creatures = [
+            self.permanent(self.alice, GRIZZLY_BEARS) for _ in range(3)
+        ]
+        stolen = creatures[-1]
+        self.alice.battlefield.remove(stolen)
+        stolen.controller_id = self.bob.id
+        self.bob.battlefield.append(stolen)
+        token = Card(
+            GIANT_WASP_TOKEN,
+            self.alice.id,
+            controller_id=self.bob.id,
+            zone=Zone.BATTLEFIELD,
+            is_token=True,
+        )
+        self.bob.battlefield.append(token)
+        for card in (shadow, *creatures, token):
+            card.damage = 99
+
+        self.game.check_state_based_actions()
+
+        self.assertEqual(len(self.game.pending_graveyard_order_choices), 1)
+        choice = self.game.pending_graveyard_order_choices[0]
+        self.assertEqual(choice.player_id, self.alice.id)
+        self.assertEqual(
+            set(choice.card_ids_bottom_to_top),
+            {shadow.id, *(card.id for card in creatures)},
+        )
+        self.assertNotIn(token.id, choice.card_ids_bottom_to_top)
+        self.assertFalse(any(token in player.graveyard for player in self.game.players))
+
+        while choice.card_ids_bottom_to_top.index(shadow.id) > 0:
+            self.game.move_graveyard_order_card(self.alice.id, shadow, -1)
+        self.game.confirm_graveyard_order(self.alice.id)
+        self.assertIn(stolen, self.alice.graveyard)
 
         while self.game.current_phase is not TurnPhase.UPKEEP:
             self.game.advance_phase()

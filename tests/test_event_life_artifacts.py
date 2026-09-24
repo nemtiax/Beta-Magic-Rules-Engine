@@ -22,10 +22,12 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.card_defs.red import (
+    DISINTEGRATE,
     GRAY_OGRE,
     LIGHTNING_BOLT,
 )
 from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.white import SWORDS_TO_PLOWSHARES
 
 
 class EventLifeArtifactTests(unittest.TestCase):
@@ -233,6 +235,40 @@ class EventLifeArtifactTests(unittest.TestCase):
         self.assertIn(creature, self.bob.graveyard)
         self.assertEqual(len(self.game.event_opportunities), 1)
         self.assertTrue(self.game.can_activate_ability(self.alice.id, net, 0))
+
+    def test_soul_net_catches_disintegrate_but_not_swords_to_plowshares(
+        self,
+    ) -> None:
+        net = self.put_in_play(self.alice, SOUL_NET)
+        disintegrated = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        disintegrate = self.put_in_hand(self.alice, DISINTEGRATE)
+        self.alice.mana_pool.red = 1
+        self.alice.mana_pool.colorless = 2
+
+        self.game.begin_cast(disintegrate, x_value=2)
+        self.game.complete_pending_cast((disintegrated,))
+        self.resolve_current_batch()
+
+        self.assertIn(disintegrated, self.bob.exile)
+        self.assertEqual(len(self.game.event_opportunities), 1)
+        self.alice.mana_pool.colorless = 1
+        self.assertTrue(self.game.can_activate_ability(self.alice.id, net, 0))
+
+        # Close the Disintegrate death opportunity without using Soul Net.
+        self.pass_current_priority()
+        self.pass_current_priority()
+        exiled = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        swords = self.put_in_hand(self.alice, SWORDS_TO_PLOWSHARES)
+        self.alice.mana_pool.white = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
+
+        self.game.begin_cast(swords)
+        self.game.complete_pending_cast((exiled,))
+        self.resolve_current_batch()
+
+        self.assertIn(exiled, self.bob.exile)
+        self.assertEqual(self.game.event_opportunities, [])
+        self.assertFalse(self.game.can_activate_ability(self.alice.id, net, 0))
 
 
 if __name__ == "__main__":

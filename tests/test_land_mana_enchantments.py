@@ -6,13 +6,15 @@ from beta_magic.card_defs.lands import (
     BAYOU,
     FOREST,
     ISLAND,
+    TAIGA,
 )
-from beta_magic.card_defs.artifacts import ICY_MANIPULATOR
+from beta_magic.card_defs.artifacts import GAUNTLET_OF_MIGHT, ICY_MANIPULATOR
+from beta_magic.card_defs.blue import PSYCHIC_VENOM, TWIDDLE
 from beta_magic.card_defs.green import (
     LIVING_LANDS,
     WILD_GROWTH,
 )
-from beta_magic.card_defs.red import MANA_FLARE
+from beta_magic.card_defs.red import MANABARBS, MANA_FLARE
 from beta_magic import (
     Card,
     GameState,
@@ -124,6 +126,51 @@ class LandManaEnchantmentTests(unittest.TestCase):
 
         # One normal mana, two Mana Flares, and two Wild Growths.
         self.assertEqual(self.alice.mana_pool.green, 5)
+
+    def test_one_land_tap_keeps_mana_and_nonmana_effects_distinct(self) -> None:
+        self.permanent(self.alice, MANA_FLARE)
+        self.permanent(self.alice, GAUNTLET_OF_MIGHT)
+        self.permanent(self.alice, MANABARBS)
+        taiga = self.permanent(self.bob, TAIGA)
+        self.permanent(self.alice, WILD_GROWTH, attached_to=taiga)
+        self.permanent(self.alice, PSYCHIC_VENOM, attached_to=taiga)
+        self.game.priority_player_index = self.game.players.index(self.bob)
+
+        self.game.activate_ability(self.bob.id, taiga, 0)
+        while self.game.event_opportunities or self.game.pending_damage is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        # Taiga's red, Mana Flare's copy, Gauntlet's red, and Wild Growth's
+        # green all arise from the same tap.  Psychic Venom and Manabarbs each
+        # create their own damage event.
+        self.assertEqual(self.bob.mana_pool.red, 3)
+        self.assertEqual(self.bob.mana_pool.green, 1)
+        self.assertEqual(self.bob.life, 17)
+
+        forced = self.permanent(self.bob, TAIGA)
+        self.permanent(self.alice, WILD_GROWTH, attached_to=forced)
+        self.permanent(self.alice, PSYCHIC_VENOM, attached_to=forced)
+        twiddle = Card(TWIDDLE, self.alice.id, zone=Zone.HAND)
+        self.alice.hand.append(twiddle)
+        self.alice.mana_pool.blue = 1
+        self.game.priority_player_index = self.game.players.index(self.alice)
+        self.game.begin_cast(twiddle, mode="Tap")
+        self.game.complete_pending_cast((forced,))
+        while (
+            self.game.stack
+            or self.game.batch_abilities
+            or self.game.event_opportunities
+            or self.game.pending_damage is not None
+        ):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        # A non-mana tap gets Wild Growth, Gauntlet of Might, and both damage
+        # events.  Only Mana Flare is restricted to tapping for mana.
+        self.assertEqual(self.bob.mana_pool.red, 4)
+        self.assertEqual(self.bob.mana_pool.green, 2)
+        self.assertEqual(self.bob.life, 14)
 
 
 if __name__ == "__main__":

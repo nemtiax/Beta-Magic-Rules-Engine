@@ -125,6 +125,16 @@ class UiPresentationBuilder:
         counter_damage_choice = self.game.pending_counter_damage_choice
         damage_incident = self.game.pending_damage
         destruction_incident = self.game.pending_destruction
+        target_decision_player_id = (
+            self.game.pending_cast.decision_maker_id
+            if self.game.pending_cast is not None
+            else self.game.pending_activation.controller_id
+            if self.game.pending_activation is not None
+            else None
+        )
+        can_choose_stack_target = bool(
+            target_decision_player_id == perspective.id
+        )
         turn_choice = self.game.pending_turn_choice
         draw_choice = self.game.pending_draw_choice
         graveyard_return_choice = self.game.pending_graveyard_return_choice
@@ -169,6 +179,25 @@ class UiPresentationBuilder:
                     "id": str(event.id),
                     "label": event.label,
                     "sourceCard": self._card_data(source) if source is not None else {},
+                })
+        batch_conflict_choice = (
+            self.game.pending_batch_conflict_choices[0]
+            if self.game.pending_batch_conflict_choices else None
+        )
+        batch_conflict_items: list[dict[str, Any]] = []
+        if (
+            batch_conflict_choice is not None
+            and self.game.pending_batch_resolution is not None
+        ):
+            plan = self.game.pending_batch_resolution
+            for intent_index in batch_conflict_choice.intent_indexes_first_to_last:
+                intent = plan.intents[intent_index]
+                batch_conflict_items.append({
+                    "intentIndex": intent_index,
+                    "label": self.game.batch_conflict_intent_label(
+                        batch_conflict_choice, intent_index
+                    ),
+                    "sourceCard": self._card_data(intent.source),
                 })
         kudzu_choice = (
             self.game.pending_kudzu_choices[0]
@@ -328,6 +357,7 @@ class UiPresentationBuilder:
             or draw_choice is not None
             or graveyard_return_choice is not None
             or graveyard_order_choice is not None
+            or batch_conflict_choice is not None
             or timed_event_order_choice is not None
             or self.game.pending_kudzu_choices
             or self.game.pending_creature_copy_choices
@@ -598,6 +628,97 @@ class UiPresentationBuilder:
                 if timed_event_order_choice is not None else ""
             ),
             "timedEventOrderItems": timed_event_order_items,
+            "batchConflictChoice": batch_conflict_choice is not None,
+            "batchConflictPlayer": (
+                batch_conflict_choice.conflict.chooser_id
+                if batch_conflict_choice is not None else ""
+            ),
+            "batchConflictPlayerName": (
+                self.game.player(
+                    batch_conflict_choice.conflict.chooser_id
+                ).name
+                if batch_conflict_choice is not None else ""
+            ),
+            "batchConflictReason": (
+                batch_conflict_choice.conflict.reason
+                if batch_conflict_choice is not None else ""
+            ),
+            "batchConflictTitle": (
+                "Order conflicting destinations"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "destination"
+                else "Order tap and untap effects"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "tapped_state"
+                else "Order power modifiers"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "power"
+                else "Order hand and library effects"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "hand_library"
+                else "Order land-type settings"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "land_type"
+                else "Order Swords resolution"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "swords_read"
+                else "Order Aura attachment"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "aura_entry"
+                else "Order copying and source removal"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "copy_entry"
+                else "Order characteristic-dependent effects"
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value
+                == "characteristics"
+                else "Order extra-turn effects"
+            ),
+            "batchConflictExplanation": (
+                "Once an effect moves the card, later effects aimed at its "
+                "old location do nothing."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "destination"
+                else "Each transition is applied in order; the final effect "
+                "normally determines whether the permanent remains tapped."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "tapped_state"
+                else "Power changes are reapplied first-to-last whenever the "
+                "creature's underlying power changes."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "power"
+                else "Resolve these operations first-to-last; choices caused "
+                "by one operation finish before the next operation begins."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "hand_library"
+                else "Apply these settings first-to-last. The most recent "
+                "applicable setting determines the land's basic type."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "land_type"
+                else "Apply these effects first-to-last. Swords uses the "
+                "creature's power and controller at its position in this order."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "swords_read"
+                else "Apply these effects first-to-last. An Aura can attach "
+                "only if its target is still in play when its turn arrives."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "aura_entry"
+                else "Apply these effects first-to-last. A copy permanent can "
+                "enter only if its chosen model is still in play when its "
+                "turn arrives."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value == "copy_entry"
+                else "Apply these effects first-to-last. Global effects read "
+                "card types, abilities, power, and toughness at their chosen "
+                "position in the order."
+                if batch_conflict_choice is not None
+                and batch_conflict_choice.conflict.kind.value
+                == "characteristics"
+                else "Apply these effects first-to-last. Each new extra turn "
+                "is placed immediately after the current turn, ahead of "
+                "extra turns that were already scheduled."
+            ),
+            "batchConflictItems": batch_conflict_items,
             "demonicAttorneyChoice": demonic_attorney_choice is not None,
             "demonicAttorneyOpponent": (
                 self.game.player(demonic_attorney_choice.opponent_id).name
@@ -1195,6 +1316,30 @@ class UiPresentationBuilder:
                 }
                 for card in self.game.stack
             ],
+            "stackTargetChoices": [
+                {
+                    "id": str(card.id),
+                    "label": (
+                        f"{self._displayed_card_name(card)} "
+                        f"(X={self.game.stack_spells[card.id].x_value})"
+                        if card.definition.mana_cost.x_symbols
+                        and not self.game.card_characteristics_are_hidden_from(
+                            card, perspective.id
+                        )
+                        else self._displayed_card_name(card)
+                    ),
+                }
+                for card in self.game.stack
+                if can_choose_stack_target
+                and card in self.game.legal_targets_for()
+            ],
+            "choosingStackTarget": bool(
+                can_choose_stack_target
+                and any(
+                    card in self.game.legal_targets_for()
+                    for card in self.game.stack
+                )
+            ),
             "timedEvent": (
                 self.game.timed_events[0].label
                 if self.game.timed_events
@@ -1241,11 +1386,27 @@ class UiPresentationBuilder:
                 else []
             ),
             "choosingPrevention": self.game.pending_prevention is not None,
+            "canChoosePrevention": bool(
+                self.game.pending_prevention is not None
+                and self.game.pending_prevention.controller_id == perspective.id
+            ),
+            "preventionSource": (
+                self.game.pending_prevention.source.name
+                if self.game.pending_prevention is not None else ""
+            ),
             "preventingLifeLoss": (
                 self.game.pending_prevention is not None
                 and self.game.pending_prevention.prevents_life_loss
             ),
             "choosingRedirection": self.game.pending_redirection is not None,
+            "canChooseRedirection": bool(
+                self.game.pending_redirection is not None
+                and self.game.pending_redirection.controller_id == perspective.id
+            ),
+            "redirectionSource": (
+                self.game.pending_redirection.source.name
+                if self.game.pending_redirection is not None else ""
+            ),
             "choosingRedirectionAmount": self._choices.redirection_packet_id is not None,
             "redirectionAmount": self._choices.redirection_amount,
             "redirectionMaximum": self._choices.redirection_maximum,

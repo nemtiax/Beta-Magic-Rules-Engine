@@ -152,7 +152,7 @@ class AbilityActivationMixin:
                 raise RuntimeError(f"not enough mana to activate {card.name}")
             self._clear_land_tap_undo_window()
             self.pay_mana(player, cost)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, (), amount)
             )
             self.interruptible_spell_id = None
@@ -239,7 +239,7 @@ class AbilityActivationMixin:
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -252,7 +252,7 @@ class AbilityActivationMixin:
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -265,7 +265,7 @@ class AbilityActivationMixin:
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -278,7 +278,7 @@ class AbilityActivationMixin:
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -291,7 +291,7 @@ class AbilityActivationMixin:
             self.pay_mana(player, ability.mana_cost)
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -303,7 +303,7 @@ class AbilityActivationMixin:
         if isinstance(ability, ActivatedExtraTurnAbility):
             if ability.tap_cost:
                 self._tap_permanent(card)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, ())
             )
             self.interruptible_spell_id = None
@@ -319,7 +319,7 @@ class AbilityActivationMixin:
                 else card
             )
             self.pay_mana(player, ability.mana_cost)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, (affected,))
             )
             self.ability_activations_this_turn[card.id] = (
@@ -338,7 +338,7 @@ class AbilityActivationMixin:
             if isinstance(ability, ActivatedEventLifeGainAbility):
                 self.pay_mana(player, ability.mana_cost)
             self.event_ability_uses.add((card.id, opportunity.id))
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(
                     card,
                     card.name,
@@ -356,7 +356,7 @@ class AbilityActivationMixin:
             return None
         if isinstance(ability, ActivatedAnimationAbility):
             self.pay_mana(player, ability.mana_cost)
-            self.batch_abilities.append(
+            self._queue_batch_ability(
                 AbilityOnStack(card, card.name, player.id, ability, (card,))
             )
             self.ability_activations_this_turn[card.id] = (
@@ -375,7 +375,7 @@ class AbilityActivationMixin:
             if ability.affects_attached_creature
             else card
         )
-        self.batch_abilities.append(
+        self._queue_batch_ability(
             AbilityOnStack(card, card.name, player.id, ability, (affected_card,))
         )
         self.interruptible_spell_id = None

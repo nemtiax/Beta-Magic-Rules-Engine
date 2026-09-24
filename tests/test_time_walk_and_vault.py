@@ -124,6 +124,36 @@ class TimeWalkAndVaultTests(unittest.TestCase):
         self.assertEqual(self.game.upcoming_turns, [self.alice.id])
         self.assertTrue(vault.tapped)
 
+    def test_skipping_queued_extra_turn_consumes_only_that_turn_and_one_vault(
+        self,
+    ) -> None:
+        first = self.card(self.bob, TIME_VAULT, Zone.BATTLEFIELD)
+        second = self.card(self.bob, TIME_VAULT, Zone.BATTLEFIELD)
+        first.tapped = second.tapped = True
+        self.game.schedule_extra_turn(self.alice.id)
+        self.game.schedule_extra_turn(self.bob.id)
+        self.assertEqual(self.game.upcoming_turns, [self.bob.id, self.alice.id])
+        bob_library = len(self.bob.library)
+        bob_hand = len(self.bob.hand)
+
+        self.finish_turn()
+        self.assertEqual(self.game.pending_turn_choice.player_id, self.bob.id)
+        self.game.choose_time_vault_skip(self.bob.id, first)
+
+        self.assertIs(self.game.active_player, self.alice)
+        self.assertEqual(self.game.upcoming_turns, [])
+        self.assertEqual((len(self.bob.library), len(self.bob.hand)), (bob_library, bob_hand))
+        self.assertTrue(first.tapped)
+        self.assertTrue(second.tapped)
+
+        self.finish_turn()
+        self.assertEqual(self.game.pending_turn_choice.player_id, self.bob.id)
+        self.game.choose_time_vault_skip(self.bob.id, None)
+
+        self.assertIs(self.game.active_player, self.bob)
+        self.assertFalse(first.tapped)
+        self.assertTrue(second.tapped)
+
 
 if __name__ == "__main__":
     unittest.main()

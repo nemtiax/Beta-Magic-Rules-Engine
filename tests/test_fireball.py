@@ -10,6 +10,9 @@ from beta_magic import (
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.card_defs.lands import MOUNTAIN
 from beta_magic.card_defs.red import FIREBALL
+from beta_magic.card_defs.artifacts import JADE_MONOLITH
+from beta_magic.card_defs.white import CIRCLE_OF_PROTECTION_RED
+from beta_magic import DamageResolutionStep
 from beta_magic.ui import GameViewModel
 
 
@@ -102,6 +105,55 @@ class FireballTests(unittest.TestCase):
         self.assertIsNone(self.game.pending_cast)
         self.assertIn(spell, self.game.stack)
         self.assertEqual(self.game.stack_spells[spell.id].targets, (self.bob,))
+
+    def test_split_portions_remain_separate_after_redirect_and_prevention(self):
+        first = self.add(self.bob, GRIZZLY_BEARS, Zone.BATTLEFIELD)
+        second = self.add(self.bob, GRIZZLY_BEARS, Zone.BATTLEFIELD)
+        monolith = self.add(self.bob, JADE_MONOLITH, Zone.BATTLEFIELD)
+        circle = self.add(self.bob, CIRCLE_OF_PROTECTION_RED, Zone.BATTLEFIELD)
+        self.game.pause_for_damage_windows = True
+        self.give_mana(6)
+        self.cast(4, (first, second))
+        while self.game.stack:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.assertIs(
+            self.game.pending_damage.step, DamageResolutionStep.PREVENTION
+        )
+
+        for _ in range(2):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.bob.mana_pool.colorless = 2
+        for packet in tuple(self.game.pending_damage.packets):
+            if self.game.players[self.game.priority_player_index] is self.alice:
+                self.game.pass_priority(self.alice.id)
+            self.game.activate_ability(self.bob.id, monolith, 0)
+            self.game.redirect_damage(self.bob.id, packet.id)
+        while self.game.pending_damage.step is not DamageResolutionStep.REGENERATION:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        for _ in range(2):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        redirected = self.game.pending_damage
+        self.assertIs(redirected.step, DamageResolutionStep.PREVENTION)
+        self.assertEqual(len(redirected.packets), 2)
+        self.assertEqual(len({packet.source_id for packet in redirected.packets}), 2)
+        self.bob.mana_pool.colorless = 1
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, circle, 0)
+        choices = self.game.legal_prevention_packets()
+        self.assertEqual(len(choices), 2)
+        self.game.prevent_damage(self.bob.id, choices[0].id)
+        while self.game.pending_damage is not None:
+            for _ in range(2):
+                player = self.game.players[self.game.priority_player_index]
+                self.game.pass_priority(player.id)
+
+        self.assertEqual(self.bob.life, 18)
+        self.assertEqual((first.damage, second.damage), (0, 0))
 
 
 if __name__ == "__main__":

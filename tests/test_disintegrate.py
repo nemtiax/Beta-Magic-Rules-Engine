@@ -2,7 +2,8 @@ import unittest
 
 from beta_magic.card_defs.red import DISINTEGRATE
 from beta_magic.card_defs.black import DRUDGE_SKELETONS
-from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS, REGENERATION
+from beta_magic.card_defs.white import PERSONAL_INCARNATION
 from beta_magic import (
     Card,
     CardType,
@@ -142,6 +143,41 @@ class DisintegrateTests(unittest.TestCase):
 
         self.assertIn(bear, self.bob.graveyard)
         self.assertNotIn(bear, self.bob.exile)
+
+    def test_regeneration_ban_stays_on_target_when_damage_is_redirected(
+        self,
+    ) -> None:
+        incarnation = self.permanent(self.bob, PERSONAL_INCARNATION)
+        aura = self.permanent(self.bob, REGENERATION)
+        aura.enchanted_card_id = incarnation.id
+        self.game.pause_for_damage_windows = True
+
+        self.cast(1, incarnation)
+        while self.game.pending_damage.step is not DamageResolutionStep.REDIRECTION:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, incarnation, 0)
+        packet = self.game.pending_damage.packets[0]
+        self.game.redirect_damage(self.bob.id, packet.id)
+        self.finish_damage()
+
+        self.assertIn(incarnation, self.bob.battlefield)
+        self.assertEqual(incarnation.damage, 0)
+        self.assertEqual(self.bob.life, 19)
+        self.assertIn(incarnation.id, self.game.disintegrated_this_turn)
+
+        self.game._deal_damage(incarnation, 6, "later damage")
+        while self.game.pending_damage.step is not DamageResolutionStep.REGENERATION:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.bob.mana_pool.green = 1
+        self.game.pass_priority(self.alice.id)
+        with self.assertRaisesRegex(RuntimeError, "cannot regenerate this turn"):
+            self.game.activate_ability(self.bob.id, aura, 0)
+        self.finish_damage()
+
+        self.assertIn(incarnation, self.bob.exile)
 
 
 if __name__ == "__main__":

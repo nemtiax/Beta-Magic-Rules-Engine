@@ -223,6 +223,52 @@ class FaceDownCreatureTests(unittest.TestCase):
             (revealed_data["power"], revealed_data["toughness"]), (3, 3)
         )
 
+    def test_hidden_copy_knowledge_survives_control_change_and_source_leaving(
+        self,
+    ) -> None:
+        target = self.card(self.bob, HILL_GIANT)
+        self.game.turn_creature_face_down(
+            target, FaceDownReason.ILLUSIONARY_MASK
+        )
+        clone = self.card(self.alice, CLONE, Zone.HAND)
+        self.alice.mana_pool.blue = 1
+        self.alice.mana_pool.colorless = 3
+        self.game.begin_cast(clone)
+        self.game.complete_pending_cast((target,))
+        self.resolve_all()
+        view = GameViewModel(self.game)
+
+        alice_data = next(
+            item
+            for item in view.state["perspective"]["battlefieldNonlands"]
+            if item["id"] == str(clone.id)
+        )
+        self.assertEqual((alice_data["name"], alice_data["power"]), ("Clone", "?"))
+        view.switchPerspective()
+        bob_data = next(
+            item
+            for item in view.state["opponent"]["battlefieldNonlands"]
+            if item["id"] == str(clone.id)
+        )
+        self.assertEqual((bob_data["name"], bob_data["power"]), ("Hill Giant", 3))
+
+        self.game._change_controller(target, self.alice.id)
+        view.perspective_index = 0
+        learned_data = next(
+            item
+            for item in view.state["perspective"]["battlefieldNonlands"]
+            if item["id"] == str(clone.id)
+        )
+        self.assertEqual((learned_data["name"], learned_data["power"]), ("Hill Giant", 3))
+
+        self.game._move_card(target, Zone.GRAVEYARD)
+        retained_data = next(
+            item
+            for item in view.state["perspective"]["battlefieldNonlands"]
+            if item["id"] == str(clone.id)
+        )
+        self.assertEqual((retained_data["name"], retained_data["power"]), ("Hill Giant", 3))
+
 
 if __name__ == "__main__":
     unittest.main()

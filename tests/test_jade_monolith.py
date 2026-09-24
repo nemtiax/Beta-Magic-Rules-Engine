@@ -14,6 +14,7 @@ from beta_magic import (
     Zone,
 )
 from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.ui import GameViewModel
 
 
 class JadeMonolithTests(unittest.TestCase):
@@ -70,6 +71,13 @@ class JadeMonolithTests(unittest.TestCase):
 
         self.game.activate_ability(self.alice.id, monolith, 0)
         self.assertFalse(monolith.tapped)
+        view = GameViewModel(self.game)
+        self.assertTrue(view.state["canChooseRedirection"])
+        self.assertEqual(view.state["redirectionSource"], "Jade Monolith")
+        self.assertEqual(len(view.state["redirectionPacketChoices"]), 1)
+        view.switchPerspective()
+        self.assertFalse(view.state["canChooseRedirection"])
+        view.switchPerspective()
         self.assertEqual(self.game.redirect_damage(self.alice.id, packet.id), 2)
         self.assertEqual(self.alice.mana_pool.total, 0)
         self.pass_window()

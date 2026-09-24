@@ -105,6 +105,19 @@ class SwordsToPlowsharesTests(unittest.TestCase):
         self.game.begin_cast(growth)
         self.game.complete_pending_cast((bear,))
         while self.game.stack:
+            if self.game.pending_batch_conflict_choices:
+                choice = self.game.pending_batch_conflict_choices[0]
+                growth_index = next(
+                    index
+                    for index in choice.intent_indexes_first_to_last
+                    if self.game.pending_batch_resolution.intents[index].source
+                    is growth
+                )
+                self.game.move_batch_conflict_intent(
+                    self.bob.id, growth_index, -1
+                )
+                self.game.confirm_batch_conflict_order(self.bob.id)
+                continue
             priority = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(priority.id)
 
@@ -124,6 +137,19 @@ class SwordsToPlowsharesTests(unittest.TestCase):
         self.game.pass_priority(self.alice.id)
         self.game.activate_ability(self.bob.id, shade, 0)
         while self.game.stack or self.game.batch_abilities:
+            if self.game.pending_batch_conflict_choices:
+                choice = self.game.pending_batch_conflict_choices[0]
+                pump_index = next(
+                    index
+                    for index in choice.intent_indexes_first_to_last
+                    if self.game.pending_batch_resolution.intents[index].source
+                    is shade
+                )
+                self.game.move_batch_conflict_intent(
+                    self.bob.id, pump_index, -1
+                )
+                self.game.confirm_batch_conflict_order(self.bob.id)
+                continue
             priority = self.game.players[self.game.priority_player_index]
             self.game.pass_priority(priority.id)
 

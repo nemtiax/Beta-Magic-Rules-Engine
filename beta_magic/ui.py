@@ -1718,6 +1718,32 @@ class GameViewModel(QObject):
             "Confirmed upkeep order; the first action is ready.",
         )
 
+    @Slot(int, int)
+    def moveBatchConflictOrder(self, intent_index: int, direction: int) -> None:
+        choices = self.game.pending_batch_conflict_choices
+        if not choices:
+            return
+        choice = choices[0]
+        self._run(
+            lambda: self.game.move_batch_conflict_intent(
+                choice.conflict.chooser_id, intent_index, direction
+            ),
+            "Adjusted conflicting-effect order.",
+        )
+
+    @Slot()
+    def confirmBatchConflictOrder(self) -> None:
+        choices = self.game.pending_batch_conflict_choices
+        if not choices:
+            return
+        choice = choices[0]
+        self._run(
+            lambda: self.game.confirm_batch_conflict_order(
+                choice.conflict.chooser_id
+            ),
+            "Confirmed conflicting-effect order.",
+        )
+
     @Slot(str)
     def toggleLibraryDiscardDestination(self, card_id: str) -> None:
         choice = (
@@ -1905,6 +1931,19 @@ class GameViewModel(QObject):
         ):
             return
         if self._prompt_raging_river_choice():
+            self.stateChanged.emit()
+            return
+        if self.game.pending_batch_conflict_choices:
+            choice = self.game.pending_batch_conflict_choices[0]
+            chooser = self.game.player(choice.conflict.chooser_id)
+            self._prompt(
+                chooser.id,
+                "The batch contains effects whose order matters. Choose their "
+                "first-to-last order.",
+                observer_message=(
+                    f"Waiting for {chooser.name} to order conflicting effects."
+                ),
+            )
             self.stateChanged.emit()
             return
         if (

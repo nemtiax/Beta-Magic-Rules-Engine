@@ -114,6 +114,11 @@ class GuardianAngelTests(unittest.TestCase):
         view.switchPerspective()
         view.passPriority()
         self.assertTrue(view.state["choosingPrevention"])
+        self.assertTrue(view.state["canChoosePrevention"])
+        self.assertEqual(view.state["preventionSource"], "Guardian Angel")
+        view.switchPerspective()
+        self.assertFalse(view.state["canChoosePrevention"])
+        view.switchPerspective()
         view.chooseDamagePacket(view.state["damagePacketChoices"][0]["id"])
         self.finish_damage()
 

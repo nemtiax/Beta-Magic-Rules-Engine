@@ -19,7 +19,7 @@ from beta_magic.card_defs.artifacts import SOL_RING
 from beta_magic.card_defs.black import WORD_OF_COMMAND
 from beta_magic.card_defs.black import DEMONIC_TUTOR
 from beta_magic.card_defs.blue import CLONE
-from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.green import CHANNEL, GRIZZLY_BEARS
 from beta_magic.ui import GameViewModel
 
 
@@ -223,6 +223,28 @@ class WordOfCommandTests(unittest.TestCase):
 
         self.assertEqual(self.bob.mana_pool.green, 0)
         self.assertEqual(self.bob.mana_pool.red, 1)
+
+    def test_commanding_channel_does_not_grant_later_life_payment_authority(
+        self,
+    ) -> None:
+        channel = self.hand_card(self.bob, CHANNEL)
+        self.game.active_player_index = 1
+        self.game.priority_player_index = 0
+        self.bob.mana_pool.green = 2
+        self.resolve_word()
+        self.game.begin_word_command_cast(self.alice.id, channel)
+        self.game.complete_word_command_payment(self.alice.id, ())
+        self.resolve_current_batch()
+
+        self.assertIn(self.bob.id, self.game.channel_active_players)
+        self.assertNotIn(self.alice.id, self.game.channel_active_players)
+        view = GameViewModel(self.game)
+        self.assertFalse(view.state["canChannel"])
+        view.switchPerspective()
+        self.assertTrue(view.state["canChannel"])
+        view.channelMana(2)
+        self.assertEqual((self.bob.life, self.bob.mana_pool.colorless), (18, 2))
+        self.assertEqual(self.alice.life, 20)
 
 
 if __name__ == "__main__":

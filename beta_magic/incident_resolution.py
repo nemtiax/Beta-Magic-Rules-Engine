@@ -226,6 +226,12 @@ class DamageDestructionMixin:
                     trample=packet.trample,
                     trample_defender_id=packet.trample_defender_id,
                     first_strike=packet.first_strike,
+                    veteran_bodyguard_handled=(
+                        packet.veteran_bodyguard_handled
+                    ),
+                    combat_player_damage_random_discard=(
+                        packet.combat_player_damage_random_discard
+                    ),
                     life_gain_player_id=packet.life_gain_player_id,
                     life_gain_cap=packet.life_gain_cap,
                 )
@@ -372,6 +378,10 @@ class DamageDestructionMixin:
                 trample=packet.trample,
                 trample_defender_id=packet.trample_defender_id,
                 first_strike=packet.first_strike,
+                veteran_bodyguard_handled=packet.veteran_bodyguard_handled,
+                combat_player_damage_random_discard=(
+                    packet.combat_player_damage_random_discard
+                ),
                 life_gain_player_id=packet.life_gain_player_id,
                 life_gain_cap=packet.life_gain_cap,
             )
@@ -1064,6 +1074,11 @@ class DamageDestructionMixin:
                     if source_card is not None
                     else source_colors or frozenset()
                 ),
+                combat_player_damage_random_discard=(
+                    source_card.definition.combat_player_damage_random_discard
+                    if source_card is not None
+                    else 0
+                ),
                 combat=combat,
                 trample=trample,
                 trample_defender_id=(
@@ -1374,6 +1389,12 @@ class DamageDestructionMixin:
                         trample=True,
                         trample_defender_id=defender.id,
                         first_strike=packet.first_strike,
+                        veteran_bodyguard_handled=(
+                            packet.veteran_bodyguard_handled
+                        ),
+                        combat_player_damage_random_discard=(
+                            packet.combat_player_damage_random_discard
+                        ),
                         life_gain_player_id=packet.life_gain_player_id,
                         life_gain_cap=packet.life_gain_cap,
                     )
@@ -1390,6 +1411,7 @@ class DamageDestructionMixin:
                 or packet.recipient_kind is not DamageRecipientKind.PLAYER
                 or not packet.combat
                 or packet.trample
+                or packet.veteran_bodyguard_handled
             ):
                 continue
             bodyguards = [
@@ -1418,6 +1440,10 @@ class DamageDestructionMixin:
                         trample=False,
                         trample_defender_id=None,
                         first_strike=packet.first_strike,
+                        veteran_bodyguard_handled=True,
+                        combat_player_damage_random_discard=(
+                            packet.combat_player_damage_random_discard
+                        ),
                         life_gain_player_id=packet.life_gain_player_id,
                         life_gain_cap=packet.life_gain_cap,
                     )
@@ -1502,19 +1528,18 @@ class DamageDestructionMixin:
                     self.turn_creature_face_up(source)
                 if (
                     packet.combat
-                    and source is not None
-                    and source.definition.combat_player_damage_random_discard
+                    and packet.combat_player_damage_random_discard
                 ):
                     self.event_opportunities.append(
                         RuleEventOpportunity(
                             RuleEventKind.COMBAT_PLAYER_DAMAGED,
-                            f"{source.name} damaged {recipient.name}",
-                            source_id=source.id,
-                            source_name=source.name,
+                            f"{packet.source_name} damaged {recipient.name}",
+                            source_id=packet.source_id,
+                            source_name=packet.source_name,
                             source_controller_id=packet.source_controller_id,
                             affected_player_id=recipient.id,
                             random_discard=(
-                                source.definition.combat_player_damage_random_discard
+                                packet.combat_player_damage_random_discard
                             ),
                         )
                     )
@@ -1734,6 +1759,9 @@ class DamageDestructionMixin:
         self.pending_destruction = None
         self._destroy_permanents(doomed)
         self.check_state_based_actions()
+        self._resolve_regenerated_batch_destination_fallbacks(
+            incident.regenerated_card_ids
+        )
         incident.step = DestructionResolutionStep.COMPLETE
         self.resolved_destruction_incidents.append(incident)
         self.consecutive_passes = 0
@@ -1761,6 +1789,16 @@ class DamageDestructionMixin:
             self.deferred_damage_continuation = None
             self._resume_completed_damage_incident(damage_incident)
             return
+        if (
+            self.pending_batch_resolution is not None
+            and (
+                self.pending_batch_resolution.pending_aura_entry_intents
+                or self.pending_batch_resolution.pending_copy_entry_intents
+            )
+        ):
+            self._resume_deferred_batch_entries()
+            if self.pending_damage is not None or self.pending_destruction is not None:
+                return
         if resume_interrupts and self.stack:
             underlying = self.stack_spells[self.stack[-1].id]
             self.priority_player_index = self.players.index(

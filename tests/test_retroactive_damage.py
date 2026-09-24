@@ -1,12 +1,13 @@
 import unittest
 
-from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS, REGENERATION
 from beta_magic.card_defs.red import LIGHTNING_BOLT
 from beta_magic.card_defs.white import REVERSE_DAMAGE
 from beta_magic.card_defs.black import SIMULACRUM
 from beta_magic import (
     Card,
     DamageIncidentKind,
+    DamageResolutionStep,
     GameState,
     PlayerState,
     TurnPhase,
@@ -203,6 +204,40 @@ class RetroactiveDamageTests(unittest.TestCase):
         self.assertEqual(self.alice.life, 20)
         self.assertEqual(target.damage, 2)
         self.assertIn(simulacrum, self.alice.graveyard)
+
+    def test_simulacrum_can_target_creature_already_facing_lethal_damage(
+        self,
+    ) -> None:
+        source = self.put_in_play(self.bob, GRIZZLY_BEARS)
+        target = self.put_in_play(self.alice, HILL_GIANT)
+        aura = self.put_in_play(self.alice, REGENERATION)
+        aura.enchanted_card_id = target.id
+        simulacrum = self.put_in_hand(self.alice, SIMULACRUM)
+        self.alice.mana_pool.black = 1
+        self.alice.mana_pool.colorless = 1
+        self.alice.mana_pool.green = 1
+        self.game.pause_for_damage_windows = True
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(target, 3, source.name, source_card=source)
+        self.game._deal_damage(self.alice, 2, source.name, source_card=source)
+        self.game._resolve_damage_incident()
+
+        self.game.begin_cast(simulacrum)
+        self.assertIn(target, self.game.legal_targets_for())
+        self.game.complete_pending_cast((target,))
+        while self.game.pending_damage.step is not DamageResolutionStep.REGENERATION:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.game.activate_ability(self.alice.id, aura, 0)
+        while self.game.pending_damage is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.assertEqual(self.alice.life, 20)
+        self.assertIn(target, self.alice.battlefield)
+        self.assertEqual(target.damage, 2)
+        self.assertTrue(target.tapped)
 
 
 if __name__ == "__main__":

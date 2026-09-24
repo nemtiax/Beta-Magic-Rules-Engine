@@ -12,6 +12,7 @@ from beta_magic.card_defs.black import (
 from beta_magic.card_defs.white import VETERAN_BODYGUARD
 from beta_magic import (
     Card,
+    Color,
     DamageIncidentKind,
     DamageResolutionStep,
     GameState,
@@ -176,6 +177,48 @@ class DiscardEffectTests(unittest.TestCase):
         self.assertEqual(self.bob.life, 18)
         self.assertFalse(self.bob.hand)
         self.assertEqual(len(self.bob.graveyard), 1)
+
+    def test_redirected_specter_damage_keeps_color_and_discard_if_source_leaves(
+        self,
+    ) -> None:
+        self.game.pause_for_damage_windows = True
+        specter = self.card(HYPNOTIC_SPECTER, self.alice, Zone.BATTLEFIELD)
+        specter.color_override = Color.BLUE
+        bear = self.card(GRIZZLY_BEARS, self.bob, Zone.BATTLEFIELD)
+        monolith = self.card(JADE_MONOLITH, self.bob, Zone.BATTLEFIELD)
+        victim = self.card(GRIZZLY_BEARS, self.bob, Zone.HAND)
+        self.bob.mana_pool.colorless = 1
+
+        self.game._begin_damage_incident(DamageIncidentKind.SINGLE_SOURCE)
+        self.game._deal_damage(
+            bear,
+            2,
+            specter.name,
+            source_card=specter,
+            source_controller_id=self.alice.id,
+            combat=True,
+        )
+        self.game._resolve_damage_incident()
+        for _ in range(2):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, monolith, 0)
+        packet = self.game.pending_damage.packets[0]
+        self.game.redirect_damage(self.bob.id, packet.id)
+        for _ in range(4):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        redirected = self.game.pending_damage.packets[0]
+        self.assertEqual(redirected.colors, frozenset({Color.BLUE}))
+        self.game._move_card(specter, Zone.GRAVEYARD)
+        while self.game.priority_player_index is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.assertEqual(self.bob.life, 18)
+        self.assertNotIn(victim, self.bob.hand)
 
 
 if __name__ == "__main__":

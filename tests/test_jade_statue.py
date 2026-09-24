@@ -13,7 +13,7 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS, REGENERATION
 from beta_magic.ui import GameViewModel
 
 
@@ -164,6 +164,43 @@ class JadeStatueTests(unittest.TestCase):
             (self.game.creature_power(statue), self.game.creature_toughness(statue)),
             (4, 8),
         )
+
+    def test_opponent_keeps_authority_over_dormant_regeneration_aura(self):
+        statue = self.permanent(self.alice, JADE_STATUE)
+        first_animation = self.permanent(self.alice, ANIMATE_ARTIFACT)
+        first_animation.enchanted_card_id = statue.id
+        regeneration = self.permanent(self.bob, REGENERATION)
+        regeneration.enchanted_card_id = statue.id
+
+        self.game._move_card(first_animation, Zone.GRAVEYARD)
+        self.assertNotIn(CardType.CREATURE, self.game.card_types(statue))
+        self.assertIn(regeneration, self.bob.battlefield)
+
+        second_animation = self.permanent(self.alice, ANIMATE_ARTIFACT)
+        second_animation.enchanted_card_id = statue.id
+        self.assertEqual(
+            (self.game.creature_power(statue), self.game.creature_toughness(statue)),
+            (4, 4),
+        )
+        self.game.pause_for_damage_windows = True
+        self.game._deal_damage(statue, 4, "test")
+        for _ in range(4):
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.bob.mana_pool.green = 1
+        with self.assertRaisesRegex(ValueError, "only activate.*control"):
+            self.game.activate_ability(self.alice.id, regeneration, 0)
+        self.game.pass_priority(self.alice.id)
+        self.game.activate_ability(self.bob.id, regeneration, 0)
+        while self.game.pending_damage is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.assertIn(statue, self.alice.battlefield)
+        self.assertIn(regeneration, self.bob.battlefield)
+        self.assertTrue(statue.tapped)
+        self.assertEqual(statue.damage, 0)
 
 
 if __name__ == "__main__":

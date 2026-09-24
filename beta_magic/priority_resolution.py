@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 from uuid import UUID, uuid4
 
 from .abilities import (
@@ -32,12 +32,24 @@ from .abilities import (
     TargetRequirement,
 )
 from .cards import Card
+from .batch_resolution import (
+    BatchCharacteristicSnapshot,
+    BatchConflict,
+    BatchConflictKind,
+    BatchConsequences,
+    BatchEffectIntent,
+    BatchIntentKind,
+    BatchLegalitySnapshot,
+    PendingBatchConflictChoice,
+    BatchResolutionPlan,
+)
 from .casting import AbilityOnStack, PendingCast, SpellOnStack
 from .combat import AttackRequirement, PendingFalseOrdersChoice
 from .damage import DamageIncidentKind, DamageRecipientKind
 from .destruction import DestructionIncident, DestructionTarget
 from .effects import (
     AddManaEffect,
+    AttachedLandTypeEffect,
     BalanceEffect,
     ChangeTargetColorEffect,
     ChangeTextWordEffect,
@@ -59,6 +71,7 @@ from .effects import (
     LibrarySearchEffect,
     SacrificeCreatureForManaEffect,
     DrawCardsEffect,
+    EffectScope,
     EffectRecipient,
     ExileTargetsEffect,
     ExtraTurnEffect,
@@ -89,24 +102,6 @@ from .types import CardType, Color, CombatStep, KeywordAbility, TurnPhase, Zone
 
 if TYPE_CHECKING:
     from .game import PlayerState
-
-
-@dataclass(frozen=True, slots=True)
-class BatchLegalitySnapshot:
-    """Target and source legality frozen before a batch changes game state."""
-
-    spells: dict[UUID, bool]
-    spell_targets: dict[UUID, tuple[Card | PlayerState, ...]]
-    abilities: tuple[bool, ...]
-
-
-@dataclass(slots=True)
-class BatchConsequences:
-    """Zone-changing results deferred until every batch member is applied."""
-
-    destruction: list[tuple[Card, bool]] = field(default_factory=list)
-    regeneration: list[Card] = field(default_factory=list)
-    exile: list[tuple[Card, ExileTargetsEffect]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -229,6 +224,19 @@ class PendingBalance:
 
 class PriorityBatchResolutionMixin:
     """Coordinate priority, interrupts, and simultaneous fast-effect batches."""
+
+    def _queue_batch_ability(self, declared: AbilityOnStack) -> None:
+        """Queue a fast effect and retain its announcement position.
+
+        Spells and interrupt-speed abilities already use the shared
+        declaration counter. Ordinary activated abilities need the same
+        sequence so a batch plan can reconstruct the actual announcement
+        order without relying on separate spell and ability collections.
+        """
+
+        self.interrupt_declaration_sequence += 1
+        declared.declaration_sequence = self.interrupt_declaration_sequence
+        self.batch_abilities.append(declared)
 
     def current_word_command(self) -> PendingWordOfCommandChoice | None:
         return (
@@ -426,6 +434,7 @@ class PriorityBatchResolutionMixin:
         if self.word_commandable_cards():
             raise RuntimeError("a legal card must be played for Word of Command")
         self.pending_word_command_choices.pop(0)
+        self._resume_ordered_batch_hand_library_effects()
 
     def maximum_word_command_x(self, card: Card, target_count: int = 1) -> int:
         choice = self.current_word_command()
@@ -504,6 +513,7 @@ class PriorityBatchResolutionMixin:
         if CardType.LAND in card.definition.card_types:
             self.pending_word_command_choices.pop(0)
             self._play_land_for(self.player(choice.commanded_player_id), card)
+            self._resume_ordered_batch_hand_library_effects()
             return None
         choice.card_id = card.id
         choice.x_value = x_value
@@ -618,6 +628,19 @@ class PriorityBatchResolutionMixin:
             decision_maker_id=choice.commander_id,
             mana_allocation=plan.spending,
         )
+        # A Word ordered before another hand effect must finish forcing this
+        # announcement before the later effect reads or changes that hand.
+        # Preserve the fresh spell's interrupt opportunity across any later
+        # interactive operation that keeps the outer batch suspended.
+        outer_plan = self.pending_batch_resolution
+        if outer_plan is not None and not outer_plan.finalized:
+            outer_plan.commanded_spell_priority_player_index = (
+                self.priority_player_index
+            )
+            outer_plan.commanded_spell_interruptible_id = (
+                self.interruptible_spell_id
+            )
+        self._resume_ordered_batch_hand_library_effects()
         return card
 
     def choose_demonic_attorney(self, player_id: str, *, concede: bool) -> None:
@@ -683,12 +706,14 @@ class PriorityBatchResolutionMixin:
         self.pending_natural_selection_choices.pop(0)
         if shuffle:
             target.shuffle_library(self.random)
+            self._resume_ordered_batch_hand_library_effects()
             return
         cards = [card for card in inspected if card is not None]
         for card in cards:
             target.library.remove(card)
         # Libraries store their top card at the end of the list.
         target.library.extend(reversed(cards))
+        self._resume_ordered_batch_hand_library_effects()
 
     def legal_library_search_cards(self) -> tuple[Card, ...]:
         """Return current legal cards for the oldest private library search."""
@@ -717,6 +742,7 @@ class PriorityBatchResolutionMixin:
         self.pending_library_search_choices.pop(0)
         self._move_card(card, choice.destination)
         library_player.shuffle_library(self.random)
+        self._resume_ordered_batch_hand_library_effects()
 
     __slots__ = ()
 
@@ -870,6 +896,7 @@ class PriorityBatchResolutionMixin:
             if (
                 self.pending_damage is None
                 and self.pending_destruction is None
+                and not self.pending_batch_conflict_choices
             ):
                 self._restore_pending_context_priority()
             return resolved
@@ -1031,6 +1058,7 @@ class PriorityBatchResolutionMixin:
         if not self.pending_library_discard_choices and not self.pending_discard_choices:
             self.consecutive_passes = 0
             self.priority_player_index = None
+        self._resume_ordered_batch_hand_library_effects()
 
     def choose_drain_power_mana(self, player_id: str, color: Color) -> None:
         """Choose the mana produced by the next dual land drained at resolution."""
@@ -1178,27 +1206,54 @@ class PriorityBatchResolutionMixin:
                 else None
             )
             self.consecutive_passes = 0
+        self._resume_ordered_batch_hand_library_effects()
         return chosen
 
-    def _begin_balance(self) -> None:
+    def _begin_balance(
+        self,
+        snapshot: BatchCharacteristicSnapshot | None = None,
+    ) -> None:
         """Snapshot all Balance counts before any player makes a choice."""
 
-        lands = {
-            player.id: tuple(
-                card
+        if snapshot is None:
+            lands = {
+                player.id: tuple(
+                    card
+                    for card in player.battlefield
+                    if CardType.LAND in self.card_types(card)
+                )
+                for player in self.players
+            }
+            creatures = {
+                player.id: tuple(
+                    card
+                    for card in player.battlefield
+                    if CardType.CREATURE in self.card_types(card)
+                )
+                for player in self.players
+            }
+        else:
+            battlefield_by_id = {
+                card.id: card
+                for player in self.players
                 for card in player.battlefield
-                if CardType.LAND in self.card_types(card)
-            )
-            for player in self.players
-        }
-        creatures = {
-            player.id: tuple(
-                card
-                for card in player.battlefield
-                if CardType.CREATURE in self.card_types(card)
-            )
-            for player in self.players
-        }
+            }
+            lands = {
+                player_id: tuple(
+                    battlefield_by_id[card_id]
+                    for card_id in card_ids
+                    if card_id in battlefield_by_id
+                )
+                for player_id, card_ids in snapshot.balance_lands
+            }
+            creatures = {
+                player_id: tuple(
+                    battlefield_by_id[card_id]
+                    for card_id in card_ids
+                    if card_id in battlefield_by_id
+                )
+                for player_id, card_ids in snapshot.balance_creatures
+            }
         hands = {player.id: tuple(player.hand) for player in self.players}
         groups = (("land", lands), ("hand", hands), ("creature", creatures))
         choices: list[BalanceChoice] = []
@@ -1260,14 +1315,22 @@ class PriorityBatchResolutionMixin:
             for card in tuple(player.battlefield)
             if card.id in battlefield_ids
         ]
-        self._destroy_permanents(doomed)
         for player in self.players:
             self._discard_forced(
                 player,
                 (card for card in tuple(player.hand) if card.id in hand_ids),
                 source_name="Balance",
             )
+        if doomed:
+            self.pending_destruction = DestructionIncident(
+                [
+                    DestructionTarget(card.id, card.name)
+                    for card in doomed
+                ]
+            )
+            self._open_destruction_incident()
         self.check_state_based_actions()
+        self._resume_ordered_batch_hand_library_effects()
         return chosen
 
     def _next_interrupt_to_resolve(
@@ -1750,21 +1813,3042 @@ class PriorityBatchResolutionMixin:
             self._snapshot_batch_ability_legality(abilities),
         )
 
-    def _resolve_batch_permanent_spells(
+    def _describe_batch_intents(
         self,
         spells: tuple[SpellOnStack, ...],
+        abilities: tuple[AbilityOnStack, ...],
         legality: BatchLegalitySnapshot,
+    ) -> tuple[BatchEffectIntent, ...]:
+        """Describe the legal operations in a batch without applying them."""
+
+        intents: list[BatchEffectIntent] = []
+        for spell in spells:
+            card = spell.card
+            if not legality.spells[card.id]:
+                continue
+            targets = legality.spell_targets[card.id]
+            if card.definition.is_permanent:
+                intents.append(
+                    BatchEffectIntent(
+                        BatchIntentKind.PERMANENT_ENTRY,
+                        card,
+                        spell.caster_id,
+                        spell.decision_maker_id,
+                        targets,
+                        card.definition,
+                        spell.declaration_sequence,
+                    )
+                )
+                continue
+            for operation_index, effect in enumerate(
+                card.definition.spell_effects
+            ):
+                intents.append(
+                    BatchEffectIntent(
+                        BatchIntentKind.SPELL_EFFECT,
+                        card,
+                        spell.caster_id,
+                        spell.decision_maker_id,
+                        targets,
+                        effect,
+                        spell.declaration_sequence,
+                        operation_index,
+                    )
+                )
+
+        for declared, is_legal in zip(abilities, legality.abilities):
+            if not is_legal:
+                continue
+            intents.append(
+                BatchEffectIntent(
+                    BatchIntentKind.ACTIVATED_ABILITY,
+                    declared.source,
+                    declared.controller_id,
+                    declared.controller_id,
+                    declared.targets,
+                    declared.ability,
+                    declared.declaration_sequence,
+                )
+            )
+
+        # Sorting is stable. The operation index orders multiple effects on one
+        # spell, while the declaration sequence interleaves spells and
+        # activated abilities that are stored separately by the live engine.
+        return tuple(
+            sorted(
+                intents,
+                key=lambda intent: (
+                    intent.declaration_sequence,
+                    intent.operation_index,
+                ),
+            )
+        )
+
+    def _plan_batch_resolution(self) -> BatchResolutionPlan:
+        """Freeze a read-only description of the next batch resolution."""
+
+        cards = tuple(self.stack)
+        spells = tuple(self.stack_spells[card.id] for card in cards)
+        abilities = tuple(self.batch_abilities)
+        legality = self._snapshot_batch_legality(spells, abilities)
+        return BatchResolutionPlan(
+            cards=cards,
+            spells=spells,
+            abilities=abilities,
+            legality=legality,
+            caught_event_ids=frozenset(
+                event.id for event in self.event_opportunities
+            ),
+            intents=self._describe_batch_intents(spells, abilities, legality),
+        )
+
+    def _detect_batch_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Return recognized batch paradoxes that need an ordering choice."""
+
+        writes_by_target: dict[UUID, list[tuple[int, Zone]]] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        for intent_index, intent in enumerate(plan.intents):
+            destination = self._batch_intent_destination(intent)
+            if destination is None:
+                continue
+            for target in self._batch_destination_targets(intent):
+                cards_by_id[target.id] = target
+                writes_by_target.setdefault(target.id, []).append(
+                    (intent_index, destination)
+                )
+
+        grouped_targets: dict[
+            tuple[tuple[int, ...], str], list[UUID]
+        ] = {}
+        for target_id, writes in writes_by_target.items():
+            if len({destination for _, destination in writes}) < 2:
+                continue
+            # Effects naming the same destination are one simultaneous cohort;
+            # only the order between distinct destinations matters.
+            representative_by_destination: dict[Zone, int] = {}
+            for intent_index, destination in writes:
+                representative_by_destination.setdefault(
+                    destination, intent_index
+                )
+            intent_indexes = tuple(representative_by_destination.values())
+            last_index = max(
+                (index for index, _ in writes),
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            chooser_id = plan.intents[last_index].controller_id
+            grouped_targets.setdefault(
+                (intent_indexes, chooser_id), []
+            ).append(target_id)
+
+        destination_conflicts: list[BatchConflict] = []
+        for (intent_indexes, chooser_id), target_ids in grouped_targets.items():
+            target_names = ", ".join(
+                cards_by_id[target_id].name for target_id in target_ids
+            )
+            destination_conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=chooser_id,
+                    reason=f"Conflicting destinations for {target_names}",
+                    kind=BatchConflictKind.DESTINATION,
+                    target_ids=tuple(target_ids),
+                )
+            )
+        conflicts: list[BatchConflict] = []
+        conflicts.extend(self._detect_batch_tapped_state_conflicts(plan))
+        power_conflicts = self._detect_batch_power_conflicts(plan)
+        conflicts.extend(self._detect_batch_hand_library_conflicts(plan))
+        conflicts.extend(self._detect_batch_land_type_conflicts(plan))
+        conflicts.extend(self._detect_batch_turn_sequence_conflicts(plan))
+        power_read_conflicts = self._detect_batch_power_read_conflicts(plan)
+        aura_entry_conflicts = self._detect_batch_aura_entry_conflicts(plan)
+        copy_entry_conflicts = self._detect_batch_copy_entry_conflicts(plan)
+        characteristic_conflicts = (
+            self._detect_batch_characteristic_conflicts(plan)
+        )
+        conflicts.extend(
+            conflict
+            for conflict in destination_conflicts
+            if not any(
+                set(conflict.intent_indexes) <= set(entry.intent_indexes)
+                for entry in (*aura_entry_conflicts, *copy_entry_conflicts)
+            )
+        )
+        # A Swords read component already orders all of its power modifiers.
+        # Asking for a second order for the same modifier component could let
+        # the two dialogs record contradictory answers.
+        conflicts.extend(
+            conflict
+            for conflict in power_conflicts
+            if not any(
+                set(conflict.intent_indexes) <= set(read.intent_indexes)
+                for read in power_read_conflicts
+            )
+        )
+        conflicts.extend(
+            conflict
+            for conflict in aura_entry_conflicts
+            if not any(
+                set(conflict.intent_indexes) <= set(read.intent_indexes)
+                for read in power_read_conflicts
+            )
+        )
+        conflicts.extend(copy_entry_conflicts)
+        conflicts.extend(
+            conflict
+            for conflict in characteristic_conflicts
+            if not any(
+                set(conflict.intent_indexes) <= set(other.intent_indexes)
+                for other in (
+                    *destination_conflicts,
+                    *aura_entry_conflicts,
+                    *copy_entry_conflicts,
+                )
+            )
+        )
+        conflicts.extend(power_read_conflicts)
+        return tuple(conflicts)
+
+    @staticmethod
+    def _batch_intent_is_battlefield_aura_entry(
+        intent: BatchEffectIntent,
+    ) -> bool:
+        """Whether an intent attaches an Aura to a permanent in play."""
+
+        definition = intent.source.definition
+        return bool(
+            intent.kind is BatchIntentKind.PERMANENT_ENTRY
+            and not definition.copies_artifact
+            and not definition.copies_creature
+            and not definition.animates_dead_creature
+            and any(
+                subtype.startswith("Enchant ")
+                for subtype in definition.subtypes
+            )
+            and any(
+                isinstance(target, Card)
+                and target.zone is Zone.BATTLEFIELD
+                for target in intent.targets
+            )
+        )
+
+    def _detect_batch_aura_entry_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find Aura entries ordered against removal of their targets."""
+
+        return self._detect_batch_targeted_entry_conflicts(
+            plan,
+            self._batch_intent_is_battlefield_aura_entry,
+            BatchConflictKind.AURA_ENTRY,
+            "Aura attachment and removal of ",
+        )
+
+    @staticmethod
+    def _batch_intent_is_copy_entry(intent: BatchEffectIntent) -> bool:
+        """Whether a permanent spell copies its chosen battlefield card."""
+
+        definition = intent.source.definition
+        return bool(
+            intent.kind is BatchIntentKind.PERMANENT_ENTRY
+            and (definition.copies_artifact or definition.copies_creature)
+            and any(
+                isinstance(target, Card)
+                and target.zone is Zone.BATTLEFIELD
+                for target in intent.targets
+            )
+        )
+
+    def _detect_batch_copy_entry_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find copy entries ordered against removal of their chosen model."""
+
+        return self._detect_batch_targeted_entry_conflicts(
+            plan,
+            self._batch_intent_is_copy_entry,
+            BatchConflictKind.COPY_ENTRY,
+            "Copying and removal of ",
+        )
+
+    def _detect_batch_targeted_entry_conflicts(
+        self,
+        plan: BatchResolutionPlan,
+        is_entry: Callable[[BatchEffectIntent], bool],
+        kind: BatchConflictKind,
+        reason_prefix: str,
+    ) -> tuple[BatchConflict, ...]:
+        """Find targeted permanent entries ordered against target removal."""
+
+        adjacency: dict[int, set[int]] = {}
+        pair_targets: dict[frozenset[int], set[UUID]] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        for entry_index, entry_intent in enumerate(plan.intents):
+            if not is_entry(entry_intent):
+                continue
+            for target in entry_intent.targets:
+                if not isinstance(target, Card):
+                    continue
+                removal_indexes = tuple(
+                    index
+                    for index, intent in enumerate(plan.intents)
+                    if index != entry_index
+                    and self._batch_intent_destination(intent)
+                    not in {None, Zone.BATTLEFIELD}
+                    and target in self._batch_destination_targets(intent)
+                )
+                if not removal_indexes:
+                    continue
+                cards_by_id[target.id] = target
+                for removal_index in removal_indexes:
+                    adjacency.setdefault(entry_index, set()).add(removal_index)
+                    adjacency.setdefault(removal_index, set()).add(entry_index)
+                    pair_targets.setdefault(
+                        frozenset({entry_index, removal_index}), set()
+                    ).add(target.id)
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                index = pending.pop()
+                if index in component:
+                    continue
+                component.add(index)
+                pending.extend(adjacency.get(index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(
+                sorted(
+                    component,
+                    key=lambda index: (
+                        plan.intents[index].declaration_sequence,
+                        plan.intents[index].operation_index,
+                    ),
+                )
+            )
+            target_ids = tuple(
+                card_id
+                for card_id in cards_by_id
+                if any(
+                    pair <= component and card_id in targets
+                    for pair, targets in pair_targets.items()
+                )
+            )
+            last_index = intent_indexes[-1]
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=(
+                        reason_prefix
+                        + ", ".join(
+                            cards_by_id[target_id].name
+                            for target_id in target_ids
+                        )
+                    ),
+                    kind=kind,
+                    target_ids=target_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    def _batch_characteristic_snapshot(
+        self, intent: BatchEffectIntent
+    ) -> BatchCharacteristicSnapshot | None:
+        """Describe values an effect reads from current characteristics."""
+
+        operation = intent.operation
+        battlefield = tuple(
+            permanent
+            for player in self.players
+            for permanent in player.battlefield
+        )
+        if isinstance(operation, DestroyAllEffect):
+            resolved = replace(
+                operation,
+                subtypes=frozenset(
+                    self.land_word(intent.source, subtype)
+                    for subtype in operation.subtypes
+                ),
+            )
+            targets = tuple(
+                permanent
+                for permanent in battlefield
+                if resolved.matches(
+                    permanent,
+                    current_card_types=self.card_types(permanent),
+                    current_subtypes=(
+                        self.land_subtypes(permanent)
+                        if CardType.LAND in permanent.definition.card_types
+                        else None
+                    ),
+                )
+            )
+            return BatchCharacteristicSnapshot(
+                target_ids=tuple(card.id for card in targets)
+            )
+        if isinstance(operation, ActivatedDestroyAllAbility):
+            return BatchCharacteristicSnapshot(
+                target_ids=tuple(
+                    permanent.id
+                    for permanent in battlefield
+                    if self.card_types(permanent) & operation.card_types
+                )
+            )
+        if isinstance(operation, (GlobalDamageEffect, ActivatedGlobalDamageAbility)):
+            targets: list[Card] = []
+            for permanent in battlefield:
+                if CardType.CREATURE not in self.card_types(permanent):
+                    continue
+                if isinstance(operation, GlobalDamageEffect):
+                    flying = KeywordAbility.FLYING in self.creature_abilities(
+                        permanent
+                    )
+                    if (
+                        operation.creatures_with_flying is not None
+                        and flying is not operation.creatures_with_flying
+                    ):
+                        continue
+                targets.append(permanent)
+            return BatchCharacteristicSnapshot(
+                target_ids=tuple(card.id for card in targets)
+            )
+        if isinstance(operation, DrainLifeEffect):
+            toughness = tuple(
+                (target.id, self.creature_toughness(target))
+                for target in intent.targets
+                if isinstance(target, Card)
+            )
+            return BatchCharacteristicSnapshot(
+                target_ids=tuple(card_id for card_id, _ in toughness),
+                toughness_by_target=toughness,
+            )
+        if isinstance(operation, BalanceEffect):
+            return BatchCharacteristicSnapshot(
+                balance_lands=tuple(
+                    (
+                        player.id,
+                        tuple(
+                            card.id
+                            for card in player.battlefield
+                            if CardType.LAND in self.card_types(card)
+                        ),
+                    )
+                    for player in self.players
+                ),
+                balance_creatures=tuple(
+                    (
+                        player.id,
+                        tuple(
+                            card.id
+                            for card in player.battlefield
+                            if CardType.CREATURE in self.card_types(card)
+                        ),
+                    )
+                    for player in self.players
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _batch_characteristic_snapshot_ids(
+        snapshot: BatchCharacteristicSnapshot,
+    ) -> set[UUID]:
+        """Return all battlefield object ids represented by a snapshot."""
+
+        return (
+            set(snapshot.target_ids)
+            | {card_id for card_id, _ in snapshot.toughness_by_target}
+            | {
+                card_id
+                for _, card_ids in snapshot.balance_lands
+                for card_id in card_ids
+            }
+            | {
+                card_id
+                for _, card_ids in snapshot.balance_creatures
+                for card_id in card_ids
+            }
+        )
+
+    def _detect_batch_characteristic_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find effects whose result changes with battlefield characteristics."""
+
+        readers = tuple(
+            (index, snapshot)
+            for index, intent in enumerate(plan.intents)
+            if (snapshot := self._batch_characteristic_snapshot(intent))
+            is not None
+        )
+        adjacency: dict[int, set[int]] = {}
+        pair_targets: dict[frozenset[int], set[UUID]] = {}
+        for reader_index, baseline in readers:
+            for writer_index in range(len(plan.intents)):
+                if writer_index == reader_index:
+                    continue
+                projected = self._project_batch_characteristic_snapshot(
+                    plan,
+                    plan.intents[reader_index],
+                    (writer_index,),
+                )
+                if projected == baseline:
+                    continue
+                changed_ids = (
+                    self._batch_characteristic_snapshot_ids(baseline)
+                    ^ self._batch_characteristic_snapshot_ids(projected)
+                )
+                reader = plan.intents[reader_index]
+                writer = plan.intents[writer_index]
+                if (
+                    isinstance(
+                        reader.operation,
+                        (DestroyAllEffect, ActivatedDestroyAllAbility),
+                    )
+                    and self._batch_intent_destination(writer)
+                    is Zone.GRAVEYARD
+                    and changed_ids
+                    <= {
+                        target.id
+                        for target in self._batch_destination_targets(writer)
+                    }
+                ):
+                    # Both effects destroy the same objects. Regeneration
+                    # permissions are combined later, so their order cannot
+                    # alter the result.
+                    continue
+                adjacency.setdefault(reader_index, set()).add(writer_index)
+                adjacency.setdefault(writer_index, set()).add(reader_index)
+                pair_targets.setdefault(
+                    frozenset({reader_index, writer_index}), set()
+                ).update(changed_ids)
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                intent_index = pending.pop()
+                if intent_index in component:
+                    continue
+                component.add(intent_index)
+                pending.extend(adjacency.get(intent_index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(
+                sorted(
+                    component,
+                    key=lambda index: (
+                        plan.intents[index].declaration_sequence,
+                        plan.intents[index].operation_index,
+                    ),
+                )
+            )
+            target_ids = tuple(
+                dict.fromkeys(
+                    target_id
+                    for pair, targets in pair_targets.items()
+                    if pair <= component
+                    for target_id in targets
+                )
+            )
+            last_index = intent_indexes[-1]
+            names_by_id = {
+                card.id: card.name
+                for player in self.players
+                for card in player.battlefield
+            }
+            names_by_id.update(
+                {card.id: card.name for card in plan.cards}
+            )
+            names = ", ".join(
+                names_by_id[target_id]
+                for target_id in target_ids
+                if target_id in names_by_id
+            )
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=(
+                        "Characteristic-dependent effects"
+                        + (f" involving {names}" if names else "")
+                    ),
+                    kind=BatchConflictKind.CHARACTERISTICS,
+                    target_ids=target_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    @staticmethod
+    def _batch_intent_reads_power(intent: BatchEffectIntent) -> bool:
+        """Whether an intent reads current power while it resolves."""
+
+        return (
+            isinstance(intent.operation, ExileTargetsEffect)
+            and intent.operation.controller_gains_life_equal_to_power
+        )
+
+    def _batch_intent_can_change_battlefield_power(
+        self,
+        plan: BatchResolutionPlan,
+        intent: BatchEffectIntent,
+        target: Card,
+    ) -> bool:
+        """Conservatively identify operations that can change a power read.
+
+        The final relevance check compares a projected battlefield with the
+        current one.  Direct modifiers are retained even when the creature's
+        current power happens to make their immediate numerical result equal;
+        another ordered modifier may make that distinction matter.
+        """
+
+        if self._batch_intent_power_transform(plan, intent, target) is not None:
+            return True
+        operation = intent.operation
+        if isinstance(operation, ActivatedAnimationAbility):
+            return intent.source is target
+        if isinstance(operation, ActivatedCreateTokenAbility):
+            return True
+        if isinstance(operation, ActivatedLandTypeAbility):
+            return True
+        if intent.kind is BatchIntentKind.PERMANENT_ENTRY:
+            return True
+        destination = self._batch_intent_destination(intent)
+        if destination is not None:
+            affected = self._batch_destination_targets(intent)
+            # Competing destinations for the Swords target itself already use
+            # the destination paradox pathway.  This conflict is about other
+            # state changes altering the value Swords reads.
+            return target not in affected and (
+                destination is Zone.BATTLEFIELD
+                or any(card.zone is Zone.BATTLEFIELD for card in affected)
+            )
+        return False
+
+    def _projected_reconcile_control(self) -> None:
+        """Reconcile control inside a temporary batch-power projection."""
+
+        battlefield = [
+            permanent
+            for player in self.players
+            for permanent in player.battlefield
+        ]
+        desired = {
+            permanent.id: (
+                permanent.base_controller_id
+                or permanent.controller_id
+                or permanent.owner_id
+            )
+            for permanent in battlefield
+        }
+        control_auras = sorted(
+            (
+                source
+                for source in battlefield
+                if source.enchanted_card_id is not None
+                and any(
+                    effect.controls_attached_card
+                    for effect in source.definition.continuous_effects
+                )
+            ),
+            key=lambda source: source.battlefield_entry_sequence or 0,
+        )
+        for aura in control_auras:
+            if aura.enchanted_card_id in desired:
+                desired[aura.enchanted_card_id] = (
+                    aura.controller_id or aura.owner_id
+                )
+        for permanent in tuple(battlefield):
+            controller_id = desired[permanent.id]
+            if permanent.controller_id == controller_id:
+                continue
+            for player in self.players:
+                if permanent in player.battlefield:
+                    player.battlefield.remove(permanent)
+                    break
+            permanent.controller_id = controller_id
+            self.player(controller_id).battlefield.append(permanent)
+
+    def _apply_projected_power_intent(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> None:
+        """Apply only the characteristic-relevant part of one intent."""
+
+        operation = intent.operation
+        tapped = self._batch_intent_tapped_state(plan, intent)
+        if tapped is not None and intent.kind is not BatchIntentKind.PERMANENT_ENTRY:
+            for target in self._batch_tapped_state_targets(plan, intent):
+                target.tapped = tapped
+            return
+        destination = self._batch_intent_destination(intent)
+        if destination is not None:
+            for card in self._batch_destination_targets(intent):
+                for player in self.players:
+                    if card in player.battlefield:
+                        player.battlefield.remove(card)
+                card.zone = destination
+                if destination is Zone.BATTLEFIELD:
+                    card.controller_id = intent.controller_id
+                    self.player(intent.controller_id).battlefield.append(card)
+            self._projected_reconcile_control()
+            return
+
+        if isinstance(operation, TemporaryPumpEffect):
+            spell = next(
+                spell for spell in plan.spells if spell.card is intent.source
+            )
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    continue
+                self.battlefield_entry_sequence += 1
+                self.temporary_creature_effects.setdefault(target.id, []).append(
+                    replace(
+                        ContinuousEffect(
+                            power=(
+                                operation.power
+                                + operation.power_per_x * spell.x_value
+                            ),
+                            toughness=(
+                                operation.toughness
+                                + operation.toughness_per_x * spell.x_value
+                            ),
+                            power_multiplier=operation.power_multiplier,
+                            granted_abilities=operation.granted_abilities,
+                        ),
+                        application_sequence=self.battlefield_entry_sequence,
+                    )
+                )
+            return
+        if isinstance(operation, ActivatedPumpAbility):
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    continue
+                self.battlefield_entry_sequence += 1
+                self.temporary_creature_effects.setdefault(target.id, []).append(
+                    replace(
+                        ContinuousEffect(
+                            power=operation.power,
+                            toughness=operation.toughness,
+                            granted_abilities=operation.granted_abilities,
+                        ),
+                        application_sequence=self.battlefield_entry_sequence,
+                    )
+                )
+            return
+        if isinstance(operation, ActivatedAnimationAbility):
+            self.battlefield_entry_sequence += 1
+            self.combat_creature_effects.setdefault(intent.source.id, []).append(
+                replace(
+                    ContinuousEffect(
+                        granted_card_types=frozenset({CardType.CREATURE}),
+                        base_power=operation.power,
+                        base_toughness=operation.toughness,
+                    ),
+                    application_sequence=self.battlefield_entry_sequence,
+                )
+            )
+            return
+        if isinstance(operation, ActivatedLandTypeAbility):
+            for land in intent.targets:
+                if not isinstance(land, Card):
+                    continue
+                self.battlefield_entry_sequence += 1
+                land.land_type_marks[intent.source.id] = (
+                    operation.replacement_subtype,
+                    self.battlefield_entry_sequence,
+                )
+            return
+        if isinstance(operation, ActivatedCreateTokenAbility):
+            token = Card(
+                operation.token_definition,
+                intent.controller_id,
+                controller_id=intent.controller_id,
+                zone=Zone.BATTLEFIELD,
+                is_token=True,
+            )
+            self.battlefield_entry_sequence += 1
+            token.battlefield_entry_sequence = self.battlefield_entry_sequence
+            self.player(intent.controller_id).battlefield.append(token)
+            return
+        if intent.kind is not BatchIntentKind.PERMANENT_ENTRY:
+            return
+
+        source = intent.source
+        self.battlefield_entry_sequence += 1
+        source.zone = Zone.BATTLEFIELD
+        source.controller_id = intent.controller_id
+        source.battlefield_entry_sequence = self.battlefield_entry_sequence
+        card_target = next(
+            (target for target in intent.targets if isinstance(target, Card)),
+            None,
+        )
+        source.enchanted_card_id = card_target.id if card_target is not None else None
+        self.player(intent.controller_id).battlefield.append(source)
+        if source.definition.taps_attached_on_entry and card_target is not None:
+            card_target.tapped = True
+        if source.definition.animates_dead_creature and card_target is not None:
+            for player in self.players:
+                if card_target in player.graveyard:
+                    player.graveyard.remove(card_target)
+            card_target.zone = Zone.BATTLEFIELD
+            card_target.controller_id = intent.controller_id
+            self.player(intent.controller_id).battlefield.append(card_target)
+        self._projected_reconcile_control()
+
+    def _project_batch_state(
+        self,
+        plan: BatchResolutionPlan,
+        intent_indexes: tuple[int, ...],
+        read,
+    ):
+        """Apply selected intents to a reversible characteristic projection."""
+
+        zone_lists = {
+            player.id: {
+                zone: list(player.cards_in(zone))
+                for zone in (
+                    Zone.LIBRARY,
+                    Zone.HAND,
+                    Zone.BATTLEFIELD,
+                    Zone.GRAVEYARD,
+                    Zone.EXILE,
+                    Zone.ANTE,
+                )
+            }
+            for player in self.players
+        }
+        cards = {
+            card
+            for zones in zone_lists.values()
+            for cards_in_zone in zones.values()
+            for card in cards_in_zone
+        } | set(plan.cards)
+        card_state = {
+            card: (
+                card.zone,
+                card.controller_id,
+                card.enchanted_card_id,
+                card.battlefield_entry_sequence,
+                dict(card.land_type_marks),
+                card.tapped,
+            )
+            for card in cards
+        }
+        temporary = {
+            card_id: list(effects)
+            for card_id, effects in self.temporary_creature_effects.items()
+        }
+        combat = {
+            card_id: list(effects)
+            for card_id, effects in self.combat_creature_effects.items()
+        }
+        sequence = self.battlefield_entry_sequence
+        try:
+            for intent_index in intent_indexes:
+                self._apply_projected_power_intent(
+                    plan, plan.intents[intent_index]
+                )
+            return read()
+        finally:
+            for player in self.players:
+                for zone, saved in zone_lists[player.id].items():
+                    player.cards_in(zone)[:] = saved
+            for card, state in card_state.items():
+                (
+                    card.zone,
+                    card.controller_id,
+                    card.enchanted_card_id,
+                    card.battlefield_entry_sequence,
+                    marks,
+                    card.tapped,
+                ) = state
+                card.land_type_marks.clear()
+                card.land_type_marks.update(marks)
+            self.temporary_creature_effects.clear()
+            self.temporary_creature_effects.update(temporary)
+            self.combat_creature_effects.clear()
+            self.combat_creature_effects.update(combat)
+            self.battlefield_entry_sequence = sequence
+
+    def _project_batch_swords_values(
+        self,
+        plan: BatchResolutionPlan,
+        target: Card,
+        intent_indexes: tuple[int, ...],
+    ) -> tuple[int, str]:
+        """Read Swords' power and controller from a reversible projection."""
+
+        return self._project_batch_state(
+            plan,
+            intent_indexes,
+            lambda: (
+                self.creature_power(target),
+                target.controller_id or target.owner_id,
+            ),
+        )
+
+    def _project_batch_characteristic_snapshot(
+        self,
+        plan: BatchResolutionPlan,
+        reader: BatchEffectIntent,
+        prior_intent_indexes: tuple[int, ...],
+    ) -> BatchCharacteristicSnapshot:
+        """Read one effect after applying earlier intents reversibly."""
+
+        snapshot = self._project_batch_state(
+            plan,
+            prior_intent_indexes,
+            lambda: self._batch_characteristic_snapshot(reader),
+        )
+        assert snapshot is not None
+        return snapshot
+
+    def _detect_batch_power_read_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find effects that can change values observed by Swords."""
+
+        adjacency: dict[int, set[int]] = {}
+        pair_targets: dict[frozenset[int], set[UUID]] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        readers = tuple(
+            (index, intent)
+            for index, intent in enumerate(plan.intents)
+            if self._batch_intent_reads_power(intent)
+        )
+        for reader_index, reader in readers:
+            for target in reader.targets:
+                if not isinstance(target, Card):
+                    continue
+                cards_by_id[target.id] = target
+                baseline = (
+                    self.creature_power(target),
+                    target.controller_id or target.owner_id,
+                )
+                for writer_index, writer in enumerate(plan.intents):
+                    if writer_index == reader_index or not (
+                        self._batch_intent_can_change_battlefield_power(
+                            plan, writer, target
+                        )
+                    ):
+                        continue
+                    direct = self._batch_intent_power_transform(
+                        plan, writer, target
+                    ) is not None
+                    projected = self._project_batch_swords_values(
+                        plan, target, (writer_index,)
+                    )
+                    if not direct and projected == baseline:
+                        continue
+                    adjacency.setdefault(reader_index, set()).add(writer_index)
+                    adjacency.setdefault(writer_index, set()).add(reader_index)
+                    pair_targets.setdefault(
+                        frozenset({reader_index, writer_index}), set()
+                    ).add(target.id)
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                index = pending.pop()
+                if index in component:
+                    continue
+                component.add(index)
+                pending.extend(adjacency.get(index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(sorted(component))
+            target_ids = tuple(
+                target_id
+                for target_id in cards_by_id
+                if any(
+                    pair <= component and target_id in target_ids_for_pair
+                    for pair, target_ids_for_pair in pair_targets.items()
+                )
+            )
+            last_index = max(
+                intent_indexes,
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            names = ", ".join(
+                cards_by_id[target_id].name for target_id in target_ids
+            )
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=f"Effects may change power read by Swords for {names}",
+                    kind=BatchConflictKind.SWORDS_READ,
+                    target_ids=target_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    @staticmethod
+    def _batch_intent_extra_turn_player(
+        intent: BatchEffectIntent,
+    ) -> str | None:
+        """Return the player whose extra turn one intent creates."""
+
+        if isinstance(
+            intent.operation, (ExtraTurnEffect, ActivatedExtraTurnAbility)
+        ):
+            return intent.controller_id
+        return None
+
+    def _detect_batch_turn_sequence_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find extra-turn effects whose application order changes the queue."""
+
+        extra_turns = tuple(
+            (intent_index, player_id)
+            for intent_index, intent in enumerate(plan.intents)
+            if (
+                player_id := self._batch_intent_extra_turn_player(intent)
+            ) is not None
+        )
+        if len({player_id for _, player_id in extra_turns}) < 2:
+            return ()
+
+        intent_indexes = tuple(intent_index for intent_index, _ in extra_turns)
+        last_index = max(
+            intent_indexes,
+            key=lambda index: (
+                plan.intents[index].declaration_sequence,
+                plan.intents[index].operation_index,
+            ),
+        )
+        affected_player_ids = tuple(
+            player.id
+            for player in self.players
+            if any(player.id == player_id for _, player_id in extra_turns)
+        )
+        names = ", ".join(
+            self.player(player_id).name for player_id in affected_player_ids
+        )
+        return (
+            BatchConflict(
+                intent_indexes=intent_indexes,
+                chooser_id=plan.intents[last_index].controller_id,
+                reason=f"Competing extra turns for {names}",
+                kind=BatchConflictKind.TURN_SEQUENCE,
+                affected_player_ids=affected_player_ids,
+            ),
+        )
+
+    def _batch_hand_library_footprint(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> dict[str, str]:
+        """Map affected players to one hand/library operation category.
+
+        The category is deliberately semantic rather than a raw read/write
+        mask.  Drawing twice and drawing plus returning an external card to
+        hand commute, while operations that inspect, remove, replace, or
+        reorder the same resources generally do not.
+        """
+
+        operation = intent.operation
+        player_ids = tuple(player.id for player in self.players)
+        target_player_ids = tuple(
+            target.id for target in intent.targets if not isinstance(target, Card)
+        )
+        if isinstance(
+            operation,
+            (DrawCardsEffect, ActivatedDrawAbility, ActivatedEventDrawAbility),
+        ):
+            affected = (
+                (intent.controller_id,)
+                if not isinstance(operation, DrawCardsEffect)
+                else target_player_ids
+            )
+            return {player_id: "draw" for player_id in affected}
+        if isinstance(operation, GainLifeEffect):
+            return {
+                player_id: "draw"
+                for player_id in target_player_ids
+                if self._lich_count(player_id)
+            }
+        if isinstance(operation, ActivatedEventLifeGainAbility):
+            return (
+                {intent.controller_id: "draw"}
+                if self._lich_count(intent.controller_id)
+                else {}
+            )
+        if isinstance(operation, DiscardCardsEffect):
+            return {player_id: "discard" for player_id in target_player_ids}
+        if isinstance(operation, ActivatedDiscardAbility):
+            controller = self.player(intent.controller_id)
+            opponent = self.players[
+                (self.players.index(controller) + 1) % len(self.players)
+            ]
+            return {opponent.id: "discard"}
+        if isinstance(operation, ActivatedRevealHandAbility):
+            controller = self.player(intent.controller_id)
+            opponent = self.players[
+                (self.players.index(controller) + 1) % len(self.players)
+            ]
+            return {opponent.id: "inspect_hand"}
+        if isinstance(operation, WordOfCommandEffect):
+            controller = self.player(intent.controller_id)
+            opponent = self.players[
+                (self.players.index(controller) + 1) % len(self.players)
+            ]
+            return {opponent.id: "command_from_hand"}
+        if isinstance(operation, DiscardHandsAndDrawEffect):
+            return {
+                player_id: f"replace_hand:{operation.draw_count}"
+                for player_id in player_ids
+            }
+        if isinstance(operation, ShuffleHandAndGraveyardEffect):
+            return {
+                player_id: f"recycle:{operation.draw_count}"
+                for player_id in player_ids
+            }
+        if isinstance(operation, DiscardHandAnteAndDrawEffect):
+            return {
+                intent.controller_id: f"ante_replace:{operation.draw_count}"
+            }
+        if isinstance(operation, SwapLibraryTopWithAnteEffect):
+            return {intent.controller_id: "library_top"}
+        if isinstance(operation, NaturalSelectionEffect):
+            return {player_id: "library_order" for player_id in target_player_ids}
+        if isinstance(operation, LibrarySearchEffect):
+            return {intent.controller_id: "library_search"}
+        if isinstance(operation, BalanceEffect):
+            # Even a currently equal hand is read by Balance: an earlier draw
+            # can change which player must discard.
+            return {player_id: "balance" for player_id in player_ids}
+        if isinstance(operation, MoveTargetsEffect) and operation.destination is Zone.HAND:
+            return {
+                target.owner_id: "add_to_hand"
+                for target in intent.targets
+                if isinstance(target, Card)
+            }
+        return {}
+
+    @staticmethod
+    def _batch_hand_library_operations_commute(first: str, second: str) -> bool:
+        """Whether two operations can be simultaneous without a paradox."""
+
+        first_kind = first.partition(":")[0]
+        second_kind = second.partition(":")[0]
+        additive = {"draw", "add_to_hand"}
+        if first_kind in additive and second_kind in additive:
+            return True
+        if first == second and first_kind in {
+            "replace_hand",
+            "recycle",
+            "ante_replace",
+            "balance",
+        }:
+            return True
+        if first_kind == second_kind == "inspect_hand":
+            return True
+        # Moving an external card to hand does not interact with an operation
+        # that only inspects or rearranges the library.
+        library_only = {"library_top", "library_order", "library_search"}
+        if (
+            first_kind == "add_to_hand" and second_kind in library_only
+            or second_kind == "add_to_hand" and first_kind in library_only
+        ):
+            return True
+        # Merely looking at a hand, or choosing a card already in it for
+        # Word, does not alter the top or order of that player's library.
+        # A search is deliberately excluded because it puts a new card into
+        # the hand being inspected/commanded.
+        passive_library_only = {"library_top", "library_order"}
+        hand_readers = {"inspect_hand", "command_from_hand"}
+        if (
+            first_kind in hand_readers and second_kind in passive_library_only
+            or second_kind in hand_readers and first_kind in passive_library_only
+        ):
+            return True
+        return False
+
+    def _detect_batch_hand_library_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find connected hand/library operations whose ordering matters."""
+
+        footprints = {
+            intent_index: self._batch_hand_library_footprint(plan, intent)
+            for intent_index, intent in enumerate(plan.intents)
+        }
+        adjacency: dict[int, set[int]] = {}
+        conflict_players: dict[frozenset[int], set[str]] = {}
+        indexes = tuple(index for index, footprint in footprints.items() if footprint)
+        for position, first_index in enumerate(indexes):
+            for second_index in indexes[position + 1:]:
+                shared = set(footprints[first_index]) & set(footprints[second_index])
+                noncommuting = {
+                    player_id
+                    for player_id in shared
+                    if not self._batch_hand_library_operations_commute(
+                        footprints[first_index][player_id],
+                        footprints[second_index][player_id],
+                    )
+                }
+                if not noncommuting:
+                    continue
+                adjacency.setdefault(first_index, set()).add(second_index)
+                adjacency.setdefault(second_index, set()).add(first_index)
+                conflict_players[frozenset({first_index, second_index})] = noncommuting
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                intent_index = pending.pop()
+                if intent_index in component:
+                    continue
+                component.add(intent_index)
+                pending.extend(adjacency.get(intent_index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(sorted(component))
+            affected_player_ids = tuple(
+                player.id
+                for player in self.players
+                if any(
+                    pair <= component and player.id in pair_players
+                    for pair, pair_players in conflict_players.items()
+                )
+            )
+            last_index = max(
+                intent_indexes,
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            names = ", ".join(
+                self.player(player_id).name for player_id in affected_player_ids
+            )
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=f"Conflicting hand or library effects for {names}",
+                    kind=BatchConflictKind.HAND_LIBRARY,
+                    affected_player_ids=affected_player_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    def _batch_intent_land_type_setting(
+        self, intent: BatchEffectIntent
+    ) -> str | None:
+        """Return the basic subtype unconditionally set by one intent."""
+
+        operation = intent.operation
+        if isinstance(operation, ActivatedLandTypeAbility):
+            return operation.replacement_subtype
+        if intent.kind is not BatchIntentKind.PERMANENT_ENTRY:
+            return None
+        for effect in intent.source.definition.land_type_effects:
+            if not isinstance(effect, AttachedLandTypeEffect):
+                continue
+            return (
+                intent.source.chosen_land_subtype
+                if effect.chosen_basic_subtype
+                else self.land_word(intent.source, effect.replacement_subtype)
+            )
+        return None
+
+    def _batch_land_type_targets(
+        self, intent: BatchEffectIntent
+    ) -> tuple[Card, ...]:
+        if self._batch_intent_land_type_setting(intent) is None:
+            return ()
+        return tuple(
+            target
+            for target in intent.targets
+            if isinstance(target, Card)
+            and CardType.LAND in self.card_types(target)
+        )
+
+    def _detect_batch_land_type_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find lands being set to competing basic types in one batch."""
+
+        writes_by_target: dict[UUID, list[tuple[int, str]]] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        for intent_index, intent in enumerate(plan.intents):
+            replacement = self._batch_intent_land_type_setting(intent)
+            if replacement is None:
+                continue
+            for target in self._batch_land_type_targets(intent):
+                cards_by_id[target.id] = target
+                writes_by_target.setdefault(target.id, []).append(
+                    (intent_index, replacement)
+                )
+
+        adjacency: dict[int, set[int]] = {}
+        conflict_targets: dict[frozenset[int], set[UUID]] = {}
+        for target_id, writes in writes_by_target.items():
+            for position, (first_index, first_type) in enumerate(writes):
+                for second_index, second_type in writes[position + 1:]:
+                    if first_type == second_type:
+                        continue
+                    adjacency.setdefault(first_index, set()).add(second_index)
+                    adjacency.setdefault(second_index, set()).add(first_index)
+                    conflict_targets.setdefault(
+                        frozenset({first_index, second_index}), set()
+                    ).add(target_id)
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                intent_index = pending.pop()
+                if intent_index in component:
+                    continue
+                component.add(intent_index)
+                pending.extend(adjacency.get(intent_index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(sorted(component))
+            target_ids = tuple(
+                target_id
+                for target_id in cards_by_id
+                if any(
+                    pair <= component and target_id in pair_targets
+                    for pair, pair_targets in conflict_targets.items()
+                )
+            )
+            last_index = max(
+                intent_indexes,
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=(
+                        "Competing land-type settings for "
+                        + ", ".join(
+                            cards_by_id[target_id].name
+                            for target_id in target_ids
+                        )
+                    ),
+                    kind=BatchConflictKind.LAND_TYPE,
+                    target_ids=target_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    def _batch_intent_tapped_state(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> bool | None:
+        operation = intent.operation
+        if isinstance(operation, SetTappedEffect):
+            spell = next(
+                (
+                    spell
+                    for spell in plan.spells
+                    if spell.card is intent.source
+                ),
+                None,
+            )
+            return spell.chosen_mode == "Tap" if spell is not None else None
+        if isinstance(
+            operation, (ActivatedTapAbility, TapLandsAndEmptyManaPoolEffect)
+        ):
+            return True
+        if isinstance(operation, ActivatedUntapAbility):
+            return False
+        if (
+            intent.kind is BatchIntentKind.PERMANENT_ENTRY
+            and getattr(operation, "taps_attached_on_entry", False)
+        ):
+            return True
+        return None
+
+    def _batch_tapped_state_targets(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> tuple[Card, ...]:
+        if isinstance(intent.operation, TapLandsAndEmptyManaPoolEffect):
+            player_ids = {
+                target.id
+                for target in intent.targets
+                if not isinstance(target, Card)
+            }
+            return tuple(
+                permanent
+                for player in self.players
+                for permanent in player.battlefield
+                if permanent.controller_id in player_ids
+                and CardType.LAND in self.card_types(permanent)
+            )
+        return tuple(
+            target for target in intent.targets if isinstance(target, Card)
+        )
+
+    def _detect_batch_tapped_state_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        writes_by_target: dict[UUID, list[tuple[int, bool]]] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        for intent_index, intent in enumerate(plan.intents):
+            tapped = self._batch_intent_tapped_state(plan, intent)
+            if tapped is None:
+                continue
+            for target in self._batch_tapped_state_targets(plan, intent):
+                cards_by_id[target.id] = target
+                writes_by_target.setdefault(target.id, []).append(
+                    (intent_index, tapped)
+                )
+
+        grouped_targets: dict[
+            tuple[tuple[int, ...], str], list[UUID]
+        ] = {}
+        for target_id, writes in writes_by_target.items():
+            if len({tapped for _, tapped in writes}) < 2:
+                continue
+            intent_indexes = tuple(dict.fromkeys(index for index, _ in writes))
+            last_index = max(
+                intent_indexes,
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            chooser_id = plan.intents[last_index].controller_id
+            grouped_targets.setdefault(
+                (intent_indexes, chooser_id), []
+            ).append(target_id)
+
+        return tuple(
+            BatchConflict(
+                intent_indexes=intent_indexes,
+                chooser_id=chooser_id,
+                reason=(
+                    "Conflicting tap and untap effects for "
+                    + ", ".join(
+                        cards_by_id[target_id].name for target_id in target_ids
+                    )
+                ),
+                kind=BatchConflictKind.TAPPED_STATE,
+                target_ids=tuple(target_ids),
+            )
+            for (intent_indexes, chooser_id), target_ids
+            in grouped_targets.items()
+        )
+
+    @staticmethod
+    def _power_transform(power: int, multiplier: int) -> tuple[int, int]:
+        """Return ``(slope, offset)`` for ``(power + bonus) * multiplier``."""
+
+        return multiplier, power * multiplier
+
+    @staticmethod
+    def _power_transforms_commute(
+        first: tuple[int, int], second: tuple[int, int]
+    ) -> bool:
+        """Whether two affine power changes give the same result in either order."""
+
+        first_multiplier, first_offset = first
+        second_multiplier, second_offset = second
+        first_then_second = (
+            second_multiplier * first_offset + second_offset
+        )
+        second_then_first = (
+            first_multiplier * second_offset + first_offset
+        )
+        return first_then_second == second_then_first
+
+    def _entry_power_effect_for_target(
+        self,
+        intent: BatchEffectIntent,
+        effect: ContinuousEffect,
+        target: Card,
+    ) -> ContinuousEffect | None:
+        """Resolve a new permanent's power effect against one current creature."""
+
+        source = intent.source
+        if effect.scope is EffectScope.ATTACHED_CARD:
+            if target not in intent.targets:
+                return None
+        if effect.color is not None and self.color_word(
+            source, effect.color
+        ) not in self.card_colors(target):
+            return None
+        if effect.subtype is not None and self.land_word(
+            source, effect.subtype
+        ) not in target.definition.subtypes:
+            return None
+        if effect.land_subtype is not None:
+            land_subtype = self.land_word(source, effect.land_subtype)
+            if (
+                CardType.LAND not in target.definition.card_types
+                or land_subtype not in self.land_subtypes(target)
+            ):
+                return None
+        if effect.exclude_source and source is target:
+            return None
+        if effect.source_only and source is not target:
+            return None
+        if effect.controller_only and target.controller_id != source.controller_id:
+            return None
+        attacking = self.combat is not None and target in self.combat.attackers
+        if effect.attacking_only and not attacking:
+            return None
+        if effect.untapped_only and target.tapped:
+            return None
+        if effect.nonattacking_only and attacking:
+            return None
+        controller = self.player(source.controller_id or source.owner_id)
+        if effect.controller_has_land_subtype is not None:
+            required = self.land_word(
+                source, effect.controller_has_land_subtype
+            )
+            if not any(
+                CardType.LAND in permanent.definition.card_types
+                and required in self.land_subtypes(permanent)
+                for permanent in controller.battlefield
+            ):
+                return None
+        if effect.counted_controller_land_subtype is not None:
+            counted = self.land_word(
+                source, effect.counted_controller_land_subtype
+            )
+            count = sum(
+                CardType.LAND in permanent.definition.card_types
+                and counted in self.land_subtypes(permanent)
+                for permanent in controller.battlefield
+            )
+            effect = replace(
+                effect,
+                power=(
+                    effect.power
+                    + count * effect.power_per_count // effect.count_divisor
+                ),
+            )
+        return effect
+
+    def _batch_intent_power_transform(
+        self,
+        plan: BatchResolutionPlan,
+        intent: BatchEffectIntent,
+        target: Card,
+    ) -> tuple[int, int] | None:
+        """Describe one intent's current-power transformation for a target."""
+
+        operation = intent.operation
+        if isinstance(operation, TemporaryPumpEffect):
+            spell = next(
+                (
+                    spell
+                    for spell in plan.spells
+                    if spell.card is intent.source
+                ),
+                None,
+            )
+            if spell is None or target not in intent.targets:
+                return None
+            power = operation.power + operation.power_per_x * spell.x_value
+            transform = self._power_transform(
+                power, operation.power_multiplier
+            )
+            return transform if transform != (1, 0) else None
+        if isinstance(operation, ActivatedPumpAbility):
+            if target not in intent.targets:
+                return None
+            transform = self._power_transform(operation.power, 1)
+            return transform if transform != (1, 0) else None
+        if intent.kind is not BatchIntentKind.PERMANENT_ENTRY:
+            return None
+
+        multiplier = 1
+        offset = 0
+        for effect in intent.source.definition.continuous_effects:
+            resolved = self._entry_power_effect_for_target(
+                intent, effect, target
+            )
+            if resolved is None:
+                continue
+            effect_transform = self._power_transform(
+                resolved.power, resolved.power_multiplier
+            )
+            effect_multiplier, effect_offset = effect_transform
+            offset = effect_multiplier * offset + effect_offset
+            multiplier *= effect_multiplier
+        transform = multiplier, offset
+        return transform if transform != (1, 0) else None
+
+    def _batch_power_modifier_targets(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> tuple[Card, ...]:
+        if intent.kind is not BatchIntentKind.PERMANENT_ENTRY:
+            return tuple(
+                target for target in intent.targets if isinstance(target, Card)
+            )
+        return tuple(
+            permanent
+            for player in self.players
+            for permanent in player.battlefield
+            if CardType.CREATURE in self.card_types(permanent)
+            and self._batch_intent_power_transform(
+                plan, intent, permanent
+            ) is not None
+        )
+
+    def _detect_batch_power_conflicts(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[BatchConflict, ...]:
+        """Find connected groups of power modifiers whose order changes power."""
+
+        writes_by_target: dict[
+            UUID, list[tuple[int, tuple[int, int]]]
+        ] = {}
+        cards_by_id: dict[UUID, Card] = {}
+        for intent_index, intent in enumerate(plan.intents):
+            for target in self._batch_power_modifier_targets(plan, intent):
+                transform = self._batch_intent_power_transform(
+                    plan, intent, target
+                )
+                if transform is None:
+                    continue
+                cards_by_id[target.id] = target
+                writes_by_target.setdefault(target.id, []).append(
+                    (intent_index, transform)
+                )
+
+        adjacency: dict[int, set[int]] = {}
+        conflict_targets: dict[frozenset[int], set[UUID]] = {}
+        for target_id, writes in writes_by_target.items():
+            for position, (first_index, first) in enumerate(writes):
+                for second_index, second in writes[position + 1:]:
+                    if self._power_transforms_commute(first, second):
+                        continue
+                    adjacency.setdefault(first_index, set()).add(second_index)
+                    adjacency.setdefault(second_index, set()).add(first_index)
+                    conflict_targets.setdefault(
+                        frozenset({first_index, second_index}), set()
+                    ).add(target_id)
+
+        conflicts: list[BatchConflict] = []
+        remaining = set(adjacency)
+        while remaining:
+            seed = min(remaining)
+            component: set[int] = set()
+            pending = [seed]
+            while pending:
+                intent_index = pending.pop()
+                if intent_index in component:
+                    continue
+                component.add(intent_index)
+                pending.extend(adjacency.get(intent_index, ()))
+            remaining.difference_update(component)
+            intent_indexes = tuple(sorted(component))
+            target_ids = tuple(
+                target_id
+                for target_id in cards_by_id
+                if any(
+                    pair <= component and target_id in pair_targets
+                    for pair, pair_targets in conflict_targets.items()
+                )
+            )
+            last_index = max(
+                intent_indexes,
+                key=lambda index: (
+                    plan.intents[index].declaration_sequence,
+                    plan.intents[index].operation_index,
+                ),
+            )
+            names = ", ".join(cards_by_id[target_id].name for target_id in target_ids)
+            conflicts.append(
+                BatchConflict(
+                    intent_indexes=intent_indexes,
+                    chooser_id=plan.intents[last_index].controller_id,
+                    reason=f"Noncommuting power modifiers for {names}",
+                    kind=BatchConflictKind.POWER,
+                    target_ids=target_ids,
+                )
+            )
+        return tuple(conflicts)
+
+    def _batch_intent_destination(
+        self, intent: BatchEffectIntent
+    ) -> Zone | None:
+        operation = intent.operation
+        if isinstance(
+            operation,
+            (
+                DestroyTargetsEffect,
+                DestroyAllEffect,
+                ActivatedDestroyAbility,
+                ActivatedDestroyAllAbility,
+            ),
+        ):
+            return Zone.GRAVEYARD
+        if isinstance(operation, MoveTargetsEffect):
+            return operation.destination
+        if isinstance(operation, ExileTargetsEffect):
+            return Zone.EXILE
+        if isinstance(operation, ActivatedGraveyardReturnAbility):
+            return Zone.BATTLEFIELD
+        return None
+
+    def _batch_destination_targets(
+        self, intent: BatchEffectIntent
+    ) -> tuple[Card, ...]:
+        operation = intent.operation
+        if isinstance(operation, DestroyAllEffect):
+            operation = replace(
+                operation,
+                subtypes=frozenset(
+                    self.land_word(intent.source, subtype)
+                    for subtype in operation.subtypes
+                ),
+            )
+            return tuple(
+                permanent
+                for player in self.players
+                for permanent in player.battlefield
+                if operation.matches(
+                    permanent,
+                    current_card_types=self.card_types(permanent),
+                    current_subtypes=(
+                        self.land_subtypes(permanent)
+                        if CardType.LAND in permanent.definition.card_types
+                        else None
+                    ),
+                )
+            )
+        if isinstance(operation, ActivatedDestroyAllAbility):
+            return tuple(
+                permanent
+                for player in self.players
+                for permanent in player.battlefield
+                if self.card_types(permanent) & operation.card_types
+            )
+        if isinstance(operation, ActivatedGraveyardReturnAbility):
+            return (intent.source,)
+        return tuple(
+            target for target in intent.targets if isinstance(target, Card)
+        )
+
+    def batch_conflict_intent_label(
+        self, choice: PendingBatchConflictChoice, intent_index: int
+    ) -> str:
+        """Describe one noncommuting operation for an engine or UI chooser."""
+
+        plan = self.pending_batch_resolution
+        if (
+            plan is None
+            or intent_index not in choice.intent_indexes_first_to_last
+            or not 0 <= intent_index < len(plan.intents)
+        ):
+            raise ValueError("unknown batch intent")
+        intent = plan.intents[intent_index]
+        if choice.conflict.kind is BatchConflictKind.DESTINATION:
+            destination = self._batch_intent_destination(intent)
+            assert destination is not None
+            result = destination.value
+        elif choice.conflict.kind is BatchConflictKind.TAPPED_STATE:
+            tapped = self._batch_intent_tapped_state(plan, intent)
+            assert tapped is not None
+            result = "tapped" if tapped else "untapped"
+        elif choice.conflict.kind is BatchConflictKind.POWER:
+            target = next(
+                (
+                    permanent
+                    for player in self.players
+                    for permanent in player.battlefield
+                    if permanent.id in choice.conflict.target_ids
+                    and self._batch_intent_power_transform(
+                        plan, intent, permanent
+                    ) is not None
+                ),
+                None,
+            )
+            assert target is not None
+            multiplier, offset = self._batch_intent_power_transform(
+                plan, intent, target
+            ) or (1, 0)
+            if multiplier == 1:
+                result = f"{offset:+d} power"
+            elif offset == 0:
+                result = f"×{multiplier} power"
+            else:
+                result = f"×{multiplier} power with {offset:+d} offset"
+        elif choice.conflict.kind is BatchConflictKind.HAND_LIBRARY:
+            result = self._batch_hand_library_intent_label(plan, intent)
+        elif choice.conflict.kind is BatchConflictKind.LAND_TYPE:
+            replacement = self._batch_intent_land_type_setting(intent)
+            assert replacement is not None
+            result = f"set land type to {replacement}"
+        elif choice.conflict.kind is BatchConflictKind.SWORDS_READ:
+            if self._batch_intent_reads_power(intent):
+                names = ", ".join(
+                    target.name
+                    for target in intent.targets
+                    if isinstance(target, Card)
+                    and target.id in choice.conflict.target_ids
+                )
+                result = f"read {names}'s power and controller, then exile it"
+            else:
+                destination = self._batch_intent_destination(intent)
+                if destination is not None:
+                    names = ", ".join(
+                        target.name
+                        for target in self._batch_destination_targets(intent)
+                    )
+                    result = f"move {names} to {destination.value}"
+                elif isinstance(intent.operation, ActivatedLandTypeAbility):
+                    result = (
+                        "set land type to "
+                        f"{intent.operation.replacement_subtype}"
+                    )
+                elif isinstance(intent.operation, ActivatedCreateTokenAbility):
+                    result = f"create {intent.operation.token_definition.name}"
+                elif intent.kind is BatchIntentKind.PERMANENT_ENTRY:
+                    result = "enter the battlefield"
+                else:
+                    result = "change battlefield power"
+        elif choice.conflict.kind is BatchConflictKind.AURA_ENTRY:
+            if self._batch_intent_is_battlefield_aura_entry(intent):
+                target = next(
+                    target
+                    for target in intent.targets
+                    if isinstance(target, Card)
+                )
+                result = f"attach to {target.name}"
+            else:
+                destination = self._batch_intent_destination(intent)
+                assert destination is not None
+                names = ", ".join(
+                    target.name
+                    for target in self._batch_destination_targets(intent)
+                )
+                result = f"move {names} to {destination.value}"
+        elif choice.conflict.kind is BatchConflictKind.COPY_ENTRY:
+            if self._batch_intent_is_copy_entry(intent):
+                target = next(
+                    target
+                    for target in intent.targets
+                    if isinstance(target, Card)
+                )
+                result = f"copy {target.name} and enter the battlefield"
+            else:
+                destination = self._batch_intent_destination(intent)
+                assert destination is not None
+                names = ", ".join(
+                    target.name
+                    for target in self._batch_destination_targets(intent)
+                )
+                result = f"move {names} to {destination.value}"
+        elif choice.conflict.kind is BatchConflictKind.CHARACTERISTICS:
+            snapshot = self._batch_characteristic_snapshot(intent)
+            if snapshot is not None:
+                if isinstance(
+                    intent.operation,
+                    (DestroyAllEffect, ActivatedDestroyAllAbility),
+                ):
+                    result = "determine which permanents are destroyed"
+                elif isinstance(
+                    intent.operation,
+                    (GlobalDamageEffect, ActivatedGlobalDamageAbility),
+                ):
+                    result = "determine which creatures are damaged"
+                elif isinstance(intent.operation, DrainLifeEffect):
+                    result = "read the target's toughness"
+                else:
+                    result = "count lands and creatures"
+            elif intent.kind is BatchIntentKind.PERMANENT_ENTRY:
+                result = "enter and apply its continuous effects"
+            else:
+                destination = self._batch_intent_destination(intent)
+                if destination is not None:
+                    names = ", ".join(
+                        target.name
+                        for target in self._batch_destination_targets(intent)
+                    )
+                    result = f"move {names} to {destination.value}"
+                else:
+                    result = "change battlefield characteristics"
+        else:
+            player_id = self._batch_intent_extra_turn_player(intent)
+            assert player_id is not None
+            result = f"{self.player(player_id).name} takes an extra turn"
+        return f"{intent.source.name} → {result}"
+
+    def _batch_hand_library_intent_label(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> str:
+        """Describe one hand/library operation in player-facing language."""
+
+        operation = intent.operation
+        spell = next(
+            (spell for spell in plan.spells if spell.card is intent.source),
+            None,
+        )
+        if isinstance(operation, DrawCardsEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            names = ", ".join(
+                target.name
+                for target in intent.targets
+                if not isinstance(target, Card)
+            )
+            return f"{names} draws {amount}"
+        if isinstance(operation, (ActivatedDrawAbility, ActivatedEventDrawAbility)):
+            return f"{self.player(intent.controller_id).name} draws {operation.amount}"
+        if isinstance(operation, GainLifeEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            return f"life gain becomes {amount} draw(s) through Lich"
+        if isinstance(operation, ActivatedEventLifeGainAbility):
+            return f"life gain becomes {operation.amount} draw(s) through Lich"
+        if isinstance(operation, DiscardCardsEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            names = ", ".join(
+                target.name
+                for target in intent.targets
+                if not isinstance(target, Card)
+            )
+            suffix = " at random" if operation.random else ""
+            return f"{names} discards {amount}{suffix}"
+        if isinstance(operation, ActivatedDiscardAbility):
+            return f"opponent discards {operation.amount}"
+        if isinstance(operation, ActivatedRevealHandAbility):
+            return "look at opponent's hand"
+        if isinstance(operation, WordOfCommandEffect):
+            return "inspect opponent's hand and compel a play"
+        if isinstance(operation, DiscardHandsAndDrawEffect):
+            return (
+                "each player discards their hand, then draws "
+                f"{operation.draw_count}"
+            )
+        if isinstance(operation, ShuffleHandAndGraveyardEffect):
+            return (
+                "each player recycles hand and graveyard, then draws "
+                f"{operation.draw_count}"
+            )
+        if isinstance(operation, DiscardHandAnteAndDrawEffect):
+            return f"discard hand, ante a card, then draw {operation.draw_count}"
+        if isinstance(operation, SwapLibraryTopWithAnteEffect):
+            return "exchange a library-top card with ante"
+        if isinstance(operation, NaturalSelectionEffect):
+            return "inspect and reorder a library"
+        if isinstance(operation, LibrarySearchEffect):
+            return "search a library"
+        if isinstance(operation, BalanceEffect):
+            return "equalize both players' hands"
+        if isinstance(operation, MoveTargetsEffect):
+            names = ", ".join(
+                target.name for target in intent.targets if isinstance(target, Card)
+            )
+            return f"return {names} to hand"
+        raise RuntimeError("unknown hand/library batch operation")
+
+    def move_batch_conflict_intent(
+        self, player_id: str, intent_index: int, direction: int
+    ) -> None:
+        """Move one paradox effect earlier or later in the proposed order."""
+
+        if not self.pending_batch_conflict_choices:
+            raise RuntimeError("there is no batch conflict to order")
+        choice = self.pending_batch_conflict_choices[0]
+        if choice.conflict.chooser_id != player_id:
+            raise RuntimeError("only the designated player may order this conflict")
+        if direction not in {-1, 1}:
+            raise ValueError("an ordering move must be earlier or later")
+        try:
+            old_index = choice.intent_indexes_first_to_last.index(intent_index)
+        except ValueError as error:
+            raise ValueError("that effect is not part of this conflict") from error
+        new_index = old_index + direction
+        if not 0 <= new_index < len(choice.intent_indexes_first_to_last):
+            return
+        (
+            choice.intent_indexes_first_to_last[old_index],
+            choice.intent_indexes_first_to_last[new_index],
+        ) = (
+            choice.intent_indexes_first_to_last[new_index],
+            choice.intent_indexes_first_to_last[old_index],
+        )
+
+    def confirm_batch_conflict_order(self, player_id: str) -> tuple[Card, ...] | None:
+        """Record one paradox order and commit after every conflict is ordered."""
+
+        if not self.pending_batch_conflict_choices:
+            raise RuntimeError("there is no batch conflict to confirm")
+        choice = self.pending_batch_conflict_choices[0]
+        if choice.conflict.chooser_id != player_id:
+            raise RuntimeError("only the designated player may order this conflict")
+        plan = self.pending_batch_resolution
+        assert plan is not None
+        order = tuple(choice.intent_indexes_first_to_last)
+        for target_id in choice.conflict.target_ids:
+            destination_order = tuple(
+                intent_index
+                for intent_index in order
+                if self._batch_intent_destination(
+                    plan.intents[intent_index]
+                ) is not None
+                and any(
+                    target.id == target_id
+                    for target in self._batch_destination_targets(
+                        plan.intents[intent_index]
+                    )
+                )
+            )
+            if (
+                choice.conflict.kind
+                in {
+                    BatchConflictKind.DESTINATION,
+                    BatchConflictKind.AURA_ENTRY,
+                    BatchConflictKind.COPY_ENTRY,
+                }
+                and len(destination_order) > 1
+            ):
+                plan.destination_orders[target_id] = destination_order
+            if choice.conflict.kind is BatchConflictKind.TAPPED_STATE:
+                plan.tapped_state_orders[target_id] = order
+        if choice.conflict.kind is BatchConflictKind.POWER:
+            plan.power_modifier_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.HAND_LIBRARY:
+            plan.hand_library_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.LAND_TYPE:
+            plan.land_type_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.TURN_SEQUENCE:
+            plan.turn_sequence_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.SWORDS_READ:
+            plan.swords_read_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.AURA_ENTRY:
+            plan.aura_entry_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.COPY_ENTRY:
+            plan.copy_entry_orders.append(order)
+        elif choice.conflict.kind is BatchConflictKind.CHARACTERISTICS:
+            plan.characteristic_orders.append(order)
+        if choice.conflict.kind is BatchConflictKind.SWORDS_READ and any(
+            self._batch_intent_is_battlefield_aura_entry(plan.intents[index])
+            for index in order
+        ):
+            plan.aura_entry_orders.append(order)
+        if (
+            choice.conflict.kind is BatchConflictKind.COPY_ENTRY
+            and any(
+                self._batch_characteristic_snapshot(plan.intents[index])
+                is not None
+                for index in order
+            )
+        ):
+            plan.characteristic_orders.append(order)
+        self.pending_batch_conflict_choices.pop(0)
+        if self.pending_batch_conflict_choices:
+            return None
+        resolved = self._commit_batch_resolution(plan)
+        if plan.finalized and not self.pending_batch_destination_fallbacks:
+            self.pending_batch_resolution = None
+        if self.pending_damage is None and self.pending_destruction is None:
+            self._restore_pending_context_priority()
+            self._restore_commanded_spell_priority(plan)
+        return resolved
+
+    def _snapshot_ordered_batch_power_reads(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Freeze the value each ordered Swords effect observes."""
+
+        for order in plan.swords_read_orders:
+            for position, intent_index in enumerate(order):
+                intent = plan.intents[intent_index]
+                if not self._batch_intent_reads_power(intent):
+                    continue
+                prior_intents = tuple(order[:position])
+                for target in intent.targets:
+                    if not isinstance(target, Card):
+                        continue
+                    power, controller_id = self._project_batch_swords_values(
+                        plan, target, prior_intents
+                    )
+                    plan.swords_power_snapshots[(intent_index, target.id)] = max(
+                        0, power
+                    )
+                    plan.swords_controller_snapshots[
+                        (intent_index, target.id)
+                    ] = controller_id
+
+    def _snapshot_ordered_batch_characteristic_reads(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Freeze each reader at its selected point in a paradox order."""
+
+        for order in plan.characteristic_orders:
+            for position, intent_index in enumerate(order):
+                intent = plan.intents[intent_index]
+                if self._batch_characteristic_snapshot(intent) is None:
+                    continue
+                plan.characteristic_snapshots[intent_index] = (
+                    self._project_batch_characteristic_snapshot(
+                        plan, intent, tuple(order[:position])
+                    )
+                )
+
+    @staticmethod
+    def _batch_intent_index(
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+    ) -> int | None:
+        """Locate the planned intent corresponding to a live resolver item."""
+
+        return next(
+            (
+                index
+                for index, intent in enumerate(plan.intents)
+                if intent.source is source
+                and intent.declaration_sequence == declaration_sequence
+                and intent.operation_index == operation_index
+            ),
+            None,
+        )
+
+    def _batch_destination_effect_applies(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+        target: Card,
+    ) -> bool:
+        """Whether this operation has the chosen first destination."""
+
+        order = plan.destination_orders.get(target.id)
+        if not order:
+            return True
+        current_index = next(
+            (
+                index
+                for index, intent in enumerate(plan.intents)
+                if intent.source is source
+                and intent.declaration_sequence == declaration_sequence
+                and intent.operation_index == operation_index
+            ),
+            None,
+        )
+        if current_index is None:
+            return True
+        winning_destination = self._batch_intent_destination(
+            plan.intents[order[0]]
+        )
+        return self._batch_intent_destination(
+            plan.intents[current_index]
+        ) is winning_destination
+
+    def _batch_tapped_state_effect_is_deferred(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+        target: Card,
+    ) -> bool:
+        order = plan.tapped_state_orders.get(target.id)
+        if not order:
+            return False
+        return any(
+            intent_index in order
+            and intent.source is source
+            and intent.declaration_sequence == declaration_sequence
+            and intent.operation_index == operation_index
+            for intent_index, intent in enumerate(plan.intents)
+        )
+
+    def _tap_land_for_pool_effect(
+        self,
+        spell: SpellOnStack,
+        effect: TapLandsAndEmptyManaPoolEffect,
+        permanent: Card,
+    ) -> None:
+        """Tap one land and perform Drain Power's production instruction."""
+
+        if permanent.tapped:
+            return
+        mana_abilities = tuple(
+            ability
+            for ability in self.activated_abilities(permanent)
+            if isinstance(ability, ActivatedManaAbility)
+        )
+        self._tap_permanent(permanent)
+        if not effect.produce_land_mana:
+            return
+        caster = self.player(spell.caster_id)
+        bonus = sum(
+            bonus_effect.amount
+            for bonus_owner in self.players
+            for source in bonus_owner.battlefield
+            if self.continuous_permanent_is_active(source)
+            for bonus_effect in source.definition.land_mana_bonus_effects
+        )
+        by_color: dict[Color, int] = {}
+        for ability in mana_abilities:
+            by_color[ability.color] = max(
+                by_color.get(ability.color, 0),
+                ability.amount + bonus,
+            )
+        options = tuple(by_color.items())
+        if len(options) == 1:
+            color, amount = options[0]
+            caster.mana_pool.add(color, amount)
+        elif options:
+            self.pending_drain_power_choices.append(
+                PendingDrainPowerChoice(
+                    caster.id,
+                    spell.decision_maker_id,
+                    permanent.id,
+                    permanent.name,
+                    options,
+                )
+            )
+
+    def _resolve_ordered_batch_tapped_state_effects(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Replay each chosen tap/untap paradox from first to last."""
+
+        for target_id, order in plan.tapped_state_orders.items():
+            target = next(
+                (
+                    card
+                    for player in self.players
+                    for card in player.battlefield
+                    if card.id == target_id
+                ),
+                None,
+            )
+            if target is None:
+                continue
+            for intent_index in order:
+                intent = plan.intents[intent_index]
+                tapped = self._batch_intent_tapped_state(plan, intent)
+                if tapped is None:
+                    continue
+                if isinstance(
+                    intent.operation, TapLandsAndEmptyManaPoolEffect
+                ):
+                    spell = next(
+                        spell
+                        for spell in plan.spells
+                        if spell.card is intent.source
+                    )
+                    self._tap_land_for_pool_effect(
+                        spell, intent.operation, target
+                    )
+                elif tapped:
+                    self._tap_permanent(target)
+                else:
+                    target.tapped = False
+
+    def _batch_power_modifier_is_deferred(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+    ) -> bool:
+        ordered_indexes = {
+            intent_index
+            for order in plan.power_modifier_orders
+            for intent_index in order
+        }
+        return any(
+            intent_index in ordered_indexes
+            and intent.source is source
+            and intent.declaration_sequence == declaration_sequence
+            and intent.operation_index == operation_index
+            for intent_index, intent in enumerate(plan.intents)
+        )
+
+    def _apply_batch_power_modifier_intent(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> None:
+        """Apply one deferred modifier at its player-selected timestamp."""
+
+        operation = intent.operation
+        if isinstance(operation, TemporaryPumpEffect):
+            spell = next(
+                spell for spell in plan.spells if spell.card is intent.source
+            )
+            power = operation.power + operation.power_per_x * spell.x_value
+            toughness = (
+                operation.toughness
+                + operation.toughness_per_x * spell.x_value
+            )
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    continue
+                self.temporary_creature_effects.setdefault(
+                    target.id, []
+                ).append(
+                    self._timestamp_continuous_effect(
+                        ContinuousEffect(
+                            power=power,
+                            toughness=toughness,
+                            power_multiplier=operation.power_multiplier,
+                            granted_abilities=operation.granted_abilities,
+                        )
+                    )
+                )
+                if operation.destroy_at_end_of_turn_if_attacked:
+                    self.destroy_at_end_of_turn_if_attacked.add(target.id)
+            return
+        if isinstance(operation, ActivatedPumpAbility):
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    continue
+                self.temporary_creature_effects.setdefault(
+                    target.id, []
+                ).append(
+                    self._timestamp_continuous_effect(
+                        ContinuousEffect(
+                            power=operation.power,
+                            toughness=operation.toughness,
+                            granted_abilities=operation.granted_abilities,
+                        )
+                    )
+                )
+            return
+        if (
+            intent.kind is BatchIntentKind.PERMANENT_ENTRY
+            and intent.source.zone is Zone.BATTLEFIELD
+        ):
+            self.battlefield_entry_sequence += 1
+            intent.source.battlefield_entry_sequence = (
+                self.battlefield_entry_sequence
+            )
+
+    def _resolve_ordered_batch_power_modifiers(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Apply every noncommuting power component first-to-last."""
+
+        for order in plan.power_modifier_orders:
+            for intent_index in order:
+                self._apply_batch_power_modifier_intent(
+                    plan, plan.intents[intent_index]
+                )
+
+    def _batch_land_type_intent_is_deferred(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+    ) -> bool:
+        ordered_indexes = {
+            intent_index
+            for order in plan.land_type_orders
+            for intent_index in order
+        }
+        return any(
+            intent_index in ordered_indexes
+            and intent.source is source
+            and intent.declaration_sequence == declaration_sequence
+            and intent.operation_index == operation_index
+            for intent_index, intent in enumerate(plan.intents)
+        )
+
+    def _apply_activated_land_type_setting(
+        self,
+        source: Card,
+        controller_id: str,
+        ability: ActivatedLandTypeAbility,
+        targets: tuple[Card | PlayerState, ...],
+    ) -> None:
+        """Timestamp one Liege or Cyclopean Tomb land-type setting."""
+
+        if source.zone is not Zone.BATTLEFIELD and not ability.persists_after_source_leaves:
+            return
+        for target in targets:
+            if not isinstance(target, Card):
+                continue
+            self.battlefield_entry_sequence += 1
+            if ability.persists_after_source_leaves:
+                if source.persistent_effect_instance_id is None:
+                    source.persistent_effect_instance_id = uuid4()
+                mark = CyclopeanTombMark(
+                    uuid4(),
+                    source.persistent_effect_instance_id,
+                    target.id,
+                    self.battlefield_entry_sequence,
+                    ability.replacement_subtype,
+                )
+                self.cyclopean_tomb_marks.append(mark)
+                if source.zone is not Zone.BATTLEFIELD:
+                    self.cyclopean_tomb_cleanup_controllers[
+                        mark.effect_id
+                    ] = controller_id
+                target.counters["mire"] = target.counters.get("mire", 0) + 1
+            else:
+                target.land_type_marks[source.id] = (
+                    ability.replacement_subtype,
+                    self.battlefield_entry_sequence,
+                )
+
+    def _resolve_ordered_batch_land_type_settings(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Timestamp competing land-type setters in the selected order."""
+
+        seen: set[int] = set()
+        for order in plan.land_type_orders:
+            for intent_index in order:
+                if intent_index in seen:
+                    continue
+                seen.add(intent_index)
+                intent = plan.intents[intent_index]
+                if intent.kind is BatchIntentKind.PERMANENT_ENTRY:
+                    if intent.source.zone is Zone.BATTLEFIELD:
+                        self.battlefield_entry_sequence += 1
+                        intent.source.battlefield_entry_sequence = (
+                            self.battlefield_entry_sequence
+                        )
+                    continue
+                if isinstance(intent.operation, ActivatedLandTypeAbility):
+                    self._apply_activated_land_type_setting(
+                        intent.source,
+                        intent.controller_id,
+                        intent.operation,
+                        intent.targets,
+                    )
+
+    def _batch_turn_sequence_intent_is_deferred(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+    ) -> bool:
+        ordered_indexes = {
+            intent_index
+            for order in plan.turn_sequence_orders
+            for intent_index in order
+        }
+        return any(
+            intent_index in ordered_indexes
+            and intent.source is source
+            and intent.declaration_sequence == declaration_sequence
+            and intent.operation_index == operation_index
+            for intent_index, intent in enumerate(plan.intents)
+        )
+
+    def _resolve_ordered_batch_turn_sequence_effects(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Create extra turns in the selected effect order."""
+
+        seen: set[int] = set()
+        for order in plan.turn_sequence_orders:
+            for intent_index in order:
+                if intent_index in seen:
+                    continue
+                seen.add(intent_index)
+                player_id = self._batch_intent_extra_turn_player(
+                    plan.intents[intent_index]
+                )
+                if player_id is not None:
+                    self.schedule_extra_turn(player_id)
+
+    def _batch_hand_library_intent_is_deferred(
+        self,
+        plan: BatchResolutionPlan,
+        source: Card,
+        declaration_sequence: int,
+        operation_index: int,
+    ) -> bool:
+        ordered_indexes = {
+            intent_index
+            for order in plan.hand_library_orders
+            for intent_index in order
+        }
+        return any(
+            intent_index in ordered_indexes
+            and intent.source is source
+            and intent.declaration_sequence == declaration_sequence
+            and intent.operation_index == operation_index
+            for intent_index, intent in enumerate(plan.intents)
+        )
+
+    def _batch_hand_library_choice_pending(self) -> bool:
+        """Whether an ordered operation is awaiting a required player choice."""
+
+        return bool(
+            self.pending_discard_choices
+            or self.pending_library_discard_choices
+            or self.pending_natural_selection_choices
+            or self.pending_library_search_choices
+            or self.pending_balance is not None
+            or self.pending_hand_reveals
+            or self.pending_word_command_choices
+        )
+
+    def _apply_batch_hand_library_intent(
+        self, plan: BatchResolutionPlan, intent: BatchEffectIntent
+    ) -> None:
+        """Apply one deferred hand/library operation at its chosen timestamp."""
+
+        operation = intent.operation
+        spell = next(
+            (spell for spell in plan.spells if spell.card is intent.source),
+            None,
+        )
+        if isinstance(operation, DrawCardsEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    target.draw(amount)
+            return
+        if isinstance(operation, (ActivatedDrawAbility, ActivatedEventDrawAbility)):
+            self.player(intent.controller_id).draw(operation.amount)
+            return
+        if isinstance(operation, GainLifeEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            for target in intent.targets:
+                if not isinstance(target, Card):
+                    self._gain_life(target, amount)
+            return
+        if isinstance(operation, ActivatedEventLifeGainAbility):
+            self._gain_life(
+                self.player(intent.controller_id), operation.amount
+            )
+            return
+        if isinstance(operation, DiscardCardsEffect):
+            amount = operation.amount + operation.amount_per_x * (
+                spell.x_value if spell is not None else 0
+            )
+            for target in intent.targets:
+                if isinstance(target, Card):
+                    continue
+                if operation.random:
+                    self._discard_random(
+                        target, amount, source_name=intent.source.name
+                    )
+                elif target.hand:
+                    self.pending_discard_choices.append(
+                        PendingDiscardChoice(
+                            target.id, amount, intent.source.name
+                        )
+                    )
+            return
+        if isinstance(operation, ActivatedDiscardAbility):
+            controller = self.player(intent.controller_id)
+            opponent = self.players[
+                (self.players.index(controller) + 1) % len(self.players)
+            ]
+            if opponent.hand:
+                self.pending_discard_choices.append(
+                    PendingDiscardChoice(
+                        opponent.id, operation.amount, intent.source.name
+                    )
+                )
+            return
+        if isinstance(operation, ActivatedRevealHandAbility):
+            self._queue_opponent_hand_reveal(intent.controller_id)
+            return
+        if isinstance(operation, WordOfCommandEffect):
+            opponent = next(
+                player
+                for player in self.players
+                if player.id != intent.controller_id
+            )
+            self.pending_word_command_choices.append(
+                PendingWordOfCommandChoice(
+                    uuid4(),
+                    intent.decision_maker_id,
+                    opponent.id,
+                )
+            )
+            return
+        if isinstance(operation, DiscardHandsAndDrawEffect):
+            for player in self.players:
+                self._discard_forced(
+                    player,
+                    tuple(player.hand),
+                    source_name=intent.source.name,
+                    draw_after=operation.draw_count,
+                )
+            return
+        if isinstance(operation, ShuffleHandAndGraveyardEffect):
+            for player in self.players:
+                recyclable = tuple(player.hand) + tuple(player.graveyard)
+                for recyclable_card in recyclable:
+                    self._move_card(recyclable_card, Zone.LIBRARY)
+                player.shuffle_library(self.random)
+            for player in self.players:
+                player.draw(operation.draw_count)
+            return
+        if isinstance(operation, DiscardHandAnteAndDrawEffect):
+            caster = self.player(intent.controller_id)
+            self._discard_forced(
+                caster,
+                tuple(caster.hand),
+                source_name=intent.source.name,
+                draw_after=operation.draw_count,
+                ante_after=True,
+            )
+            return
+        if isinstance(operation, SwapLibraryTopWithAnteEffect):
+            caster = self.player(intent.controller_id)
+            if caster.library:
+                target = next(
+                    target for target in intent.targets if isinstance(target, Card)
+                )
+                ante_player = next(
+                    player for player in self.players if target in player.ante
+                )
+                replacement = caster.library.pop()
+                ante_player.ante.remove(target)
+                target.owner_id = caster.id
+                target.controller_id = caster.id
+                target.zone = Zone.LIBRARY
+                caster.library.append(target)
+                replacement.owner_id = ante_player.id
+                replacement.controller_id = ante_player.id
+                replacement.zone = Zone.ANTE
+                ante_player.ante.append(replacement)
+            return
+        if isinstance(operation, NaturalSelectionEffect):
+            assert spell is not None
+            target = next(
+                target for target in intent.targets if not isinstance(target, Card)
+            )
+            self.pending_natural_selection_choices.append(
+                PendingNaturalSelectionChoice(
+                    spell.decision_maker_id,
+                    target.id,
+                    [card.id for card in reversed(target.library[-3:])],
+                )
+            )
+            return
+        if isinstance(operation, LibrarySearchEffect):
+            assert spell is not None
+            self.pending_library_search_choices.append(
+                PendingLibrarySearchChoice(
+                    spell.decision_maker_id,
+                    intent.controller_id,
+                    intent.source.name,
+                    operation.card_types,
+                    operation.destination,
+                )
+            )
+            return
+        if isinstance(operation, BalanceEffect):
+            intent_index = next(
+                index
+                for index, candidate in enumerate(plan.intents)
+                if candidate is intent
+            )
+            self._begin_balance(
+                plan.characteristic_snapshots.get(intent_index)
+            )
+            return
+        if isinstance(operation, MoveTargetsEffect):
+            assert spell is not None
+            caster = self.player(intent.controller_id)
+            for target in intent.targets:
+                if (
+                    not isinstance(target, Card)
+                    or not self._batch_destination_effect_applies(
+                        plan,
+                        intent.source,
+                        intent.declaration_sequence,
+                        intent.operation_index,
+                        target,
+                    )
+                ):
+                    continue
+                if operation.under_caster_control:
+                    target.controller_id = caster.id
+                self._move_card(target, operation.destination)
+            return
+        raise RuntimeError("unknown deferred hand/library operation")
+
+    def _continue_ordered_batch_hand_library_effects(
+        self, plan: BatchResolutionPlan
+    ) -> bool:
+        """Run chosen operations until complete or one needs player input."""
+
+        if not plan.pending_hand_library_intents:
+            return True
+        if self._batch_hand_library_choice_pending():
+            return False
+        while plan.pending_hand_library_intents:
+            intent_index = plan.pending_hand_library_intents.pop(0)
+            self._apply_batch_hand_library_intent(
+                plan, plan.intents[intent_index]
+            )
+            if self._batch_hand_library_choice_pending():
+                return False
+        return True
+
+    def _restore_commanded_spell_priority(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Restore a spell forced while its containing batch was suspended."""
+
+        commanded_id = plan.commanded_spell_interruptible_id
+        if (
+            plan.finalized
+            and commanded_id is not None
+            and any(card.id == commanded_id for card in self.stack)
+        ):
+            self.interruptible_spell_id = commanded_id
+            self.priority_player_index = (
+                plan.commanded_spell_priority_player_index
+            )
+            self.consecutive_passes = 0
+
+    def _resume_ordered_batch_hand_library_effects(self) -> None:
+        """Resume a batch after its current interactive operation completes."""
+
+        plan = self.pending_batch_resolution
+        if (
+            plan is None
+            or plan.finalized
+            or not plan.base_effects_applied
+            or self._batch_hand_library_choice_pending()
+        ):
+            return
+        self._commit_batch_resolution(plan)
+        if plan.finalized and not self.pending_batch_destination_fallbacks:
+            self.pending_batch_resolution = None
+        if self.pending_damage is None and self.pending_destruction is None:
+            self._restore_pending_context_priority()
+            self._restore_commanded_spell_priority(plan)
+
+    def _resume_deferred_batch_entries(self) -> None:
+        """Resume targeted permanent entries after destruction is known."""
+
+        plan = self.pending_batch_resolution
+        if (
+            plan is None
+            or plan.finalized
+            or not (
+                plan.pending_aura_entry_intents
+                or plan.pending_copy_entry_intents
+            )
+            or self.pending_damage is not None
+            or self.pending_destruction is not None
+        ):
+            return
+        self._commit_batch_resolution(plan)
+        if plan.finalized and not self.pending_batch_destination_fallbacks:
+            self.pending_batch_resolution = None
+
+    def _prepare_batch_destination_fallbacks(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Remember later destinations if a first destruction regenerates."""
+
+        self.pending_batch_destination_fallbacks.clear()
+        for target_id, order in plan.destination_orders.items():
+            if (
+                len(order) > 1
+                and self._batch_intent_destination(plan.intents[order[0]])
+                is Zone.GRAVEYARD
+            ):
+                self.pending_batch_destination_fallbacks[target_id] = order[1:]
+
+    def _resolve_regenerated_batch_destination_fallbacks(
+        self, regenerated_card_ids: set[UUID]
+    ) -> None:
+        """Apply the next ordered destination when destruction was replaced."""
+
+        plan = self.pending_batch_resolution
+        if plan is None or not self.pending_batch_destination_fallbacks:
+            return
+        for target_id in tuple(self.pending_batch_destination_fallbacks):
+            if target_id not in regenerated_card_ids:
+                self.pending_batch_destination_fallbacks.pop(target_id, None)
+                continue
+            target = next(
+                (
+                    card
+                    for player in self.players
+                    for card in player.battlefield
+                    if card.id == target_id
+                ),
+                None,
+            )
+            order = self.pending_batch_destination_fallbacks.pop(target_id)
+            if target is None or not order:
+                continue
+            destination = self._batch_intent_destination(plan.intents[order[0]])
+            matching_intents = tuple(
+                intent
+                for intent in plan.intents
+                if self._batch_intent_destination(intent) is destination
+                and target in self._batch_destination_targets(intent)
+            )
+            if destination is Zone.EXILE:
+                life_awards = [
+                    (
+                        self.player(target.controller_id or target.owner_id),
+                        max(0, self.creature_power(target)),
+                    )
+                    for intent in matching_intents
+                    if isinstance(intent.operation, ExileTargetsEffect)
+                    and intent.operation.controller_gains_life_equal_to_power
+                ]
+                self._move_card(target, Zone.EXILE)
+                for player, amount in life_awards:
+                    self._gain_life(player, amount)
+                continue
+            move_intent = next(
+                (
+                    intent
+                    for intent in matching_intents
+                    if isinstance(intent.operation, MoveTargetsEffect)
+                ),
+                None,
+            )
+            if move_intent is None or destination is None:
+                continue
+            effect = move_intent.operation
+            if effect.under_caster_control:
+                target.controller_id = move_intent.controller_id
+            self._move_card(target, destination)
+            if destination is Zone.BATTLEFIELD:
+                target.entered_battlefield_turn = self.turn_number
+        if (
+            not self.pending_batch_destination_fallbacks
+            and plan.finalized
+            and not plan.pending_aura_entry_intents
+            and not plan.pending_copy_entry_intents
+        ):
+            self.pending_batch_resolution = None
+
+    def _batch_aura_entry_disposition(
+        self, plan: BatchResolutionPlan, intent_index: int
+    ) -> str:
+        """Return ``normal``, ``skip``, or ``defer`` for an Aura entry."""
+
+        intent = plan.intents[intent_index]
+        if not self._batch_intent_is_battlefield_aura_entry(intent):
+            return "normal"
+        target = next(
+            target for target in intent.targets if isinstance(target, Card)
+        )
+        for order in plan.aura_entry_orders:
+            if intent_index not in order:
+                continue
+            aura_position = order.index(intent_index)
+            earlier_removals = [
+                index
+                for index in order[:aura_position]
+                if self._batch_intent_destination(plan.intents[index])
+                not in {None, Zone.BATTLEFIELD}
+                and target in self._batch_destination_targets(
+                    plan.intents[index]
+                )
+            ]
+            if not earlier_removals:
+                return "normal"
+            first_destination = self._batch_intent_destination(
+                plan.intents[earlier_removals[0]]
+            )
+            return "defer" if first_destination is Zone.GRAVEYARD else "skip"
+        return "normal"
+
+    def _batch_copy_entry_disposition(
+        self, plan: BatchResolutionPlan, intent_index: int
+    ) -> str:
+        """Return ``normal``, ``skip``, or ``defer`` for a copy entry."""
+
+        intent = plan.intents[intent_index]
+        if not self._batch_intent_is_copy_entry(intent):
+            return "normal"
+        target = next(
+            target for target in intent.targets if isinstance(target, Card)
+        )
+        for order in plan.copy_entry_orders:
+            if intent_index not in order:
+                continue
+            copy_position = order.index(intent_index)
+            earlier_removals = [
+                index
+                for index in order[:copy_position]
+                if self._batch_intent_destination(plan.intents[index])
+                not in {None, Zone.BATTLEFIELD}
+                and target in self._batch_destination_targets(
+                    plan.intents[index]
+                )
+            ]
+            if not earlier_removals:
+                return "normal"
+            first_destination = self._batch_intent_destination(
+                plan.intents[earlier_removals[0]]
+            )
+            return "defer" if first_destination is Zone.GRAVEYARD else "skip"
+        return "normal"
+
+    def _resolve_one_batch_copy_entry(
+        self, plan: BatchResolutionPlan, intent_index: int
+    ) -> None:
+        """Copy a still-present model and put its copy permanent into play."""
+
+        intent = plan.intents[intent_index]
+        spell = next(
+            spell for spell in plan.spells if spell.card is intent.source
+        )
+        card = spell.card
+        target = next(
+            target for target in intent.targets if isinstance(target, Card)
+        )
+        if card.zone is not Zone.STACK or target.zone is not Zone.BATTLEFIELD:
+            return
+        copies_artifact = card.definition.copies_artifact
+        copied_animated_creature = bool(
+            card.definition.copies_creature
+            and self.creature_has_animate_dead(target)
+        )
+        if copies_artifact:
+            self._copy_artifact_definition(card, target)
+        else:
+            self._copy_creature_definition(card, target)
+        self._move_card(card, Zone.BATTLEFIELD)
+        if card.definition.x_enters_with_counter is not None:
+            card.counters[card.definition.x_enters_with_counter] = spell.x_value
+        card.entered_battlefield_turn = self.turn_number
+        cast_definition = card.printed_definition or card.definition
+        if (
+            CardType.CREATURE in cast_definition.card_types
+            and CardType.ARTIFACT not in cast_definition.card_types
+        ):
+            card.summoned_turn = self.turn_number
+        if copied_animated_creature:
+            self._destroy_permanents((card,))
+
+    def _resolve_deferred_batch_copy_entries(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Resolve copy entries after an earlier destruction is settled."""
+
+        for intent_index in plan.pending_copy_entry_intents:
+            self._resolve_one_batch_copy_entry(plan, intent_index)
+        plan.pending_copy_entry_intents.clear()
+
+    def _resolve_deferred_batch_aura_entries(
+        self, plan: BatchResolutionPlan
+    ) -> None:
+        """Attach Auras whose earlier destruction failed to remove a target."""
+
+        for intent_index in plan.pending_aura_entry_intents:
+            intent = plan.intents[intent_index]
+            spell = next(
+                spell for spell in plan.spells if spell.card is intent.source
+            )
+            target = next(
+                target
+                for target in intent.targets
+                if isinstance(target, Card)
+            )
+            card = spell.card
+            if card.zone is not Zone.STACK or target.zone is not Zone.BATTLEFIELD:
+                continue
+            self._move_card(card, Zone.BATTLEFIELD)
+            card.entered_battlefield_turn = self.turn_number
+            card.enchanted_card_id = target.id
+            if any(
+                effect.controls_attached_card
+                for effect in card.definition.continuous_effects
+            ):
+                self._reconcile_control_effects()
+            if card.definition.consecrates_attached_land:
+                self._destroy_permanents(
+                    aura
+                    for player in self.players
+                    for aura in tuple(player.battlefield)
+                    if aura is not card
+                    and aura.enchanted_card_id == target.id
+                )
+            if card.definition.taps_attached_on_entry:
+                self._tap_permanent(target)
+            if card.definition.damages_attached_on_entry:
+                self._deal_damage(
+                    target,
+                    card.definition.damages_attached_on_entry,
+                    card.name,
+                    source_card=card,
+                    source_controller_id=spell.caster_id,
+                )
+        plan.pending_aura_entry_intents.clear()
+
+    def _resolve_batch_permanent_spells(
+        self,
+        plan: BatchResolutionPlan,
     ) -> None:
         """Move legal permanent spells into play as one batch."""
 
+        legality = plan.legality
         control_aura_entered = False
         # Slow permanents enter as part of the same instant. This lets their
         # continuous effects participate in the final state of the batch.
-        for spell in spells:
+        for spell in plan.spells:
             card = spell.card
             resolved_targets = legality.spell_targets[card.id]
             if legality.spells[card.id] and card.definition.is_permanent:
-                copied_animated_creature = False
+                intent_index = next(
+                    index
+                    for index, intent in enumerate(plan.intents)
+                    if intent.kind is BatchIntentKind.PERMANENT_ENTRY
+                    and intent.source is card
+                )
+                aura_disposition = self._batch_aura_entry_disposition(
+                    plan, intent_index
+                )
+                if aura_disposition != "normal":
+                    if aura_disposition == "defer":
+                        plan.pending_aura_entry_intents.append(intent_index)
+                    continue
+                copy_disposition = self._batch_copy_entry_disposition(
+                    plan, intent_index
+                )
+                if copy_disposition != "normal":
+                    if copy_disposition == "defer":
+                        plan.pending_copy_entry_intents.append(intent_index)
+                    continue
+                if self._batch_intent_is_copy_entry(plan.intents[intent_index]):
+                    self._resolve_one_batch_copy_entry(plan, intent_index)
+                    continue
                 if card.definition.animates_dead_creature:
                     target = next(
                         (
@@ -1791,31 +4875,6 @@ class PriorityBatchResolutionMixin:
                     target.entered_battlefield_turn = self.turn_number
                     card.enchanted_card_id = target.id
                     continue
-                if card.definition.copies_artifact:
-                    target = next(
-                        (
-                            target
-                            for target in resolved_targets
-                            if isinstance(target, Card)
-                        ),
-                        None,
-                    )
-                    assert target is not None
-                    self._copy_artifact_definition(card, target)
-                elif card.definition.copies_creature:
-                    target = next(
-                        (
-                            target
-                            for target in resolved_targets
-                            if isinstance(target, Card)
-                        ),
-                        None,
-                    )
-                    assert target is not None
-                    copied_animated_creature = self.creature_has_animate_dead(
-                        target
-                    )
-                    self._copy_creature_definition(card, target)
                 self._move_card(card, Zone.BATTLEFIELD)
                 if card.definition.x_enters_with_counter is not None:
                     card.counters[card.definition.x_enters_with_counter] = spell.x_value
@@ -1862,6 +4921,13 @@ class PriorityBatchResolutionMixin:
                     card.definition.taps_attached_on_entry
                     and spell.targets
                     and isinstance(spell.targets[0], Card)
+                    and not self._batch_tapped_state_effect_is_deferred(
+                        plan,
+                        card,
+                        spell.declaration_sequence,
+                        0,
+                        spell.targets[0],
+                    )
                 ):
                     self._tap_permanent(spell.targets[0])
                 if (
@@ -1882,9 +4948,6 @@ class PriorityBatchResolutionMixin:
                     and CardType.ARTIFACT not in cast_definition.card_types
                 ):
                     card.summoned_turn = self.turn_number
-                if copied_animated_creature:
-                    self._destroy_permanents((card,))
-
         # Aura attachments are established above as part of permanent entry.
         # Reconcile control only after every permanent in the simultaneous
         # batch has entered, so all control-changing Auras see the complete
@@ -1894,19 +4957,39 @@ class PriorityBatchResolutionMixin:
 
     def _resolve_batch_spell_effects(
         self,
-        spells: tuple[SpellOnStack, ...],
-        legality: BatchLegalitySnapshot,
-    ) -> BatchConsequences:
+        plan: BatchResolutionPlan,
+        consequences: BatchConsequences,
+    ) -> None:
         """Apply nonpermanent spell effects and collect deferred results."""
 
-        consequences = BatchConsequences()
-        for spell in spells:
+        legality = plan.legality
+        for spell in plan.spells:
             card = spell.card
             if not legality.spells[card.id] or card.definition.is_permanent:
                 continue
             caster = self.player(spell.caster_id)
             resolved_targets = legality.spell_targets[card.id]
-            for effect in card.definition.spell_effects:
+            for operation_index, effect in enumerate(
+                card.definition.spell_effects
+            ):
+                if self._batch_hand_library_intent_is_deferred(
+                    plan,
+                    card,
+                    spell.declaration_sequence,
+                    operation_index,
+                ):
+                    continue
+                intent_index = self._batch_intent_index(
+                    plan,
+                    card,
+                    spell.declaration_sequence,
+                    operation_index,
+                )
+                characteristic_snapshot = (
+                    plan.characteristic_snapshots.get(intent_index)
+                    if intent_index is not None
+                    else None
+                )
                 if isinstance(effect, DamageEffect):
                     recipients = (
                         (caster,)
@@ -1938,9 +5021,17 @@ class PriorityBatchResolutionMixin:
                             source_colors=self.card_colors(card),
                         )
                 elif isinstance(effect, DrainLifeEffect):
+                    toughness_by_target = dict(
+                        characteristic_snapshot.toughness_by_target
+                        if characteristic_snapshot is not None
+                        else ()
+                    )
                     for recipient in resolved_targets:
                         cap = (
-                            self.creature_toughness(recipient)
+                            toughness_by_target.get(
+                                recipient.id,
+                                self.creature_toughness(recipient),
+                            )
                             if isinstance(recipient, Card) else None
                         )
                         self._deal_damage(
@@ -1953,6 +5044,13 @@ class PriorityBatchResolutionMixin:
                             life_gain_cap=cap,
                         )
                 elif isinstance(effect, TemporaryPumpEffect):
+                    if self._batch_power_modifier_is_deferred(
+                        plan,
+                        card,
+                        spell.declaration_sequence,
+                        operation_index,
+                    ):
+                        continue
                     power = effect.power + effect.power_per_x * spell.x_value
                     toughness = (
                         effect.toughness
@@ -2130,11 +5228,22 @@ class PriorityBatchResolutionMixin:
                 elif isinstance(effect, CamouflageEffect):
                     self.apply_camouflage(spell.caster_id)
                 elif isinstance(effect, BalanceEffect):
-                    self._begin_balance()
+                    self._begin_balance(characteristic_snapshot)
                 elif isinstance(effect, ExtraTurnEffect):
-                    self.schedule_extra_turn(spell.caster_id)
+                    if not self._batch_turn_sequence_intent_is_deferred(
+                        plan,
+                        card,
+                        spell.declaration_sequence,
+                        operation_index,
+                    ):
+                        self.schedule_extra_turn(spell.caster_id)
                 elif isinstance(effect, GlobalDamageEffect):
                     amount = effect.amount + effect.amount_per_x * spell.x_value
+                    snapshotted_ids = (
+                        set(characteristic_snapshot.target_ids)
+                        if characteristic_snapshot is not None
+                        else None
+                    )
                     if effect.damage_players:
                         for player in self.players:
                             self._deal_damage(
@@ -2146,18 +5255,25 @@ class PriorityBatchResolutionMixin:
                             )
                     for player in self.players:
                         for creature in tuple(player.battlefield):
-                            if CardType.CREATURE not in self.card_types(creature):
-                                continue
-                            has_flying = (
-                                KeywordAbility.FLYING
-                                in self.creature_abilities(creature)
-                            )
                             if (
-                                effect.creatures_with_flying is not None
-                                and has_flying
-                                is not effect.creatures_with_flying
+                                snapshotted_ids is not None
+                                and creature.id not in snapshotted_ids
                             ):
                                 continue
+                            if CardType.CREATURE not in self.card_types(creature):
+                                if snapshotted_ids is None:
+                                    continue
+                            if snapshotted_ids is None:
+                                has_flying = (
+                                    KeywordAbility.FLYING
+                                    in self.creature_abilities(creature)
+                                )
+                                if (
+                                    effect.creatures_with_flying is not None
+                                    and has_flying
+                                    is not effect.creatures_with_flying
+                                ):
+                                    continue
                             self._deal_damage(
                                 creature,
                                 amount,
@@ -2170,8 +5286,20 @@ class PriorityBatchResolutionMixin:
                         (target, effect.regeneration_allowed)
                         for target in resolved_targets
                         if isinstance(target, Card)
+                        and self._batch_destination_effect_applies(
+                            plan,
+                            card,
+                            spell.declaration_sequence,
+                            operation_index,
+                            target,
+                        )
                     )
                 elif isinstance(effect, DestroyAllEffect):
+                    snapshotted_ids = (
+                        set(characteristic_snapshot.target_ids)
+                        if characteristic_snapshot is not None
+                        else None
+                    )
                     effect = replace(
                         effect,
                         subtypes=frozenset(
@@ -2183,20 +5311,39 @@ class PriorityBatchResolutionMixin:
                         (permanent, effect.regeneration_allowed)
                         for player in self.players
                         for permanent in tuple(player.battlefield)
-                        if effect.matches(
+                        if (
+                            permanent.id in snapshotted_ids
+                            if snapshotted_ids is not None
+                            else effect.matches(
+                                permanent,
+                                current_card_types=self.card_types(permanent),
+                                current_subtypes=(
+                                    self.land_subtypes(permanent)
+                                    if CardType.LAND
+                                    in permanent.definition.card_types
+                                    else None
+                                ),
+                            )
+                        )
+                        and self._batch_destination_effect_applies(
+                            plan,
+                            card,
+                            spell.declaration_sequence,
+                            operation_index,
                             permanent,
-                            current_card_types=self.card_types(permanent),
-                            current_subtypes=(
-                                self.land_subtypes(permanent)
-                                if CardType.LAND
-                                in permanent.definition.card_types
-                                else None
-                            ),
                         )
                     )
                 elif isinstance(effect, MoveTargetsEffect):
                     for target in resolved_targets:
                         if not isinstance(target, Card):
+                            continue
+                        if not self._batch_destination_effect_applies(
+                            plan,
+                            card,
+                            spell.declaration_sequence,
+                            operation_index,
+                            target,
+                        ):
                             continue
                         if (
                             effect.destination is Zone.BATTLEFIELD
@@ -2214,9 +5361,49 @@ class PriorityBatchResolutionMixin:
                         if effect.destination is Zone.BATTLEFIELD:
                             target.entered_battlefield_turn = self.turn_number
                 elif isinstance(effect, ExileTargetsEffect):
+                    intent_index = next(
+                        (
+                            index
+                            for index, intent in enumerate(plan.intents)
+                            if intent.source is card
+                            and intent.declaration_sequence
+                            == spell.declaration_sequence
+                            and intent.operation_index == operation_index
+                        ),
+                        None,
+                    )
                     for target in resolved_targets:
-                        if isinstance(target, Card):
-                            consequences.exile.append((target, effect))
+                        if isinstance(
+                            target, Card
+                        ) and self._batch_destination_effect_applies(
+                            plan,
+                            card,
+                            spell.declaration_sequence,
+                            operation_index,
+                            target,
+                        ):
+                            snapshot = (
+                                plan.swords_power_snapshots.get(
+                                    (intent_index, target.id)
+                                )
+                                if intent_index is not None
+                                else None
+                            )
+                            controller_snapshot = (
+                                plan.swords_controller_snapshots.get(
+                                    (intent_index, target.id)
+                                )
+                                if intent_index is not None
+                                else None
+                            )
+                            consequences.exile.append(
+                                (
+                                    target,
+                                    effect,
+                                    snapshot,
+                                    controller_snapshot,
+                                )
+                            )
                 elif isinstance(effect, ReverseDamageEffect):
                     if spell.damage_source_key is None:
                         continue
@@ -2255,6 +5442,14 @@ class PriorityBatchResolutionMixin:
                     tapped = spell.chosen_mode == "Tap"
                     for target in resolved_targets:
                         if isinstance(target, Card):
+                            if self._batch_tapped_state_effect_is_deferred(
+                                plan,
+                                card,
+                                spell.declaration_sequence,
+                                operation_index,
+                                target,
+                            ):
+                                continue
                             if tapped:
                                 self._tap_permanent(target)
                             else:
@@ -2270,43 +5465,17 @@ class PriorityBatchResolutionMixin:
                                     permanent.controller_id == target.id
                                     and CardType.LAND in self.card_types(permanent)
                                 ):
-                                    if permanent.tapped:
+                                    if self._batch_tapped_state_effect_is_deferred(
+                                        plan,
+                                        card,
+                                        spell.declaration_sequence,
+                                        operation_index,
+                                        permanent,
+                                    ):
                                         continue
-                                    mana_abilities = tuple(
-                                        ability
-                                        for ability in self.activated_abilities(permanent)
-                                        if isinstance(ability, ActivatedManaAbility)
+                                    self._tap_land_for_pool_effect(
+                                        spell, effect, permanent
                                     )
-                                    self._tap_permanent(permanent)
-                                    if not effect.produce_land_mana:
-                                        continue
-                                    bonus = sum(
-                                        bonus_effect.amount
-                                        for bonus_owner in self.players
-                                        for source in bonus_owner.battlefield
-                                        if self.continuous_permanent_is_active(source)
-                                        for bonus_effect in source.definition.land_mana_bonus_effects
-                                    )
-                                    by_color: dict[Color, int] = {}
-                                    for ability in mana_abilities:
-                                        by_color[ability.color] = max(
-                                            by_color.get(ability.color, 0),
-                                            ability.amount + bonus,
-                                        )
-                                    options = tuple(by_color.items())
-                                    if len(options) == 1:
-                                        color, amount = options[0]
-                                        caster.mana_pool.add(color, amount)
-                                    elif options:
-                                        self.pending_drain_power_choices.append(
-                                            PendingDrainPowerChoice(
-                                                caster.id,
-                                                spell.decision_maker_id,
-                                                permanent.id,
-                                                permanent.name,
-                                                options,
-                                            )
-                                        )
                         if effect.transfer_to_caster:
                             for color in Color:
                                 amount = target.mana_pool.amount(color)
@@ -2315,19 +5484,43 @@ class PriorityBatchResolutionMixin:
                             target.mana_pool.empty()
                         else:
                             target.mana_pool.empty()
-        return consequences
-
     def _resolve_batch_activated_abilities(
         self,
-        abilities: tuple[AbilityOnStack, ...],
-        legality: BatchLegalitySnapshot,
+        plan: BatchResolutionPlan,
         consequences: BatchConsequences,
     ) -> None:
         """Apply legal activated abilities in the simultaneous batch."""
 
-        for declared, is_legal in zip(abilities, legality.abilities):
+        for declared, is_legal in zip(
+            plan.abilities, plan.legality.abilities
+        ):
             if not is_legal:
                 continue
+            if self._batch_hand_library_intent_is_deferred(
+                plan,
+                declared.source,
+                declared.declaration_sequence,
+                0,
+            ):
+                continue
+            if self._batch_land_type_intent_is_deferred(
+                plan,
+                declared.source,
+                declared.declaration_sequence,
+                0,
+            ):
+                continue
+            intent_index = self._batch_intent_index(
+                plan,
+                declared.source,
+                declared.declaration_sequence,
+                0,
+            )
+            characteristic_snapshot = (
+                plan.characteristic_snapshots.get(intent_index)
+                if intent_index is not None
+                else None
+            )
             if isinstance(declared.ability, ActivatedDamageAbility):
                 for target in declared.targets:
                     self._deal_damage(
@@ -2349,6 +5542,11 @@ class PriorityBatchResolutionMixin:
                 damage = (
                     declared.amount * declared.ability.damage_per_payment
                 )
+                snapshotted_ids = (
+                    set(characteristic_snapshot.target_ids)
+                    if characteristic_snapshot is not None
+                    else None
+                )
                 for player in self.players:
                     self._deal_damage(
                         player,
@@ -2359,7 +5557,11 @@ class PriorityBatchResolutionMixin:
                     )
                 for player in self.players:
                     for permanent in tuple(player.battlefield):
-                        if CardType.CREATURE in self.card_types(permanent):
+                        if (
+                            permanent.id in snapshotted_ids
+                            if snapshotted_ids is not None
+                            else CardType.CREATURE in self.card_types(permanent)
+                        ):
                             self._deal_damage(
                                 permanent,
                                 damage,
@@ -2372,17 +5574,49 @@ class PriorityBatchResolutionMixin:
                     (target, declared.ability.regeneration_allowed)
                     for target in declared.targets
                     if isinstance(target, Card)
+                    and self._batch_destination_effect_applies(
+                        plan,
+                        declared.source,
+                        declared.declaration_sequence,
+                        0,
+                        target,
+                    )
                 )
             elif isinstance(declared.ability, ActivatedDestroyAllAbility):
+                snapshotted_ids = (
+                    set(characteristic_snapshot.target_ids)
+                    if characteristic_snapshot is not None
+                    else None
+                )
                 consequences.destruction.extend(
                     (permanent, declared.ability.regeneration_allowed)
                     for player in self.players
                     for permanent in tuple(player.battlefield)
-                    if self.card_types(permanent) & declared.ability.card_types
+                    if (
+                        permanent.id in snapshotted_ids
+                        if snapshotted_ids is not None
+                        else self.card_types(permanent)
+                        & declared.ability.card_types
+                    )
+                    and self._batch_destination_effect_applies(
+                        plan,
+                        declared.source,
+                        declared.declaration_sequence,
+                        0,
+                        permanent,
+                    )
                 )
             elif isinstance(declared.ability, ActivatedTapAbility):
                 for target in declared.targets:
                     if isinstance(target, Card):
+                        if self._batch_tapped_state_effect_is_deferred(
+                            plan,
+                            declared.source,
+                            declared.declaration_sequence,
+                            0,
+                            target,
+                        ):
+                            continue
                         self._tap_permanent(target)
             elif isinstance(declared.ability, ActivatedUnblockableAbility):
                 for target in declared.targets:
@@ -2430,7 +5664,16 @@ class PriorityBatchResolutionMixin:
                 token.battlefield_entry_sequence = self.battlefield_entry_sequence
                 self.player(declared.controller_id).battlefield.append(token)
             elif isinstance(declared.ability, ActivatedGraveyardReturnAbility):
-                if declared.source.zone is Zone.GRAVEYARD:
+                if (
+                    declared.source.zone is Zone.GRAVEYARD
+                    and self._batch_destination_effect_applies(
+                        plan,
+                        declared.source,
+                        declared.declaration_sequence,
+                        0,
+                        declared.source,
+                    )
+                ):
                     declared.source.controller_id = declared.controller_id
                     self._move_card(declared.source, Zone.BATTLEFIELD)
                     declared.source.entered_battlefield_turn = self.turn_number
@@ -2454,42 +5697,31 @@ class PriorityBatchResolutionMixin:
                     if isinstance(target, Card):
                         self.attack_requirements[target.id] = AttackRequirement(target.id)
             elif isinstance(declared.ability, ActivatedLandTypeAbility):
-                if (
-                    declared.source.zone is not Zone.BATTLEFIELD
-                    and not declared.ability.persists_after_source_leaves
-                ):
-                    continue
-                for target in declared.targets:
-                    if isinstance(target, Card):
-                        self.battlefield_entry_sequence += 1
-                        if declared.ability.persists_after_source_leaves:
-                            if declared.source.persistent_effect_instance_id is None:
-                                declared.source.persistent_effect_instance_id = uuid4()
-                            mark = CyclopeanTombMark(
-                                uuid4(),
-                                declared.source.persistent_effect_instance_id,
-                                target.id,
-                                self.battlefield_entry_sequence,
-                                declared.ability.replacement_subtype,
-                            )
-                            self.cyclopean_tomb_marks.append(mark)
-                            if declared.source.zone is not Zone.BATTLEFIELD:
-                                self.cyclopean_tomb_cleanup_controllers[
-                                    mark.effect_id
-                                ] = declared.controller_id
-                            target.counters["mire"] = (
-                                target.counters.get("mire", 0) + 1
-                            )
-                        else:
-                            target.land_type_marks[declared.source.id] = (
-                                declared.ability.replacement_subtype,
-                                self.battlefield_entry_sequence,
-                            )
+                self._apply_activated_land_type_setting(
+                    declared.source,
+                    declared.controller_id,
+                    declared.ability,
+                    declared.targets,
+                )
             elif isinstance(declared.ability, ActivatedExtraTurnAbility):
-                self.schedule_extra_turn(declared.controller_id)
+                if not self._batch_turn_sequence_intent_is_deferred(
+                    plan,
+                    declared.source,
+                    declared.declaration_sequence,
+                    0,
+                ):
+                    self.schedule_extra_turn(declared.controller_id)
             elif isinstance(declared.ability, ActivatedUntapAbility):
                 for target in declared.targets:
                     if isinstance(target, Card):
+                        if self._batch_tapped_state_effect_is_deferred(
+                            plan,
+                            declared.source,
+                            declared.declaration_sequence,
+                            0,
+                            target,
+                        ):
+                            continue
                         target.tapped = False
             elif isinstance(
                 declared.ability, ActivatedEventLifeGainAbility
@@ -2511,9 +5743,16 @@ class PriorityBatchResolutionMixin:
                             base_power=declared.ability.power,
                             base_toughness=declared.ability.toughness,
                         )
+                        )
                     )
-                )
-            else:
+            elif isinstance(declared.ability, ActivatedPumpAbility):
+                if self._batch_power_modifier_is_deferred(
+                    plan,
+                    declared.source,
+                    declared.declaration_sequence,
+                    0,
+                ):
+                    continue
                 for target in declared.targets:
                     if isinstance(target, Card):
                         self.temporary_creature_effects.setdefault(
@@ -2529,6 +5768,10 @@ class PriorityBatchResolutionMixin:
                                 )
                             )
                         )
+            else:
+                raise AssertionError(
+                    f"unhandled batch ability: {declared.ability!r}"
+                )
 
     def _apply_batch_zone_and_incident_results(
         self,
@@ -2545,14 +5788,23 @@ class PriorityBatchResolutionMixin:
         exile_results = [
             (
                 target,
-                self.player(target.controller_id or target.owner_id),
+                self.player(
+                    controller_snapshot
+                    or target.controller_id
+                    or target.owner_id
+                ),
                 (
-                    max(0, self.creature_power(target))
+                    (
+                        power_snapshot
+                        if power_snapshot is not None
+                        else max(0, self.creature_power(target))
+                    )
                     if effect.controller_gains_life_equal_to_power
                     else 0
                 ),
             )
-            for target, effect in consequences.exile
+            for target, effect, power_snapshot, controller_snapshot
+            in consequences.exile
         ]
         for target, controller, life_gain in exile_results:
             self._move_card(target, Zone.EXILE)
@@ -2632,22 +5884,76 @@ class PriorityBatchResolutionMixin:
         self._refresh_graveyard_return_choice()
         self._close_event_opportunities(caught_event_ids)
 
+    def _commit_batch_resolution(
+        self, plan: BatchResolutionPlan
+    ) -> tuple[Card, ...]:
+        """Apply a previously frozen batch plan using existing semantics."""
+
+        if plan.finalized:
+            return plan.cards
+        if not plan.base_effects_applied:
+            self.interruptible_spell_id = None
+            self._prepare_batch_destination_fallbacks(plan)
+            self._snapshot_ordered_batch_power_reads(plan)
+            self._snapshot_ordered_batch_characteristic_reads(plan)
+            self._begin_damage_incident(DamageIncidentKind.FAST_EFFECT_BATCH)
+            self._resolve_batch_permanent_spells(plan)
+            self._resolve_batch_spell_effects(plan, plan.consequences)
+            self._resolve_batch_activated_abilities(plan, plan.consequences)
+            self._resolve_ordered_batch_tapped_state_effects(plan)
+            self._resolve_ordered_batch_power_modifiers(plan)
+            self._resolve_ordered_batch_land_type_settings(plan)
+            self._resolve_ordered_batch_turn_sequence_effects(plan)
+            plan.pending_hand_library_intents = list(
+                dict.fromkeys(
+                    intent_index
+                    for order in plan.hand_library_orders
+                    for intent_index in order
+                )
+            )
+            plan.base_effects_applied = True
+        if not self._continue_ordered_batch_hand_library_effects(plan):
+            return plan.cards
+        if not plan.zone_results_applied:
+            plan.zone_results_applied = True
+            self._apply_batch_zone_and_incident_results(plan.consequences)
+            if plan.finalized:
+                return plan.cards
+        if plan.pending_aura_entry_intents or plan.pending_copy_entry_intents:
+            if self.pending_damage is not None or self.pending_destruction is not None:
+                return plan.cards
+            if plan.pending_aura_entry_intents:
+                self._resolve_deferred_batch_aura_entries(plan)
+            if plan.pending_copy_entry_intents:
+                self._resolve_deferred_batch_copy_entries(plan)
+        if (
+            self.pending_damage is None
+            and self.pending_destruction is None
+            and self.pending_batch_destination_fallbacks
+        ):
+            self.pending_batch_destination_fallbacks.clear()
+            self.pending_batch_resolution = None
+        self._finish_batch_resolution(
+            plan.spells, set(plan.caught_event_ids)
+        )
+        plan.finalized = True
+        return plan.cards
+
     def _resolve_batch(self) -> tuple[Card, ...]:
         """Apply one 1993 fast-effect batch, then stabilize exactly once."""
 
-        cards = tuple(self.stack)
-        self.interruptible_spell_id = None
-        spells = tuple(self.stack_spells[card.id] for card in cards)
-        abilities = tuple(self.batch_abilities)
-        caught_event_ids = {event.id for event in self.event_opportunities}
-        self._begin_damage_incident(DamageIncidentKind.FAST_EFFECT_BATCH)
-
-        legality = self._snapshot_batch_legality(spells, abilities)
-        self._resolve_batch_permanent_spells(spells, legality)
-        consequences = self._resolve_batch_spell_effects(spells, legality)
-        self._resolve_batch_activated_abilities(
-            abilities, legality, consequences
-        )
-        self._apply_batch_zone_and_incident_results(consequences)
-        self._finish_batch_resolution(spells, caught_event_ids)
-        return cards
+        plan = self._plan_batch_resolution()
+        conflicts = self._detect_batch_conflicts(plan)
+        if conflicts:
+            self.pending_batch_resolution = plan
+            self.pending_batch_conflict_choices = [
+                PendingBatchConflictChoice(
+                    conflict,
+                    list(conflict.intent_indexes),
+                )
+                for conflict in conflicts
+            ]
+            self.priority_player_index = None
+            self.consecutive_passes = 0
+            return ()
+        return self._commit_batch_resolution(plan)

@@ -48,6 +48,8 @@ class DamagePacket:
     trample: bool = False
     trample_defender_id: str | None = None
     first_strike: bool = False
+    veteran_bodyguard_handled: bool = False
+    combat_player_damage_random_discard: int = 0
     life_gain_player_id: str | None = None
     life_gain_cap: int | None = None
     prevented: int = 0

@@ -7,10 +7,73 @@
   We interpret "you" as the owner of that graveyard. Each affected owner
   orders their own simultaneous group from bottom to top before play resumes.
 
-- Add player choice for true fast-effect-batch timing paradoxes, where effects
-  described as simultaneous nevertheless require an order. The FAQ gives that
-  choice to the caster of the last effect. This is distinct from upkeep actions,
-  whose ordering is now explicitly chosen before they begin resolving.
+- Fast-effect destination paradoxes are recognized when effects would send the
+  same card to different zones. Opposed tap/untap effects are also recognized
+  and replayed in the player's chosen order, preserving intervening tap events;
+  tap costs paid when an effect is announced are not part of that ordering.
+  The caster or controller of the last-announced conflicting effect makes the
+  choice before the batch changes state. Noncommuting power modifiers now use
+  the same choice: additive bonuses and multipliers are modeled as affine
+  transformations, while ordinary additive-only groups do not prompt. This
+  covers temporary spells, activated pumps, and power-modifying permanents
+  entering in the batch. Hand and library effects also use the same ordering
+  system when they operate on the same player's resources and do not commute:
+  this includes draws versus discards or hand replacement, cards returned to
+  hand versus those effects, Balance, and library-top inspection, searches,
+  recycling, and ante exchanges. Pure draws and additive moves to hand commute,
+  and operations on different players do not prompt. Interactive operations
+  pause the chosen sequence until their discard, Library of Leng, Balance,
+  Natural Selection, or library-search choice is complete. Glasses of Urza's
+  private hand snapshot and Word of Command's compelled play also participate:
+  each sees the hand at its selected position, and later hand-changing effects
+  wait for the look to be dismissed or the commanded card to be announced.
+  Multiple read-only Glasses effects commute, as do hand reads with operations
+  that only inspect or rearrange a library. Further conflict
+  families found by the effect audit may still need choices. Competing local
+  land-type setters also use the same ordering system: attached setters,
+  Gaea's Liege marks, and persistent Cyclopean Tomb mire effects receive
+  timestamps in the chosen first-to-last order, while identical settings do
+  not prompt. Conditional global transformations such as Conversion are then
+  continuously applied to the selected local result. Extra-turn effects from
+  Time Walk and Time Vault likewise require an order only when they grant
+  turns to different players. They are applied first-to-last using the normal
+  rule that each newly created turn is inserted immediately after the current
+  turn, ahead of extra turns already scheduled. This is distinct from upkeep
+  actions, whose ordering is chosen before they begin resolving. Swords to
+  Plowshares also orders its power and controller reads against recognized
+  battlefield changes. Its projected read covers direct and activated pumps,
+  permanent entry and removal, variable creature counts, land counts and
+  land-type settings, animation, control Auras, and token creation. Battlefield
+  Auras are ordered against effects that remove their targets; an Aura ordered
+  later fails to attach unless an earlier destruction is regenerated. This
+  preserves entry behavior such as Creature Bond and Consecrate Land as well
+  as control changes. Clone, Vesuvan Doppelganger, and Copy Artifact use the
+  same model for removal of their chosen copy source: copying first produces
+  an independent permanent, removal first makes the copy fail, and a copy
+  ordered after destruction waits to see whether its source regenerates.
+  Characteristic-dependent global effects now use the
+  same ordering machinery. Destruction and damage sweeps, Drain Life's
+  toughness cap, and Balance's land/creature counts snapshot the battlefield
+  at their selected position relative to continuous effects and animation.
+  This covers Crusade, Living Lands, Kormus Bell, Animate Artifact, and tapped
+  continuous artifacts. Explicitly selected targets remain fixed from their
+  legal declaration, consistent with the era ruling that untapping a Royal
+  Assassin target does not undo the effect. A general player-declared paradox
+  fallback remains
+  deferred; the engine should not guess an order for an unrecognized
+  dependency.
+  Forked copies of interactive spells still need separate pending choices, with
+  the original resolving first where the Fork ruling requires sequential
+  handling.
+- Personal Incarnation dying with Creature Bond attached still needs an explicit
+  controller choice for whether the Bond damage or the Incarnation owner's
+  half-life loss happens first. The current lifecycle applies the Incarnation
+  loss before it queues Creature Bond damage; do not encode that implementation
+  order as the rule in a regression test.
+- Balance's printed "discard" instruction is treated as destruction under the
+  WotC ruling. Protection does not stop it, but an affected creature may use an
+  otherwise legal regeneration effect. Consecrated lands remain protected and
+  must be excluded from the land choices before other lands.
 - Vesuvan Doppelganger currently clears all counters gained while wearing its
   old form. This matches every implemented Beta counter source, which places
   counters through the copied creature's own abilities. If a future external

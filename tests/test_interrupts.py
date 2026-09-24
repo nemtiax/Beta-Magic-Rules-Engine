@@ -41,6 +41,7 @@ from beta_magic import (
 )
 from beta_magic.card_defs.green import GRIZZLY_BEARS
 from beta_magic.damage import DamageIncidentKind, DamageResolutionStep
+from beta_magic.ui import GameViewModel
 
 
 class InterruptTests(unittest.TestCase):
@@ -123,6 +124,21 @@ class InterruptTests(unittest.TestCase):
         self.assertEqual(counter.zone, Zone.GRAVEYARD)
         self.assertEqual(self.game.stack, [])
         self.assertEqual(self.bob.life, 20)
+
+    def test_ui_offers_stack_targets_only_to_the_interrupt_caster(self):
+        bolt = self.cast_bolt()
+        counter = self.put_in_hand(self.bob, COUNTERSPELL)
+        self.bob.mana_pool.blue = 2
+        self.game.begin_cast(counter)
+
+        view = GameViewModel(self.game)
+        self.assertFalse(view.state["choosingStackTarget"])
+        view.switchPerspective()
+        self.assertTrue(view.state["choosingStackTarget"])
+        self.assertEqual(
+            view.state["stackTargetChoices"],
+            [{"id": str(bolt.id), "label": "Lightning Bolt"}],
+        )
 
     def test_an_interrupt_can_counter_an_interrupt(self):
         bolt = self.cast_bolt()

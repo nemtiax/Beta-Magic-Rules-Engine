@@ -237,7 +237,7 @@ class TurnFlowMixin:
         player = self.player(player_id)
         self.pay_mana(player, card.definition.mana_cost)
         self.pending_graveyard_return_choice = None
-        self.batch_abilities.append(
+        self._queue_batch_ability(
             AbilityOnStack(card, card.name, player.id, ability, ())
         )
         self.priority_player_index = (

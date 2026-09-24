@@ -16,7 +16,8 @@ from beta_magic import (
     TurnPhase,
     Zone,
 )
-from beta_magic.card_defs.green import GRIZZLY_BEARS
+from beta_magic.card_defs.green import GRIZZLY_BEARS, REGENERATION, WALL_OF_BRAMBLES
+from beta_magic.card_defs.black import TERROR
 
 
 class NevinyrralsDiskTests(unittest.TestCase):
@@ -126,6 +127,61 @@ class NevinyrralsDiskTests(unittest.TestCase):
         self.assertIsNotNone(incident)
         self.assertEqual(
             sum(target.card_id == ring.id for target in incident.targets), 1
+        )
+
+    def test_creature_can_use_regeneration_aura_while_disk_destroys_both(
+        self,
+    ) -> None:
+        disk = self.permanent(self.alice, NEVINYRRALS_DISK)
+        creature = self.permanent(self.bob, GRIZZLY_BEARS)
+        aura = self.permanent(self.bob, REGENERATION, attached_to=creature)
+        self.alice.mana_pool.colorless = 1
+        self.bob.mana_pool.green = 1
+        self.game.pause_for_damage_windows = True
+
+        self.game.activate_ability(self.alice.id, disk, 0)
+        self.pass_until_destruction_window()
+        while self.game.players[self.game.priority_player_index] is not self.bob:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+        self.game.activate_ability(self.bob.id, aura, 0)
+        self.finish_destruction()
+
+        self.assertIn(creature, self.bob.battlefield)
+        self.assertTrue(creature.tapped)
+        self.assertIn(aura, self.bob.graveyard)
+        self.assertIn(disk, self.alice.graveyard)
+
+    def test_disk_and_terror_deduplicate_destruction_and_forbid_regeneration(
+        self,
+    ) -> None:
+        disk = self.permanent(self.alice, NEVINYRRALS_DISK)
+        wall = self.permanent(self.bob, WALL_OF_BRAMBLES)
+        terror = Card(TERROR, self.bob.id, zone=Zone.HAND)
+        self.bob.hand.append(terror)
+        self.alice.mana_pool.colorless = 1
+        self.bob.mana_pool.black = 1
+        self.bob.mana_pool.colorless = 1
+        self.game.pause_for_damage_windows = True
+
+        self.game.activate_ability(self.alice.id, disk, 0)
+        self.game.begin_cast(terror)
+        self.game.complete_pending_cast((wall,))
+        self.pass_until_destruction_window()
+        self.finish_destruction()
+
+        incident = self.game.resolved_destruction_incidents[-1]
+        matching = [target for target in incident.targets if target.card_id == wall.id]
+        self.assertEqual(len(matching), 1)
+        self.assertFalse(matching[0].regeneration_allowed)
+        self.assertIn(wall, self.bob.graveyard)
+        self.assertEqual(
+            sum(
+                event.card_id == wall.id and event.destination is Zone.GRAVEYARD
+                for event in self.game.events
+                if hasattr(event, "destination")
+            ),
+            1,
         )
 
 

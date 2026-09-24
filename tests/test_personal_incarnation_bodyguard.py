@@ -4,6 +4,7 @@ from beta_magic.card_defs.white import (
     PERSONAL_INCARNATION,
     VETERAN_BODYGUARD,
 )
+from beta_magic.card_defs.artifacts import JADE_MONOLITH
 from beta_magic import (
     Card,
     DamageIncidentKind,
@@ -125,6 +126,65 @@ class PersonalIncarnationBodyguardTests(unittest.TestCase):
         )
         self.assertEqual(trample.remaining, 2)
         self.assertEqual(self.game.pending_damage.redirected_packets, [])
+
+    def test_multiple_bodyguards_copy_only_unprevented_damage_without_looping(
+        self,
+    ) -> None:
+        first = self.permanent(self.alice, VETERAN_BODYGUARD)
+        second = self.permanent(self.alice, VETERAN_BODYGUARD)
+        monolith = self.permanent(self.alice, JADE_MONOLITH)
+        source = self.permanent(self.bob, GRIZZLY_BEARS)
+        self.game._begin_damage_incident(DamageIncidentKind.COMBAT)
+        self.game._deal_damage(
+            self.alice,
+            5,
+            source.name,
+            source_card=source,
+            combat=True,
+            trample=False,
+        )
+        self.game._resolve_damage_incident()
+        original = self.game.pending_damage.packets[0]
+        original.prevented = 2
+
+        self.pass_window()
+        self.assertEqual(
+            {
+                (packet.recipient_id, packet.amount)
+                for packet in self.game.pending_damage.redirected_packets
+            },
+            {(first.id, 3), (second.id, 3)},
+        )
+        self.pass_window()
+        self.pass_window()
+
+        # Both copied portions form one fresh incident with independent
+        # prevention and redirection choices.
+        incident = self.game.pending_damage
+        self.assertIsNotNone(incident)
+        self.assertIs(incident.step, DamageResolutionStep.PREVENTION)
+        self.assertEqual(len(incident.packets), 2)
+        first_packet = next(
+            packet for packet in incident.packets if packet.recipient_id == first.id
+        )
+        self.pass_window()
+        self.alice.mana_pool.colorless = 1
+        self.game.activate_ability(self.alice.id, monolith, 0)
+        self.game.redirect_damage(self.alice.id, first_packet.id)
+        self.pass_window()
+        self.pass_window()
+
+        # The Monolith's redirected portion reaches the player once; it is
+        # not offered to the Bodyguards again.
+        redirected = self.game.pending_damage
+        self.assertIsNotNone(redirected)
+        self.assertEqual(len(redirected.packets), 1)
+        self.assertEqual(redirected.packets[0].recipient_id, self.alice.id)
+        while self.game.pending_damage is not None:
+            self.pass_window()
+        self.assertEqual(self.alice.life, 17)
+        self.assertEqual(first.damage, 0)
+        self.assertEqual(second.damage, 3)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,10 @@ from .abilities import (
     ActivatedManaAbility,
 )
 from .cards import Card, CardDefinition
+from .batch_resolution import (
+    BatchResolutionPlan,
+    PendingBatchConflictChoice,
+)
 from .casting import (
     AbilityOnStack,
     PendingActivation,
@@ -341,6 +345,13 @@ class GameState(
     pending_counter_damage_choice: PendingCounterDamageChoice | None = None
     pending_lich_choices: list[PendingLichChoice] = field(default_factory=list)
     batch_abilities: list[AbilityOnStack] = field(default_factory=list)
+    pending_batch_resolution: BatchResolutionPlan | None = None
+    pending_batch_conflict_choices: list[PendingBatchConflictChoice] = field(
+        default_factory=list
+    )
+    pending_batch_destination_fallbacks: dict[UUID, tuple[int, ...]] = field(
+        default_factory=dict
+    )
     interrupt_abilities: list[AbilityOnStack] = field(default_factory=list)
     events: list[GameEvent] = field(default_factory=list)
     temporary_creature_effects: dict[UUID, list[ContinuousEffect]] = field(
@@ -1129,6 +1140,12 @@ class GameState(
             raise RuntimeError(
                 f"choose damage for {self.pending_redirection.source.name} first"
             )
+        if self.pending_batch_conflict_choices:
+            choice = self.pending_batch_conflict_choices[0]
+            raise RuntimeError(
+                f"{self.player(choice.conflict.chooser_id).name} must order "
+                "the conflicting batch effects first"
+            )
         if self.pending_turn_choice is not None:
             raise RuntimeError("choose whether to skip the upcoming turn first")
         if self.pending_draw_choice is not None:
@@ -1395,6 +1412,7 @@ class GameState(
         if reveal.viewer_id != player_id:
             raise ValueError("only the player looking at the hand may dismiss it")
         self.pending_hand_reveals.pop(0)
+        self._resume_ordered_batch_hand_library_effects()
 
     def _queue_opponent_hand_reveal(self, viewer_id: str) -> None:
         """Snapshot the next opponent's hand for a resolved look effect."""
@@ -1539,6 +1557,12 @@ class GameState(
         was_creature = CardType.CREATURE in self.card_types(card)
         departing_name = card.name
         departing_definition = card.definition
+        disintegrated_creature_death = bool(
+            was_creature
+            and source_zone is Zone.BATTLEFIELD
+            and destination is Zone.GRAVEYARD
+            and card.id in self.disintegrated_this_turn
+        )
         if (
             source_zone is Zone.BATTLEFIELD
             and destination is Zone.GRAVEYARD
@@ -1705,6 +1729,18 @@ class GameState(
                 prior_controller_id=prior_controller_id,
                 prior_toughness=prior_toughness,
                 creature_bonds=creature_bonds,
+            )
+        elif disintegrated_creature_death:
+            # The era ruling singles Soul Net out as seeing a creature killed
+            # by Disintegrate even though the card is set aside rather than
+            # placed in its graveyard.  Other graveyard/death collectors (for
+            # example Scavenging Ghoul) still do not see that removed card.
+            self._record_creature_death_opportunity(
+                card,
+                prior_name=departing_name,
+                prior_controller_id=prior_controller_id,
+                prior_toughness=prior_toughness,
+                soul_net_only=True,
             )
 
         if source_zone is Zone.BATTLEFIELD:
@@ -2308,22 +2344,24 @@ class GameState(
         creature_bonds: tuple[
             tuple[Card, AttachedEventDamageEffect], ...
         ] = (),
+        soul_net_only: bool = False,
     ) -> None:
         """Expose a post-regeneration death event if Soul Net is in play."""
 
-        for vampire_id in self.vampire_damage_marks.get(creature.id, ()):
-            vampire = next(
-                (
-                    card
-                    for player in self.players
-                    for card in player.battlefield
-                    if card.id == vampire_id
-                    and card.definition.grows_when_damaged_creature_dies
-                ),
-                None,
-            )
-            if vampire is not None:
-                vampire.plus_one_counters += 1
+        if not soul_net_only:
+            for vampire_id in self.vampire_damage_marks.get(creature.id, ()):
+                vampire = next(
+                    (
+                        card
+                        for player in self.players
+                        for card in player.battlefield
+                        if card.id == vampire_id
+                        and card.definition.grows_when_damaged_creature_dies
+                    ),
+                    None,
+                )
+                if vampire is not None:
+                    vampire.plus_one_counters += 1
 
         matching = any(
             isinstance(ability, ActivatedEventLifeGainAbility)
@@ -2342,6 +2380,11 @@ class GameState(
                     card_id=creature.id,
                 )
             )
+        if soul_net_only:
+            if self.priority_player_index is None and matching:
+                self.priority_player_index = self.active_player_index
+                self.consecutive_passes = 0
+            return
         for source, effect in creature_bonds:
             self.event_opportunities.append(
                 RuleEventOpportunity(

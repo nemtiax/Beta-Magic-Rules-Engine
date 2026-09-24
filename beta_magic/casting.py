@@ -1035,7 +1035,7 @@ class TargetingCastingMixin:
             # not replace the root spell or surrender priority.
             self.consecutive_passes = 0
             return
-        self.batch_abilities.append(
+        self._queue_batch_ability(
             AbilityOnStack(
                 pending.source,
                 pending.source.name,

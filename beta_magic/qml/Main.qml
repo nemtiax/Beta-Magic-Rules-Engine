@@ -459,6 +459,7 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.NoAutoClose
         visible: gameState.timedEventOrderChoice
+                 && !gameState.batchConflictChoice
                  && !gameState.graveyardReturnChoice
         title: "Choose permanent upkeep order"
 
@@ -545,6 +546,108 @@ ApplicationWindow {
             }
             Button {
                 visible: gameState.timedEventOrderPlayer !== gameState.perspective.id
+                text: "Switch perspective"
+                Layout.fillWidth: true
+                onClicked: gameBridge.switchPerspective()
+            }
+        }
+    }
+
+    Dialog {
+        id: batchConflictOrderPicker
+        anchors.centerIn: parent
+        width: 680
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.batchConflictChoice
+        title: gameState.batchConflictTitle
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                text: gameState.batchConflictPlayer === gameState.perspective.id
+                      ? gameState.batchConflictReason
+                        + ". Arrange the effects from first to last. "
+                        + gameState.batchConflictExplanation
+                      : "Waiting for " + gameState.batchConflictPlayerName
+                        + " to order conflicting effects."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Rectangle {
+                visible: gameState.batchConflictPlayer === gameState.perspective.id
+                color: "#202832"
+                border.color: "#465565"
+                radius: 5
+                Layout.fillWidth: true
+                implicitHeight: batchConflictColumn.implicitHeight + 16
+
+                ColumnLayout {
+                    id: batchConflictColumn
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 6
+
+                    Repeater {
+                        model: gameState.batchConflictItems
+                        RowLayout {
+                            required property var modelData
+                            required property int index
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Label {
+                                text: index === 0
+                                      ? (index + 1) + " - FIRST"
+                                      : index === gameState.batchConflictItems.length - 1
+                                        ? (index + 1) + " - LAST"
+                                        : (index + 1).toString()
+                                color: index === 0 ? "#ffd978" : "#aebdca"
+                                font.bold: index === 0
+                                Layout.preferredWidth: 82
+                            }
+                            Label {
+                                text: modelData.label
+                                color: "#ffffff"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onEntered: {
+                                        if (modelData.sourceCard
+                                                && modelData.sourceCard.id)
+                                            window.inspectedCard = modelData.sourceCard
+                                    }
+                                }
+                            }
+                            Button {
+                                text: "Earlier"
+                                enabled: index > 0
+                                onClicked: gameBridge.moveBatchConflictOrder(
+                                    modelData.intentIndex, -1
+                                )
+                            }
+                            Button {
+                                text: "Later"
+                                enabled: index < gameState.batchConflictItems.length - 1
+                                onClicked: gameBridge.moveBatchConflictOrder(
+                                    modelData.intentIndex, 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Button {
+                visible: gameState.batchConflictPlayer === gameState.perspective.id
+                text: "Confirm first-to-last order"
+                Layout.fillWidth: true
+                onClicked: gameBridge.confirmBatchConflictOrder()
+            }
+            Button {
+                visible: gameState.batchConflictPlayer !== gameState.perspective.id
                 text: "Switch perspective"
                 Layout.fillWidth: true
                 onClicked: gameBridge.switchPerspective()
@@ -749,6 +852,68 @@ ApplicationWindow {
                 onClicked: gameBridge.switchPerspective()
             }
         }
+    }
+
+    ChoiceListDialog {
+        id: stackTargetPicker
+        visible: gameState.choosingStackTarget
+        title: "Choose a spell"
+        promptText: "Choose a spell on the current batch as the target."
+        choices: gameState.stackTargetChoices
+        cancelVisible: gameState.canCancelTarget
+        onChoiceSelected: function(choiceId) {
+            gameBridge.toggleCard(choiceId)
+        }
+        onCancelRequested: gameBridge.cancelTarget()
+    }
+
+    ChoiceListDialog {
+        id: preventionPacketPicker
+        visible: gameState.choosingPrevention
+                 && gameState.canChoosePrevention
+        title: "Assign " + gameState.preventionSource
+        promptText: "Choose "
+                    + (gameState.preventingLifeLoss
+                       ? "life loss" : "damage")
+                    + " to prevent (" + gameState.preventionRemaining
+                    + " remaining)."
+        choices: gameState.damagePacketChoices
+        finishVisible: gameState.preventionPaid
+                       || gameState.preventingLifeLoss
+        finishText: "Done"
+        cancelVisible: !gameState.preventionPaid
+        onChoiceSelected: function(choiceId) {
+            gameBridge.chooseDamagePacket(choiceId)
+        }
+        onFinishRequested: gameBridge.finishPrevention()
+        onCancelRequested: gameBridge.cancelPrevention()
+    }
+
+    ChoiceListDialog {
+        id: guardianAngelPacketPicker
+        visible: gameState.guardianAngelOptions.length > 0
+                 && !gameState.choosingGuardianAngelPayment
+        title: "Guardian Angel"
+        promptText: "Choose a damage packet to prevent by paying mana."
+        choices: gameState.guardianAngelOptions
+        onChoiceSelected: function(choiceId) {
+            gameBridge.chooseGuardianAngelPacket(choiceId)
+        }
+    }
+
+    ChoiceListDialog {
+        id: redirectionPacketPicker
+        visible: gameState.choosingRedirection
+                 && gameState.canChooseRedirection
+                 && !gameState.choosingRedirectionAmount
+        title: "Assign " + gameState.redirectionSource
+        promptText: "Choose creature damage to redirect."
+        choices: gameState.redirectionPacketChoices
+        cancelVisible: true
+        onChoiceSelected: function(choiceId) {
+            gameBridge.chooseRedirectionPacket(choiceId)
+        }
+        onCancelRequested: gameBridge.cancelRedirection()
     }
 
     Dialog {
@@ -1516,6 +1681,60 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: guardianAngelAmountPicker
+        anchors.centerIn: parent
+        implicitWidth: 390
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        visible: gameState.choosingGuardianAngelPayment
+        title: "Choose Guardian Angel prevention"
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Label {
+                text: "Pay one mana for each point of damage prevented."
+                color: "#ffffff"
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                Button {
+                    text: "−"
+                    enabled: gameState.guardianAngelAmount > 1
+                    onClicked: gameBridge.adjustGuardianAngelAmount(-1)
+                }
+                Label {
+                    text: gameState.guardianAngelAmount
+                    color: "#ffd978"
+                    font.bold: true
+                    font.pixelSize: 22
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.preferredWidth: 100
+                }
+                Button {
+                    text: "+"
+                    enabled: gameState.guardianAngelAmount
+                             < gameState.guardianAngelMaximum
+                    onClicked: gameBridge.adjustGuardianAngelAmount(1)
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    text: "Back"
+                    onClicked: gameBridge.cancelGuardianAngelPayment()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Pay"
+                    onClicked: gameBridge.confirmGuardianAngelPayment()
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: redirectionAmountPicker
         anchors.centerIn: parent
         implicitWidth: 360
@@ -2131,130 +2350,17 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
-                        RowLayout {
-                            visible: gameState.targeting
-                                     && gameState.stackCards.length > 0
-                            Label {
-                                text: "Spells being cast:"
-                                color: "#f2c66d"
-                                font.bold: true
-                            }
-                            Repeater {
-                                model: gameState.stackCards
-                                Button {
-                                    required property var modelData
-                                    text: modelData.label
-                                    enabled: modelData.legalTarget
-                                    onClicked: gameBridge.toggleCard(modelData.id)
-                                }
-                            }
-                        }
                         Label {
                             visible: gameState.damageWindow
                             text: gameState.damageWindow + " window — "
-                                  + gameState.damagePackets.join("  +  ")
+                                  + gameState.damageTotal + " damage in "
+                                  + gameState.damagePackets.length + " packet"
+                                  + (gameState.damagePackets.length === 1
+                                     ? "" : "s")
                             color: "#ef9f76"
                             font.bold: true
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                        }
-                        RowLayout {
-                            visible: gameState.choosingPrevention
-                            Label {
-                                text: "Choose "
-                                      + (gameState.preventingLifeLoss
-                                         ? "life loss" : "damage")
-                                      + " to prevent ("
-                                      + gameState.preventionRemaining + " remaining):"
-                                color: "#9fd6a8"
-                                font.bold: true
-                            }
-                            Repeater {
-                                model: gameState.damagePacketChoices
-                                delegate: Button {
-                                    required property var modelData
-                                    text: modelData.label
-                                    onClicked: gameBridge.chooseDamagePacket(modelData.id)
-                                }
-                            }
-                            Button {
-                                text: "Done"
-                                visible: gameState.preventionPaid
-                                         || gameState.preventingLifeLoss
-                                onClicked: gameBridge.finishPrevention()
-                            }
-                            Button {
-                                text: "Cancel"
-                                visible: !gameState.preventionPaid
-                                onClicked: gameBridge.cancelPrevention()
-                            }
-                        }
-                        RowLayout {
-                            visible: gameState.guardianAngelOptions.length > 0
-                                     && !gameState.choosingGuardianAngelPayment
-                            Label {
-                                text: "Guardian Angel:"
-                                color: "#9fd6a8"
-                                font.bold: true
-                            }
-                            Repeater {
-                                model: gameState.guardianAngelOptions
-                                delegate: Button {
-                                    required property var modelData
-                                    text: modelData.label
-                                    onClicked: gameBridge.chooseGuardianAngelPacket(
-                                                   modelData.id)
-                                }
-                            }
-                        }
-                        RowLayout {
-                            visible: gameState.choosingGuardianAngelPayment
-                            Label {
-                                text: "Prevent " + gameState.guardianAngelAmount
-                                      + " damage with Guardian Angel"
-                                color: "#9fd6a8"
-                                font.bold: true
-                            }
-                            Button {
-                                text: "−"
-                                enabled: gameState.guardianAngelAmount > 1
-                                onClicked: gameBridge.adjustGuardianAngelAmount(-1)
-                            }
-                            Button {
-                                text: "+"
-                                enabled: gameState.guardianAngelAmount
-                                         < gameState.guardianAngelMaximum
-                                onClicked: gameBridge.adjustGuardianAngelAmount(1)
-                            }
-                            Button {
-                                text: "Cancel"
-                                onClicked: gameBridge.cancelGuardianAngelPayment()
-                            }
-                            Button {
-                                text: "Pay"
-                                onClicked: gameBridge.confirmGuardianAngelPayment()
-                            }
-                        }
-                        RowLayout {
-                            visible: gameState.choosingRedirection
-                            Label {
-                                text: "Choose creature damage to redirect:"
-                                color: "#9fd6a8"
-                                font.bold: true
-                            }
-                            Repeater {
-                                model: gameState.redirectionPacketChoices
-                                delegate: Button {
-                                    required property var modelData
-                                    text: modelData.label
-                                    onClicked: gameBridge.chooseRedirectionPacket(
-                                                   modelData.id)
-                                }
-                            }
-                            Button {
-                                text: "Cancel"
-                                onClicked: gameBridge.cancelRedirection()
-                            }
                         }
                         Label {
                             visible: gameState.destructionWindow

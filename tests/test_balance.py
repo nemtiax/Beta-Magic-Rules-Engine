@@ -100,16 +100,39 @@ class BalanceTests(unittest.TestCase):
         self.assertEqual((choice.category, choice.amount), ("creature", 1))
         self.assertEqual(choice.candidate_ids, frozenset({golem.id}))
 
-    def test_balance_destruction_ignores_protection_and_regeneration(self) -> None:
+    def test_balance_destruction_ignores_protection_but_not_regeneration(
+        self,
+    ) -> None:
         knight = self.card(self.alice, WHITE_KNIGHT)
         skeleton = self.card(self.alice, DRUDGE_SKELETONS)
         self.game._begin_balance()
 
         self.game.choose_balance_cards(self.alice.id, (knight, skeleton))
+        while self.game.pending_destruction is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
 
         self.assertEqual(knight.zone, Zone.GRAVEYARD)
         self.assertEqual(skeleton.zone, Zone.GRAVEYARD)
         self.assertIsNone(self.game.pending_destruction)
+
+    def test_creature_destroyed_by_balance_may_regenerate(self) -> None:
+        skeleton = self.card(self.alice, DRUDGE_SKELETONS)
+        self.alice.mana_pool.black = 1
+        self.game.pause_for_damage_windows = True
+        self.game._begin_balance()
+
+        self.game.choose_balance_cards(self.alice.id, (skeleton,))
+
+        self.assertIsNotNone(self.game.pending_destruction)
+        self.assertTrue(self.game.pending_destruction.targets[0].regeneration_allowed)
+        self.game.activate_ability(self.alice.id, skeleton, 0)
+        while self.game.pending_destruction is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
+
+        self.assertIn(skeleton, self.alice.battlefield)
+        self.assertTrue(skeleton.tapped)
 
     def test_casting_balance_opens_choices_after_the_spell_resolves(self) -> None:
         self.card(self.alice, FOREST)
@@ -163,6 +186,9 @@ class BalanceTests(unittest.TestCase):
         view.selected_card_ids = {hand.id}
         view.chooseBalanceSelected()
         self.assertIsNone(self.game.pending_balance)
+        while self.game.pending_destruction is not None:
+            player = self.game.players[self.game.priority_player_index]
+            self.game.pass_priority(player.id)
         self.assertEqual(first.zone, Zone.GRAVEYARD)
         self.assertEqual(hand.zone, Zone.GRAVEYARD)
 
